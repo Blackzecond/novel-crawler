@@ -9,35 +9,44 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'กรุณาระบุ URL' }, { status: 400 });
     }
 
-    const response = await fetch(body.url, {
+    const targetUrl = body.url;
+    // อ่านค่า API Key จาก Environment Variable หรือใส่ API Key ตรงๆ ในเครื่องหมายคำพูดด้านล่างถ้าใช้อ่านคนเดียว
+    const apiKey = process.env.SCRAPER_API_KEY || '';
+
+    // ถ้ามี API Key จะยิงผ่าน ScraperAPI + สั่ง render=true เพื่อผ่านหน้า Cloudflare
+    const fetchUrl = apiKey
+      ? `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&render=true`
+      : targetUrl;
+
+    const response = await fetch(fetchUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7',
       },
-      redirect: 'follow',
     });
 
     if (!response.ok) {
       return NextResponse.json(
-        { error: `เว็บต้นทางปฏิเสธการเชื่อมต่อ (Status: ${response.status})` },
+        { error: `ไม่สามารถดึงข้อมูลได้ (Status: ${response.status})` },
         { status: 400 }
       );
     }
 
     const html = await response.text();
-    if (!html || html.trim().length === 0) {
-      return NextResponse.json({ error: 'หน้าเว็บต้นทางไม่มีเนื้อหา HTML' }, { status: 400 });
+
+    if (html.includes('正在验证浏览器') || html.includes('cf-challenge') || html.includes('Just a moment...')) {
+      return NextResponse.json(
+        { error: 'ยังคงติดหน้า Cloudflare Challenge: กรุณาตรวจสอบว่าใส่ SCRAPER_API_KEY ถูกต้องหรือไม่' },
+        { status: 400 }
+      );
     }
 
-    // ใช้ linkedom ประมวลผล DOM เบาและรองรับ Vercel Serverless 100%
     const { document } = parseHTML(html);
     const reader = new Readability(document);
     const article = reader.parse();
 
     if (!article || !article.content) {
       return NextResponse.json(
-        { error: 'ดึงหน้าเว็บได้ แต่ไม่พบเนื้อหาหลัก (อาจเป็นเว็บที่ใช้ JavaScript โหลดเนื้อหา)' },
+        { error: 'ดึงหน้าเว็บได้ แต่ไม่พบเนื้อหาหลักในหน้านี้' },
         { status: 422 }
       );
     }
@@ -49,7 +58,7 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     return NextResponse.json(
-      { error: `API Internal Error: ${error.message || String(error)}` },
+      { error: `API Error: ${error.message || String(error)}` },
       { status: 500 }
     );
   }
