@@ -27,6 +27,12 @@ export default function ReaderPage() {
         body: JSON.stringify({ url }),
       });
 
+      // ดักจับกรณี Server ส่งหน้า HTML Error หรือส่งค่าว่างกลับมา
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error(`ระบบตอบกลับผิดพลาด (${res.status}): อาจถูกเว็บต้นทางบล็อก หรือ Server ประมวลผลนานเกินไป`);
+      }
+
       const data = await res.json();
 
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
@@ -46,7 +52,6 @@ export default function ReaderPage() {
 
   return (
     <div className={`min-h-screen transition-colors duration-200 ${themeStyles[theme]}`}>
-      {/* Control Bar */}
       <header className="sticky top-0 z-10 border-b backdrop-blur-md bg-opacity-80 p-4">
         <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-4 justify-between items-center">
           <form onSubmit={handleFetch} className="flex gap-2 w-full md:w-auto flex-1">
@@ -68,7 +73,6 @@ export default function ReaderPage() {
             </button>
           </form>
 
-          {/* Controls */}
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1 border rounded-lg p-1">
               <button onClick={() => setFontSize(Math.max(14, fontSize - 2))} className="px-2 py-1 font-bold">A-</button>
@@ -91,7 +95,6 @@ export default function ReaderPage() {
         </div>
       </header>
 
-      {/* Main Reader View */}
       <main className="max-w-3xl mx-auto px-6 py-10">
         {error && (
           <div className="p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
