@@ -27,10 +27,10 @@ export default function ReaderPage() {
         body: JSON.stringify({ url }),
       });
 
-      // ดักจับกรณี Server ส่งหน้า HTML Error หรือส่งค่าว่างกลับมา
       const contentType = res.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        throw new Error(`ระบบตอบกลับผิดพลาด (${res.status}): อาจถูกเว็บต้นทางบล็อก หรือ Server ประมวลผลนานเกินไป`);
+        const rawText = await res.text().catch(() => '');
+        throw new Error(`Server ตอบกลับเป็น HTML Error (${res.status}): ${rawText.slice(0, 100)}...`);
       }
 
       const data = await res.json();
