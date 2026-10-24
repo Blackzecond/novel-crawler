@@ -1,68 +1,122 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import { useState } from 'react';
+import { Sun, Moon, BookOpen, Loader2 } from 'lucide-react';
+
+export default function ReaderPage() {
+  const [url, setUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [article, setArticle] = useState<{ title: string; content: string } | null>(null);
+  const [error, setError] = useState('');
+  
+  const [fontSize, setFontSize] = useState(18);
+  const [theme, setTheme] = useState<'light' | 'dark' | 'sepia'>('light');
+
+  const handleFetch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!url) return;
+
+    setLoading(true);
+    setError('');
+    setArticle(null);
+
+    try {
+      const res = await fetch('/api/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+      setArticle(data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const themeStyles = {
+    light: 'bg-white text-gray-900',
+    dark: 'bg-gray-900 text-gray-100',
+    sepia: 'bg-[#fbf0d9] text-[#5f4b32]',
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+    <div className={`min-h-screen transition-colors duration-200 ${themeStyles[theme]}`}>
+      {/* Control Bar */}
+      <header className="sticky top-0 z-10 border-b backdrop-blur-md bg-opacity-80 p-4">
+        <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-4 justify-between items-center">
+          <form onSubmit={handleFetch} className="flex gap-2 w-full md:w-auto flex-1">
+            <input
+              type="url"
+              placeholder="วาง URL นิยายที่ต้องการอ่าน..."
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              className="flex-1 px-4 py-2 border rounded-lg text-black focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+            >
+              {loading ? <Loader2 className="animate-spin w-4 h-4" /> : <BookOpen className="w-4 h-4" />}
+              ดึงเนื้อหา
+            </button>
+          </form>
+
+          {/* Controls */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1 border rounded-lg p-1">
+              <button onClick={() => setFontSize(Math.max(14, fontSize - 2))} className="px-2 py-1 font-bold">A-</button>
+              <span className="text-xs px-1">{fontSize}px</span>
+              <button onClick={() => setFontSize(Math.min(28, fontSize + 2))} className="px-2 py-1 font-bold">A+</button>
+            </div>
+
+            <div className="flex gap-1 border rounded-lg p-1">
+              <button onClick={() => setTheme('light')} className={`p-1.5 rounded ${theme === 'light' ? 'bg-gray-200 text-black' : ''}`} title="Light">
+                <Sun className="w-4 h-4" />
+              </button>
+              <button onClick={() => setTheme('sepia')} className={`p-1.5 rounded ${theme === 'sepia' ? 'bg-[#e2d5b7] text-black' : ''}`} title="Sepia">
+                📖
+              </button>
+              <button onClick={() => setTheme('dark')} className={`p-1.5 rounded ${theme === 'dark' ? 'bg-gray-700 text-white' : ''}`} title="Dark">
+                <Moon className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         </div>
+      </header>
+
+      {/* Main Reader View */}
+      <main className="max-w-3xl mx-auto px-6 py-10">
+        {error && (
+          <div className="p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+            {error}
+          </div>
+        )}
+
+        {article && (
+          <article className="space-y-6">
+            <h1 className="text-3xl md:text-4xl font-bold leading-tight border-b pb-4">
+              {article.title}
+            </h1>
+            <div
+              className="prose max-w-none leading-relaxed space-y-4"
+              style={{ fontSize: `${fontSize}px`, lineHeight: '1.8' }}
+              dangerouslySetInnerHTML={{ __html: article.content }}
+            />
+          </article>
+        )}
+
+        {!article && !loading && !error && (
+          <div className="text-center py-20 text-gray-400">
+            วาง URL ด้านบนเพื่อเริ่มอ่านในโหมดคลีน
+          </div>
+        )}
       </main>
     </div>
   );
