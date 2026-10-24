@@ -1,397 +1,249 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { 
-  Sun, Moon, BookOpen, Loader2, Copy, Check, 
-  ChevronLeft, ChevronRight, ChevronDown, Play, Pause, 
-  History, RotateCcw, Trash2, Settings 
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  Library, BookOpen, Loader2, Trash2, Download,
+  ChevronRight, AlertTriangle, ExternalLink, Globe,
 } from 'lucide-react';
+import { getStore, NovelProject } from '@/lib/storage';
 
-interface ArticleData {
-  title: string;
-  content: string;
-  textContent: string;
-  prevUrl: string | null;
-  nextUrl: string | null;
-}
+// เว็บต้นฉบับจีนยอดนิยม — กดเพื่อใส่โดเมนต้นทางในช่อง URL
+// (วางเฉพาะลิงก์หน้าสารบัญ/目录 เช่น https://www.uukanshu.cc/b/123/ จึงจะจับรายการบทได้)
+const EXAMPLE_SITES = [
+  { label: '笔趣阁 uukanshu', host: 'www.uukanshu.cc' },
+  { label: '69书吧 69shu', host: 'www.69shu.pro' },
+  { label: '起点中文 Qidian', host: 'www.qidian.com' },
+];
 
-interface HistoryItem {
-  url: string;
-  title: string;
-  readAt: number;
-}
-
-export default function ReaderPage() {
+export default function ProjectsHomePage() {
+  const router = useRouter();
+  const [projects, setProjects] = useState<NovelProject[]>([]);
+  const [mounted, setMounted] = useState(false);
   const [url, setUrl] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [article, setArticle] = useState<ArticleData | null>(null);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
-  const [copied, setCopied] = useState(false);
-  
-  // Customization State
-  const [fontSize, setFontSize] = useState(18);
-  const [lineHeight, setLineHeight] = useState<'normal' | 'relaxed' | 'loose'>('relaxed');
-  const [fontFamily, setFontFamily] = useState<'sans' | 'serif' | 'mono'>('sans');
-  const [theme, setTheme] = useState<'light' | 'dark' | 'sepia'>('light');
+  const [chapterNotice, setChapterNotice] = useState<string>('');
 
-  // History & Features State
-  const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
-  const [autoScroll, setAutoScroll] = useState(false);
-  const [scrollSpeed, setScrollSpeed] = useState(1);
-  const [fontOpen, setFontOpen] = useState(false);
-  const scrollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const fontDropdownRef = useRef<HTMLDivElement | null>(null);
-
-  // โหลดประวัติการอ่านจาก localStorage เมื่อเปิดเว็บครั้งแรก
   useEffect(() => {
-    const savedHistory = localStorage.getItem('novel_history');
-    if (savedHistory) {
-      try { setHistory(JSON.parse(savedHistory)); } catch (e) {}
-    }
+    document.documentElement.dataset.theme = document.documentElement.dataset.theme || 'light';
+    void (async () => {
+      setProjects(await getStore().listProjects());
+      setMounted(true);
+    })();
   }, []);
 
-  // ซิงก์ธีมที่เลือกในแอปกับ <html> เพื่อให้ background ที่เลื่อนเกินขอบ (overscroll) ตรงสีกับธีม
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
+  const loadProjects = async () => setProjects(await getStore().listProjects());
 
-  // ปิด dropdown ฟอนต์เมื่อคลิกนอกวงหรือกด Esc
-  useEffect(() => {
-    if (!fontOpen) return;
-    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
-      if (fontDropdownRef.current && !fontDropdownRef.current.contains(e.target as Node)) {
-        setFontOpen(false);
-      }
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setFontOpen(false);
-    };
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('touchstart', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('touchstart', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [fontOpen]);
-
-  // ระบบ Auto-Scroll
-  useEffect(() => {
-    if (autoScroll) {
-      scrollIntervalRef.current = setInterval(() => {
-        window.scrollBy({ top: scrollSpeed, behavior: 'smooth' });
-      }, 50);
-    } else if (scrollIntervalRef.current) {
-      clearInterval(scrollIntervalRef.current);
-    }
-    return () => {
-      if (scrollIntervalRef.current) clearInterval(scrollIntervalRef.current);
-    };
-  }, [autoScroll, scrollSpeed]);
-
-  const saveToHistory = (itemUrl: string, itemTitle: string) => {
-    const newHistory = [
-      { url: itemUrl, title: itemTitle, readAt: Date.now() },
-      ...history.filter((h) => h.url !== itemUrl),
-    ].slice(0, 20); // เก็บไว้สูงสุด 20 เรื่องล่าสุด
-
-    setHistory(newHistory);
-    localStorage.setItem('novel_history', JSON.stringify(newHistory));
-  };
-
-  const clearHistory = () => {
-    setHistory([]);
-    localStorage.removeItem('novel_history');
-  };
-
-  const fetchArticle = async (targetUrl: string, forceRender = false) => {
-    if (!targetUrl) return;
-
-    setLoading(true);
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!url.trim() || creating) return;
+    setCreating(true);
     setError('');
-    setUrl(targetUrl);
-    setAutoScroll(false);
-
+    setChapterNotice('');
     try {
-      const res = await fetch('/api/parse', {
+      const res = await fetch('/api/toc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: targetUrl, forceRender }),
+        body: JSON.stringify({ url }),
       });
-
-      const contentType = res.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const rawText = await res.text().catch(() => '');
-        throw new Error(`Server ตอบกลับผิดพลาด (${res.status}): ${rawText.slice(0, 100)}...`);
-      }
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
 
-      setArticle(data);
-      saveToHistory(targetUrl, data.title);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (data.type === 'directory') {
+        const project = await getStore().createProject({
+          title: data.novelTitle || data.host,
+          sourceUrl: url,
+          host: data.host,
+          chapters: data.chapters,
+        });
+        router.push(`/project/${project.id}`);
+        return;
+      }
+      // เป็นหน้าบทหรือจับสารบัญไม่ได้
+      setChapterNotice(data.message || 'ไม่พบรายการบทบนหน้านี้');
     } catch (err: any) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setCreating(false);
     }
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    fetchArticle(url);
+  const handleDelete = async (p: NovelProject) => {
+    if (!window.confirm(`ลบโปรเจกต์ "${p.title}" (รวมทุกบทและเนื้อหาที่ดึงมา)?`)) return;
+    await getStore().deleteProject(p.id);
+    void loadProjects();
   };
 
-  const handleCopy = async () => {
-    if (!article) return;
-    const textToCopy = `${article.title}\n\n${article.textContent.trim()}`;
-    await navigator.clipboard.writeText(textToCopy);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const fontClasses = {
-    sans: 'font-sans',
-    serif: 'font-serif',
-    mono: 'font-mono',
-  };
-
-  const lineHeightClasses = {
-    normal: '[&>p]:leading-normal',
-    relaxed: '[&>p]:leading-relaxed',
-    loose: '[&>p]:leading-loose',
+  const handleExport = () => {
+    const blob = new Blob([JSON.stringify(projects, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `novel-projects-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
   };
 
   return (
-    <div className={`min-h-screen bg-bg text-fg transition-colors duration-200 ${fontClasses[fontFamily]}`}>
-      {/* Header Bar */}
+    <div className="min-h-screen bg-bg text-fg transition-colors duration-200">
+      {/* Header */}
       <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-md p-4">
-        <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-4 justify-between items-center">
-          <form onSubmit={handleFormSubmit} className="flex gap-2 w-full md:w-auto flex-1">
-            <input
-              type="url"
-              placeholder="วาง URL นิยายที่ต้องการอ่าน..."
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              className="flex-1 px-4 py-2 bg-card border border-line rounded-lg text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent text-sm"
-              required
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-4 py-2 bg-accent text-accent-fg text-sm rounded-lg hover:brightness-110 disabled:opacity-50 flex items-center gap-1.5 shrink-0"
-            >
-              {loading ? <Loader2 className="animate-spin w-4 h-4" /> : <BookOpen className="w-4 h-4" />}
-              ดึงเนื้อหา
-            </button>
-          </form>
-
-          {/* Controller Toolbar */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* History Toggle */}
-            <button
-              onClick={() => setShowHistory(!showHistory)}
-              className="inline-flex h-9 w-9 items-center justify-center border border-line rounded-lg hover:bg-card shrink-0"
-              title="ประวัติการอ่าน"
-              aria-label="ประวัติการอ่าน"
-            >
-              <History className="w-4 h-4" />
-            </button>
-
-            {/* Font Family — custom dropdown (native select popup ไม่เข้าธีม) */}
-            <div ref={fontDropdownRef} className="relative shrink-0">
-              <button
-                type="button"
-                onClick={() => setFontOpen(!fontOpen)}
-                aria-haspopup="listbox"
-                aria-expanded={fontOpen}
-                aria-label="เลือกชนิดฟอนต์"
-                className="inline-flex h-9 items-center gap-1 px-2 border border-line rounded-lg text-sm bg-card text-fg hover:bg-surface"
-              >
-                {fontFamily === 'sans' ? 'Sans' : fontFamily === 'serif' ? 'Serif' : 'Mono'}
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${fontOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {fontOpen && (
-                <div
-                  role="listbox"
-                  className="absolute z-30 top-full mt-1 w-32 py-1 rounded-lg border border-line bg-card shadow-lg"
-                >
-                  {(['sans', 'serif', 'mono'] as const).map((f) => (
-                    <button
-                      key={f}
-                      type="button"
-                      role="option"
-                      aria-selected={fontFamily === f}
-                      onClick={() => { setFontFamily(f); setFontOpen(false); }}
-                      className={`w-full flex items-center justify-between gap-2 text-left px-3 py-1.5 text-sm hover:bg-surface ${fontFamily === f ? 'text-accent-soft-fg font-medium' : 'text-fg'}`}
-                    >
-                      {f === 'sans' ? 'Sans' : f === 'serif' ? 'Serif' : 'Mono'}
-                      {fontFamily === f && <Check className="w-3.5 h-3.5" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Font Size */}
-            <div className="flex items-center border border-line rounded-lg h-9 px-1 bg-card shrink-0">
-              <button onClick={() => setFontSize(Math.max(14, fontSize - 2))} className="inline-flex h-7 items-center justify-center px-1.5 text-xs font-bold" aria-label="ลดขนาดอักษร">A-</button>
-              <span className="text-xs px-1">{fontSize}px</span>
-              <button onClick={() => setFontSize(Math.min(28, fontSize + 2))} className="inline-flex h-7 items-center justify-center px-1.5 text-xs font-bold" aria-label="เพิ่มขนาดอักษร">A+</button>
-            </div>
-
-            {/* Theme Selector */}
-            <div className="flex items-center gap-1 border border-line rounded-lg h-9 px-1 bg-card shrink-0">
-              <button onClick={() => setTheme('light')} className={`inline-flex h-7 w-7 items-center justify-center rounded ${theme === 'light' ? 'bg-gray-200 text-black' : ''}`} aria-label="ธีมสว่าง">
-                <Sun className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={() => setTheme('sepia')} className={`inline-flex h-7 w-7 items-center justify-center rounded ${theme === 'sepia' ? 'bg-[#e2d5b7] text-[#5f4b32]' : ''}`} aria-label="ธีมกระดาษสุ้ปข้าว" title="ธีมกระดาษ (Sepia)">
-                📖
-              </button>
-              <button onClick={() => setTheme('dark')} className={`inline-flex h-7 w-7 items-center justify-center rounded ${theme === 'dark' ? 'bg-gray-700 text-white' : ''}`} aria-label="ธีมมืด">
-                <Moon className="w-3.5 h-3.5" />
-              </button>
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <Library className="w-5 h-5 text-accent" />
+            <div>
+              <h1 className="text-base font-bold leading-tight">Novel Translator</h1>
+              <p className="text-xs text-muted">แปลนิยายจีนเป็นไทยด้วย AI — เริ่มจากวางลิงก์หน้าสารบัญ</p>
             </div>
           </div>
+          <a
+            href="/read"
+            className="inline-flex items-center gap-1.5 h-9 px-3 border border-line rounded-lg text-sm bg-card hover:bg-surface shrink-0"
+          >
+            <BookOpen className="w-4 h-4" />
+            อ่านด่วน
+          </a>
         </div>
       </header>
 
-      {/* History Drawer Modal */}
-      {showHistory && (
-        <div className="max-w-4xl mx-auto p-4 border-b border-line bg-surface transition-all">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="font-bold flex items-center gap-2 text-sm">
-              <History className="w-4 h-4" /> ประวัติการอ่านล่าสุด ({history.length})
-            </h3>
-            {history.length > 0 && (
-              <button onClick={clearHistory} className="text-xs text-danger-fg flex items-center gap-1 hover:underline">
-                <Trash2 className="w-3 h-3" /> ล้างประวัติ
-              </button>
-            )}
-          </div>
-
-          {history.length === 0 ? (
-            <p className="text-xs text-muted py-2">ยังไม่มีประวัติการอ่าน</p>
-          ) : (
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {history.map((item, index) => (
-                <div key={index} className="flex justify-between items-center bg-card border border-line p-2 rounded text-xs gap-2">
-                  <span className="truncate font-medium flex-1">{item.title}</span>
-                  <button
-                    onClick={() => {
-                      setShowHistory(false);
-                      fetchArticle(item.url);
-                    }}
-                    className="px-2 py-1 bg-accent text-accent-fg rounded shrink-0"
-                  >
-                    อ่านต่อ
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Main Reader View */}
-      <main className="max-w-3xl mx-auto px-6 py-8">
-        {error && (
-          <div className="p-4 bg-danger-bg border border-danger-line text-danger-fg rounded-lg mb-6 space-y-3">
-            <p className="text-sm font-semibold">{error}</p>
+      <main className="max-w-4xl mx-auto px-6 py-8 space-y-8">
+        {/* สร้างโปรเจกต์ใหม่ */}
+        <section className="rounded-xl border border-line bg-card p-5 space-y-4">
+          <h2 className="text-sm font-semibold">เริ่มโปรเจกต์แปลเรื่องใหม่</h2>
+          <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="url"
+              required
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="วางลิงก์หน้าสารบัญ (目录) ของนิยายจีน เช่น https://www.uukanshu.cc/b/xxxx/"
+              className="flex-1 px-4 h-10 bg-bg border border-line rounded-lg text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent"
+            />
             <button
-              onClick={() => fetchArticle(url, true)}
-              className="px-3 py-1.5 bg-red-600 text-white text-xs rounded hover:bg-red-700 flex items-center gap-1"
+              type="submit"
+              disabled={creating}
+              className="inline-flex h-10 items-center justify-center gap-1.5 px-4 bg-accent text-accent-fg text-sm rounded-lg hover:brightness-110 disabled:opacity-50 shrink-0"
             >
-              <RotateCcw className="w-3 h-3" /> ลองใหม่ด้วยโหมดดึงข้อมูลลึก (Force Full Render)
+              {creating ? <Loader2 className="animate-spin w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              สร้างโปรเจกต์
             </button>
+          </form>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted">เว็บตัวอย่าง:</span>
+            {EXAMPLE_SITES.map((site) => (
+              <button
+                key={site.host}
+                type="button"
+                onClick={() => setUrl(`https://${site.host}/`)}
+                className="inline-flex items-center gap-1 px-2.5 h-7 rounded-full border border-line bg-surface text-xs hover:bg-card"
+              >
+                <Globe className="w-3 h-3 text-muted" />
+                {site.label}
+              </button>
+            ))}
           </div>
-        )}
 
-        {article && (
-          <article className="space-y-6">
-            <div className="flex flex-col gap-4 border-b pb-4">
-              <h1 className="text-2xl md:text-3xl font-bold leading-tight">
-                {article.title}
-              </h1>
+          <p className="text-xs text-muted leading-relaxed">
+            เคล็ดลับ: เว็บจีนบางแห่ง (โดยเฉพาะ Qidian) ติด Cloudflare/ต้อง password — แอปจะไปดึงผ่าน
+            <span className="text-fg"> ScraperAPI </span>
+            อัตโนมัติถ้าตั้ง <code className="text-xs bg-surface px-1 rounded">SCRAPER_API_KEY</code> ไว้บน Vercel
+          </p>
 
-              {/* Action Toolbar */}
-              <div className="flex flex-wrap justify-between items-center gap-2 pt-2">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleCopy}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-surface text-fg rounded-md border border-line hover:bg-card"
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copied ? 'คัดลอกแล้ว!' : 'คัดลอกเนื้อหา'}
-                  </button>
-
-                  {/* Auto Scroll Controls */}
-                  <button
-                    onClick={() => setAutoScroll(!autoScroll)}
-                    className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md border border-line ${
-                      autoScroll ? 'bg-green-600 text-white' : 'bg-surface text-fg'
-                    }`}
-                  >
-                    {autoScroll ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                    {autoScroll ? 'หยุดเลื่อน' : 'เลื่อนเลื่อนออโต้'}
-                  </button>
-                </div>
-
-                {/* Chapter Navigation */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => article.prevUrl && fetchArticle(article.prevUrl)}
-                    disabled={!article.prevUrl || loading}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-accent-soft text-accent-soft-fg rounded-md disabled:opacity-40 border border-accent-line"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" /> ตอนก่อนหน้า
-                  </button>
-                  <button
-                    onClick={() => article.nextUrl && fetchArticle(article.nextUrl)}
-                    disabled={!article.nextUrl || loading}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-accent text-accent-fg rounded-md disabled:opacity-40"
-                  >
-                    ตอนถัดไป <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+          {chapterNotice && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-accent-soft border border-accent-line text-accent-soft-fg text-xs">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="space-y-2">
+                <p>{chapterNotice}</p>
+                <a
+                  href={`/read?url=${encodeURIComponent(url)}`}
+                  className="inline-flex items-center gap-1 underline hover:text-accent"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  เปิดหน้านี้ด้วยอ่านด่วน
+                </a>
               </div>
             </div>
-
-            {/* Article Content Render */}
-            <div
-              className={`prose max-w-none space-y-6 [&>p]:mb-6 [&>p]:block ${lineHeightClasses[lineHeight]}`}
-              style={{ fontSize: `${fontSize}px` }}
-              dangerouslySetInnerHTML={{ __html: article.content }}
-            />
-
-            {/* Bottom Chapter Navigation */}
-            <div className="flex justify-between items-center pt-8 border-t mt-10">
-              <button
-                onClick={() => article.prevUrl && fetchArticle(article.prevUrl)}
-                disabled={!article.prevUrl || loading}
-                className="flex items-center gap-1 px-4 py-2 text-sm bg-accent-soft text-accent-soft-fg rounded-md disabled:opacity-40 border border-accent-line"
-              >
-                <ChevronLeft className="w-4 h-4" /> ตอนก่อนหน้า
-              </button>
-              <button
-                onClick={() => article.nextUrl && fetchArticle(article.nextUrl)}
-                disabled={!article.nextUrl || loading}
-                className="flex items-center gap-1 px-4 py-2 text-sm bg-accent text-accent-fg rounded-md disabled:opacity-40"
-              >
-                ตอนถัดไป <ChevronRight className="w-4 h-4" />
-              </button>
+          )}
+          {error && (
+            <div className="p-3 rounded-lg bg-danger-bg border border-danger-line text-danger-fg text-xs">
+              {error}
             </div>
-          </article>
-        )}
+          )}
+        </section>
 
-        {!article && !loading && !error && (
-          <div className="text-center py-20 text-muted text-sm">
-            วาง URL ด้านบนเพื่อเริ่มอ่าน หรือเปิดเลือกเรื่องจากประวัติการอ่าน
+        {/* รายการโปรเจกต์ */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">
+              โปรเจกต์แปลของฉัน {mounted && <span className="text-muted font-normal">({projects.length})</span>}
+            </h2>
+            <button
+              onClick={handleExport}
+              disabled={projects.length === 0}
+              className="inline-flex items-center gap-1.5 px-2.5 h-7 rounded-lg border border-line text-xs bg-surface hover:bg-card disabled:opacity-40"
+              title="ส่งออกทุกโปรเจกต์เป็นไฟล์ JSON (สำรอง/ย้ายไป Supabase ภายหลัง)"
+            >
+              <Download className="w-3 h-3" />
+              ส่งออก JSON
+            </button>
           </div>
-        )}
+
+          {mounted && projects.length === 0 && (
+            <div className="text-center py-16 text-muted text-sm rounded-xl border border-dashed border-line">
+              ยังไม่มีโปรเจกต์ — วางลิงก์หน้าสารบัญด้านบนเพื่อเริ่มเรื่องแรก
+            </div>
+          )}
+
+          {!mounted ? (
+            <div className="text-center py-16 text-muted text-sm">
+              <Loader2 className="animate-spin w-5 h-5 mx-auto mb-2" />
+              กำลังโหลดโปรเจกต์...
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {projects.map((p) => {
+                const fetched = p.chapters.filter((c) => c.status !== 'pending').length;
+                const translated = p.chapters.filter((c) => c.status === 'translated').length;
+                return (
+                  <div
+                    key={p.id}
+                    className="flex items-center gap-3 p-4 rounded-xl border border-line bg-card hover:border-accent-line transition-colors"
+                  >
+                    <a href={`/project/${p.id}`} className="flex-1 min-w-0 block">
+                      <div className="font-medium text-sm truncate">{p.title}</div>
+                      <div className="text-xs text-muted mt-1 truncate flex items-center gap-1.5">
+                        <Globe className="w-3 h-3 shrink-0" />
+                        {p.host}
+                        <span>·</span>
+                        บททั้งหมด {p.chapters.length} · ดึงแล้ว {fetched} · แปลแล้ว {translated}
+                      </div>
+                    </a>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <a
+                        href={`/project/${p.id}`}
+                        className="px-3 h-8 inline-flex items-center text-xs bg-accent text-accent-fg rounded-lg"
+                      >
+                        เปิด
+                      </a>
+                      <button
+                        onClick={() => handleDelete(p)}
+                        className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-line text-muted hover:text-danger-fg hover:border-danger-line"
+                        aria-label={`ลบโปรเจกต์ ${p.title}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <p className="text-xs text-muted text-center pt-2">
+          ข้อมูลทั้งหมดเก็บใน localStorage ของเบราว์เซอร์นี้เท่านั้น (จำกัด ∼5MB) — สำรองด้วย “ส่งออก JSON” แล้วจะผูก Supabase ภายหลังได้ทันที
+        </p>
       </main>
     </div>
   );

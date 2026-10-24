@@ -1,20 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseHTML } from 'linkedom';
 import { Readability } from '@mozilla/readability';
-
-function getDomainSessionId(urlStr: string): number {
-  try {
-    const hostname = new URL(urlStr).hostname;
-    let hash = 0;
-    for (let i = 0; i < hostname.length; i++) {
-      hash = (hash << 5) - hash + hostname.charCodeAt(i);
-      hash |= 0;
-    }
-    return Math.abs(hash % 9000) + 1000;
-  } catch (e) {
-    return 5555;
-  }
-}
+import { fetchArticleHtml } from '@/lib/fetchHtml';
+import { findNavigationUrls } from '@/lib/sites';
 
 function processNovelContent(rawHtml: string) {
   if (!rawHtml) return { formattedHtml: '', plainText: '' };
@@ -39,31 +27,6 @@ function processNovelContent(rawHtml: string) {
   return { formattedHtml, plainText };
 }
 
-function findNavigationUrls(doc: any, baseUrl: string) {
-  let prevUrl: string | null = null;
-  let nextUrl: string | null = null;
-  const links = Array.from(doc.querySelectorAll('a'));
-
-  for (const link of links as any[]) {
-    const text = (link.textContent || '').trim().toLowerCase();
-    const href = link.getAttribute('href');
-    const rel = (link.getAttribute('rel') || '').toLowerCase();
-
-    if (!href || href.startsWith('javascript:') || href === '#' || href.startsWith('mailto:')) continue;
-
-    try {
-      const absUrl = new URL(href, baseUrl).href;
-      if (!prevUrl && (rel === 'prev' || /上一章|上一页|上一頁|บทก่อน|ก่อนหน้า|prev|previous/.test(text))) {
-        prevUrl = absUrl;
-      }
-      if (!nextUrl && (rel === 'next' || /下一章|下一页|下一頁|บทถัดไป|ถัดไป|next/.test(text))) {
-        nextUrl = absUrl;
-      }
-    } catch (e) {}
-  }
-  return { prevUrl, nextUrl };
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
@@ -73,51 +36,8 @@ export async function POST(req: NextRequest) {
 
     const targetUrl = body.url;
     const forceRender = body.forceRender || false;
-    const apiKey = process.env.SCRAPER_API_KEY || '';
-    const sessionId = getDomainSessionId(targetUrl);
-    let html = '';
 
-    // ถ้าไม่ใช่ Force Render ให้ลองยิงแบบ Fast Fetch และ Fast Proxy ก่อน
-    if (!forceRender) {
-      try {
-        const directRes = await fetch(targetUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept-Language': 'zh-CN,zh;q=0.9,th;q=0.8,en;q=0.7',
-          },
-          signal: AbortSignal.timeout(3000),
-        });
-
-        if (directRes.ok) {
-          const tempHtml = await directRes.text();
-          if (!tempHtml.includes('正在验证浏览器') && !tempHtml.includes('cf-challenge')) {
-            html = tempHtml;
-          }
-        }
-      } catch (e) {}
-
-      if (!html && apiKey) {
-        try {
-          const fastProxyUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&session_number=${sessionId}&keep_headers=true`;
-          const res = await fetch(fastProxyUrl, { signal: AbortSignal.timeout(7000) });
-          if (res.ok) {
-            const tempHtml = await res.text();
-            if (!tempHtml.includes('正在验证浏览器') && !tempHtml.includes('cf-challenge')) {
-              html = tempHtml;
-            }
-          }
-        } catch (e) {}
-      }
-    }
-
-    // กรณีสั่ง Force Render หรือโหมดอื่นไม่สำเร็จ ให้ดึงด้วย Full Render
-    if (!html && apiKey) {
-      const renderUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&session_number=${sessionId}&render=true`;
-      const res = await fetch(renderUrl);
-      if (res.ok) {
-        html = await res.text();
-      }
-    }
+    const html = await fetchArticleHtml(targetUrl, forceRender);
 
     if (!html) {
       return NextResponse.json(
