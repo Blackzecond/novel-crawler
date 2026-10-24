@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { parseHTML } from 'linkedom';
 import { Readability } from '@mozilla/readability';
 
-// คำนวณ Session Number จากชื่อโดเมนเพื่อใช้ IP และ Cookie เดิมผ่าน Cloudflare
 function getDomainSessionId(urlStr: string): number {
   try {
     const hostname = new URL(urlStr).hostname;
@@ -17,7 +16,6 @@ function getDomainSessionId(urlStr: string): number {
   }
 }
 
-// จัดระเบียบข้อความ ย่อยแท็ก <br> และย่อหน้าให้มี \n\n ชัดเจน
 function processNovelContent(rawHtml: string) {
   if (!rawHtml) return { formattedHtml: '', plainText: '' };
 
@@ -35,9 +33,7 @@ function processNovelContent(rawHtml: string) {
     .map((p: any) => (p.textContent || '').trim())
     .filter((text: string) => text.length > 0);
 
-  // สร้างข้อความแบบเว้นย่อหน้า \n\n สำหรับกดคัดลอก
   const plainText = paragraphs.join('\n\n');
-  // สร้าง HTML ย่อหน้า <p>
   const formattedHtml = paragraphs.map((text: string) => `<p>${text}</p>`).join('');
 
   return { formattedHtml, plainText };
@@ -76,43 +72,45 @@ export async function POST(req: NextRequest) {
     }
 
     const targetUrl = body.url;
+    const forceRender = body.forceRender || false;
     const apiKey = process.env.SCRAPER_API_KEY || '';
     const sessionId = getDomainSessionId(targetUrl);
     let html = '';
 
-    // 1. Fast Fetch ตรง (ไม่ผ่าน Proxy)
-    try {
-      const directRes = await fetch(targetUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Accept-Language': 'zh-CN,zh;q=0.9,th;q=0.8,en;q=0.7',
-        },
-        signal: AbortSignal.timeout(3000),
-      });
-
-      if (directRes.ok) {
-        const tempHtml = await directRes.text();
-        if (!tempHtml.includes('正在验证浏览器') && !tempHtml.includes('cf-challenge')) {
-          html = tempHtml;
-        }
-      }
-    } catch (e) {}
-
-    // 2. Fast Proxy ผ่าน ScraperAPI พร้อม session_number (จำ Cookie/IP)
-    if (!html && apiKey) {
+    // ถ้าไม่ใช่ Force Render ให้ลองยิงแบบ Fast Fetch และ Fast Proxy ก่อน
+    if (!forceRender) {
       try {
-        const fastProxyUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&session_number=${sessionId}&keep_headers=true`;
-        const res = await fetch(fastProxyUrl, { signal: AbortSignal.timeout(7000) });
-        if (res.ok) {
-          const tempHtml = await res.text();
+        const directRes = await fetch(targetUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept-Language': 'zh-CN,zh;q=0.9,th;q=0.8,en;q=0.7',
+          },
+          signal: AbortSignal.timeout(3000),
+        });
+
+        if (directRes.ok) {
+          const tempHtml = await directRes.text();
           if (!tempHtml.includes('正在验证浏览器') && !tempHtml.includes('cf-challenge')) {
             html = tempHtml;
           }
         }
       } catch (e) {}
+
+      if (!html && apiKey) {
+        try {
+          const fastProxyUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&session_number=${sessionId}&keep_headers=true`;
+          const res = await fetch(fastProxyUrl, { signal: AbortSignal.timeout(7000) });
+          if (res.ok) {
+            const tempHtml = await res.text();
+            if (!tempHtml.includes('正在验证浏览器') && !tempHtml.includes('cf-challenge')) {
+              html = tempHtml;
+            }
+          }
+        } catch (e) {}
+      }
     }
 
-    // 3. Fallback: Full Render พร้อมจำ session_number
+    // กรณีสั่ง Force Render หรือโหมดอื่นไม่สำเร็จ ให้ดึงด้วย Full Render
     if (!html && apiKey) {
       const renderUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&session_number=${sessionId}&render=true`;
       const res = await fetch(renderUrl);
