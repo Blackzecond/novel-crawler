@@ -6,6 +6,11 @@ import {
   ChevronLeft, ChevronRight, Play, Pause, 
   History, RotateCcw, Trash2, Library, Settings, X,
 } from 'lucide-react';
+import { getStore } from '@/lib/storage';
+import {
+  loadReaderSettings, saveReaderSettings, applySavedTheme,
+  readerDefaults, ReaderFont, ReaderTheme,
+} from '@/lib/readerPrefs';
 
 interface ArticleData {
   title: string;
@@ -28,10 +33,11 @@ export default function ReaderPage() {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   
-  // Customization State
-  const [fontSize, setFontSize] = useState(18);
-  const [fontFamily, setFontFamily] = useState<'sans' | 'serif' | 'mono'>('sans');
-  const [theme, setTheme] = useState<'light' | 'dark' | 'sepia'>('light');
+  // Customization State — โหลดค่าจำตอน mount (ยังใช้ default สำหรับ SSR กัน mismatach)
+  const [fontSize, setFontSize] = useState(readerDefaults.fontSize);
+  const [fontFamily, setFontFamily] = useState<ReaderFont>(readerDefaults.fontFamily);
+  const [theme, setTheme] = useState<ReaderTheme>(readerDefaults.theme);
+  const prefsHydratedRef = useRef(false);
 
   // History & Features State
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -43,18 +49,26 @@ export default function ReaderPage() {
   const settingsRef = useRef<HTMLDivElement | null>(null);
   const settingsBtnRef = useRef<HTMLButtonElement | null>(null);
 
-  // โหลดประวัติการอ่านจาก localStorage เมื่อเปิดเว็บครั้งแรก
+  // โหลดประวัติการอ่านและค่าตั้งค่า reader จาก localStorage เมื่อเปิดเว็บครั้งแรก
   useEffect(() => {
     const savedHistory = localStorage.getItem('novel_history');
     if (savedHistory) {
       try { setHistory(JSON.parse(savedHistory)); } catch (e) {}
     }
+    const saved = loadReaderSettings();
+    setFontSize(saved.fontSize);
+    setFontFamily(saved.fontFamily);
+    setTheme(saved.theme);
+    document.documentElement.dataset.theme = saved.theme;
+    prefsHydratedRef.current = true;
   }, []);
 
-  // ซิงก์ธีมที่เลือกในแอปกับ <html> เพื่อให้ background ที่เลื่อนเกินขอบ (overscroll) ตรงสีกับธีม
+  // ซิงก์/บันทักธีมและค่าตั้งค่าทุกครั้งที่เปลี่ยน (ข้ามรอบแรกเพื่อไม่ทับค่าจำ)
   useEffect(() => {
+    if (!prefsHydratedRef.current) return;
     document.documentElement.dataset.theme = theme;
-  }, [theme]);
+    saveReaderSettings({ fontSize, fontFamily, theme });
+  }, [fontSize, fontFamily, theme]);
 
   // รับ ?url= จาก router (เปิดบทจากโปรเจกต์) แล้วดึงเนื้อหาทันที
   useEffect(() => {
@@ -142,6 +156,13 @@ export default function ReaderPage() {
 
       setArticle(data);
       saveToHistory(targetUrl, data.title);
+      // บันทึกว่าบทนี้เป็น “ที่อ่านล่าสุด” ของโปรเจกต์ที่มีบท URL นี้ (ทำปุ่มอ่านต่อบนหน้าโปรเจกต์)
+      void (async () => {
+        const projects = await getStore().listProjects();
+        const owner = projects.find((p) => p.chapters.some((c) => c.url === targetUrl));
+        const chapter = owner?.chapters.find((c) => c.url === targetUrl);
+        if (owner && chapter) await getStore().updateProject(owner.id, { lastReadChapterId: chapter.id });
+      })();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       setError(err.message);

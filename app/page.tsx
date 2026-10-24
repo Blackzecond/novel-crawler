@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Library, BookOpen, Loader2, Trash2, Download,
+  Library, BookOpen, Loader2, Trash2, Download, Upload,
   ChevronRight, AlertTriangle, ExternalLink, Globe, Sparkles, FolderOpen,
 } from 'lucide-react';
 import { getStore, NovelProject } from '@/lib/storage';
+import { applySavedTheme } from '@/lib/readerPrefs';
 
 // เว็บต้นฉบับจีนยอดนิยม — กดเพื่อใส่โดเมนต้นทางในช่อง URL
 // (วางเฉพาะลิงก์หน้าสารบัญ/目录 เช่น https://www.uukanshu.cc/b/123/ จึงจะจับรายการบทได้)
@@ -91,9 +92,11 @@ export default function ProjectsHomePage() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [chapterNotice, setChapterNotice] = useState<string>('');
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const [importNotice, setImportNotice] = useState('');
 
   useEffect(() => {
-    document.documentElement.dataset.theme = document.documentElement.dataset.theme || 'light';
+    applySavedTheme(); // ใช้ธีมที่เคยตั้งไว้ใน reader ให้ต่อเนื่อง
     void (async () => {
       setProjects(await getStore().listProjects());
       setMounted(true);
@@ -149,6 +152,20 @@ export default function ProjectsHomePage() {
     a.download = `novel-projects-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
+  };
+
+  const handleImportFile = async (file: File) => {
+    setImportNotice('');
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!Array.isArray(data)) throw new Error('รูปแบบไฟล์ไม่ถูกต้อง (ต้องเป็นไฟล์ JSON ที่ export จากแอปนี้)');
+      const result = await getStore().importProjects(data);
+      void loadProjects();
+      setImportNotice(`นำเข้าสำเร็จ ${result.imported} โปรเจกต์${result.skipped ? ` (ข้าม ${result.skipped} รายการที่ข้อมูลไม่ครบ)` : ''}`);
+    } catch (err: any) {
+      setImportNotice(`นำเข้าไม่สำเร็จ: ${err.message}`);
+    }
   };
 
   return (
@@ -259,15 +276,36 @@ export default function ProjectsHomePage() {
               โปรเจกต์แปลของฉัน{' '}
               {mounted && <span className="text-muted font-normal">({projects.length})</span>}
             </h2>
-            <button
-              onClick={handleExport}
-              disabled={projects.length === 0}
-              className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border border-line text-xs bg-card hover:bg-surface hover:border-accent-line transition-colors disabled:opacity-40 cursor-pointer"
-              title="ส่งออกทุกโปรเจกต์เป็นไฟล์ JSON (สำรอง/ย้ายไป Supabase ภายหลัง)"
-            >
-              <Download className="w-3.5 h-3.5" />
-              ส่งออก JSON
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => importInputRef.current?.click()}
+                className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border border-line text-xs bg-card hover:bg-surface hover:border-accent-line transition-colors cursor-pointer"
+                title="นำเข้าโปรเจกต์จากไฟล์ JSON ที่ export ไว้ (id ซ้ำจะถูกแทนที่ด้วยข้อมูลไฟล์)"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                นำเข้า JSON
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleImportFile(file);
+                  e.target.value = '';
+                }}
+              />
+              <button
+                onClick={handleExport}
+                disabled={projects.length === 0}
+                className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border border-line text-xs bg-card hover:bg-surface hover:border-accent-line transition-colors disabled:opacity-40 cursor-pointer"
+                title="ส่งออกทุกโปรเจกต์เป็นไฟล์ JSON (สำรอง/ย้ายไป Supabase ภายหลัง)"
+              >
+                <Download className="w-3.5 h-3.5" />
+                ส่งออก JSON
+              </button>
+            </div>
           </div>
 
           {mounted && projects.length === 0 && (
@@ -278,6 +316,10 @@ export default function ProjectsHomePage() {
                 วางลิงก์หน้าสารบัญด้านบนเพื่อเริ่มเรื่องแรกของคุณ
               </p>
             </div>
+          )}
+
+          {importNotice && (
+            <p className={`text-xs rounded-lg px-3 py-2 border ${importNotice.startsWith('นำเข้าไม่สำเร็จ') ? 'bg-danger-bg border-danger-line text-danger-fg' : 'bg-accent-soft border-accent-line text-accent-soft-fg'}`}>{importNotice}</p>
           )}
 
           {!mounted ? (

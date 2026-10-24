@@ -19,6 +19,10 @@ export interface NovelProject {
   sourceUrl: string;
   host: string;
   glossary: Record<string, string>;
+  // โหมดตรวจชื่อตัวละคร/ศัพท์เฉพาะด้วย AI: 'manual' = กดเองรายบท, 'auto' = จับหลังดึงเนื้อหาสำเร็จทุกบท
+  glossaryMode: 'manual' | 'auto';
+  // id บทล่าสุดที่เปิดอ่านจากโปรเจกต์นี้ — ใช้ทำปุ่ม "อ่านต่อ"
+  lastReadChapterId?: string;
   chapters: NovelChapter[];
   createdAt: number;
   updatedAt: number;
@@ -37,6 +41,12 @@ export interface NovelStore {
   getProject(id: string): Promise<NovelProject | null>;
   createProject(data: NewProjectData): Promise<NovelProject>;
   renameProject(id: string, title: string): Promise<NovelProject | null>;
+  updateProject(
+    id: string,
+    patch: Partial<Pick<NovelProject, 'title' | 'glossary' | 'glossaryMode' | 'lastReadChapterId'>>
+  ): Promise<NovelProject | null>;
+  // นำเข้าจากไฟล์ส่งออก JSON — id ซ้ำกับข้อมูลในเครื่องจะถูกแทนที่ด้วยข้อมูลไฟล์นำเข้า
+  importProjects(projects: NovelProject[]): Promise<{ imported: number; skipped: number }>;
   deleteProject(id: string): Promise<void>;
   updateChapter(
     projectId: string,
@@ -54,7 +64,30 @@ export function createId(): string {
 
 const STORAGE_KEY = 'novel_projects_v1';
 
-function loadAll(): NovelProject[] {
+function saveAll(projects: NovelProject[]) {
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+}
+
+/**
+ * ปรับสถานะให้ครบถ้วนกันล้อมั้งข้อมูลเก่าจากเวอร์ชันก่อนหรือไฟล์นำเข้าที่ข้อมูลไม่ครบ
+ */
+function normalizeProject(p: any): NovelProject | null {
+  if (!p || typeof p !== 'object' || !p.id || !Array.isArray(p.chapters)) return null;
+  return {
+    id: String(p.id),
+    title: String(p.title ?? 'ไม่มีชื่อเรื่อง'),
+    sourceUrl: String(p.sourceUrl ?? ''),
+    host: String(p.host ?? ''),
+    glossary: p.glossary && typeof p.glossary === 'object' ? p.glossary : {},
+    glossaryMode: p.glossaryMode === 'auto' ? 'auto' : 'manual',
+    lastReadChapterId: typeof p.lastReadChapterId === 'string' ? p.lastReadChapterId : undefined,
+    createdAt: Number(p.createdAt) || Date.now(),
+    updatedAt: Number(p.updatedAt) || Date.now(),
+    chapters: p.chapters,
+  };
+}
+
+function loadAllRaw(): unknown[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -67,22 +100,24 @@ function loadAll(): NovelProject[] {
   }
 }
 
-function saveAll(projects: NovelProject[]) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+function loadAllValid(): NovelProject[] {
+  return loadAllRaw()
+    .map(normalizeProject)
+    .filter((p): p is NovelProject => p !== null);
 }
 
 export const localStorageStore: NovelStore = {
   async listProjects() {
     // เรียงเรื่องที่แตะล่าสุดก่อน
-    return loadAll().sort((a, b) => b.updatedAt - a.updatedAt);
+    return loadAllValid().sort((a, b) => b.updatedAt - a.updatedAt);
   },
 
   async getProject(id) {
-    return loadAll().find((p) => p.id === id) ?? null;
+    return loadAllValid().find((p) => p.id === id) ?? null;
   },
 
   async createProject(data) {
-    const projects = loadAll();
+    const projects = loadAllValid();
     const now = Date.now();
     const project: NovelProject = {
       id: createId(),
@@ -90,6 +125,7 @@ export const localStorageStore: NovelStore = {
       sourceUrl: data.sourceUrl,
       host: data.host,
       glossary: data.glossary ?? {},
+      glossaryMode: 'manual',
       createdAt: now,
       updatedAt: now,
       chapters: data.chapters.map((c) => ({
@@ -106,22 +142,52 @@ export const localStorageStore: NovelStore = {
   },
 
   async renameProject(id, title) {
-    const projects = loadAll();
+    return this.updateProject(id, { title });
+  },
+
+  async updateProject(id, patch) {
+    const projects = loadAllValid();
     const target = projects.find((p) => p.id === id);
     if (!target) return null;
-    target.title = title;
+    if (patch.title !== undefined) target.title = patch.title;
+    if (patch.glossary !== undefined) target.glossary = patch.glossary;
+    if (patch.glossaryMode !== undefined) target.glossaryMode = patch.glossaryMode;
+    if (patch.lastReadChapterId !== undefined) target.lastReadChapterId = patch.lastReadChapterId;
     target.updatedAt = Date.now();
     saveAll(projects);
     return target;
   },
 
+  async importProjects(incoming) {
+    const projects = loadAllValid();
+    let imported = 0;
+    let skipped = 0;
+    for (const raw of incoming) {
+      const project = normalizeProject(raw);
+      if (!project) {
+        skipped++;
+        continue;
+      }
+      const existingIndex = projects.findIndex((p) => p.id === project.id);
+      if (existingIndex >= 0) {
+        projects[existingIndex] = project; // ข้อมูลไฟล์นำเข้าชนะ id ซ้ำ
+        imported++;
+      } else {
+        projects.push(project);
+        imported++;
+      }
+    }
+    if (imported > 0) saveAll(projects);
+    return { imported, skipped };
+  },
+
   async deleteProject(id) {
-    const projects = loadAll();
+    const projects = loadAllValid();
     saveAll(projects.filter((p) => p.id !== id));
   },
 
   async updateChapter(projectId, chapterId, patch) {
-    const projects = loadAll();
+    const projects = loadAllValid();
     const target = projects.find((p) => p.id === projectId);
     if (!target) return null;
     const chapter = target.chapters.find((c) => c.id === chapterId);

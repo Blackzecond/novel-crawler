@@ -29,7 +29,7 @@ export const viewport: Viewport = {
   themeColor: '#2563eb',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
+  // ไม่กำหนด maximumScale — ปล่อยให้ผู้ใช้พิมใช้ zoom ได้ (accessibility)
 };
 
 export default function RootLayout({
