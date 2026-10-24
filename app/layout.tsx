@@ -1,5 +1,18 @@
 import type { Metadata, Viewport } from 'next';
+import { Noto_Sans_Thai, Noto_Serif_Thai } from 'next/font/google';
 import './globals.css';
+
+const thaiSans = Noto_Sans_Thai({
+  subsets: ['thai', 'latin'],
+  variable: '--font-thai-sans',
+  display: 'swap',
+});
+
+const thaiSerif = Noto_Serif_Thai({
+  subsets: ['thai', 'latin'],
+  variable: '--font-thai-serif',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'Novel Reader App',
@@ -25,7 +38,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="th">
+    <html lang="th" className={`${thaiSans.variable} ${thaiSerif.variable}`}>
       <body>{children}</body>
     </html>
   );

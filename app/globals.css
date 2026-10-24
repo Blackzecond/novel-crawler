@@ -1,26 +1,84 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  Theme tokens — ค่าสีทั้งหมดอ้างจาก data-theme ที่กำหนดบน <html>
+  ธีมในแอป (light/dark/sepia) เป็นตัวบังคับเดียว ไม่ผูกกับ prefers-color-scheme ของ OS แล้ว
+*/
+:root,
+[data-theme='light'] {
+  --bg: #ffffff;
+  --surface: #f6f7f9;
+  --card: #ffffff;
+  --fg: #171717;
+  --fg-muted: #6b7280;
+  --line: #e5e7eb;
+  --accent: #2563eb;
+  --accent-fg: #ffffff;
+  --accent-soft: #eff6ff;
+  --accent-soft-fg: #2563eb;
+  --accent-line: #bfdbfe;
+  --danger-bg: #fef2f2;
+  --danger-fg: #b91c1c;
+  --danger-line: #fca5a5;
+}
+
+[data-theme='dark'] {
+  --bg: #111827;
+  --surface: #1f2937;
+  --card: #374151;
+  --fg: #f3f4f6;
+  --fg-muted: #9ca3af;
+  --line: #374151;
+  --accent: #2563eb;
+  --accent-fg: #ffffff;
+  --accent-soft: #172554;
+  --accent-soft-fg: #93c5fd;
+  --accent-line: #1e40af;
+  --danger-bg: #450a0a;
+  --danger-fg: #fca5a5;
+  --danger-line: #7f1d1d;
+}
+
+[data-theme='sepia'] {
+  --bg: #fbf0d9;
+  --surface: #f1e3c3;
+  --card: #f7ecd4;
+  --fg: #5f4b32;
+  --fg-muted: #8b7355;
+  --line: #e0d0aa;
+  --accent: #1d4ed8;
+  --accent-fg: #ffffff;
+  --accent-soft: #f0e4c9;
+  --accent-soft-fg: #1d4ed8;
+  --accent-line: #cbb98d;
+  --danger-bg: #fde8dd;
+  --danger-fg: #b91c1c;
+  --danger-line: #e5b8a5;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-fg: var(--accent-soft-fg);
+  --color-accent-line: var(--accent-line);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-fg: var(--danger-fg);
+  --color-danger-line: var(--danger-line);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: var(--font-thai-sans), Arial, sans-serif;
+  --font-serif: var(--font-thai-serif), Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-thai-sans), Arial, sans-serif;
 }
