@@ -133,7 +133,7 @@ export default function ReaderPage() {
                 {article.title}
               </h1>
 
-              {/* Action Bar: Copy & Navigation */}
+              {/* Action Bar */}
               <div className="flex flex-wrap justify-between items-center gap-2 pt-2">
                 <button
                   onClick={handleCopy}
@@ -162,10 +162,10 @@ export default function ReaderPage() {
               </div>
             </div>
 
-            {/* Reader Text */}
+            {/* Reader Text with Paragraph Spacing */}
             <div
-              className="prose max-w-none leading-relaxed space-y-4"
-              style={{ fontSize: `${fontSize}px`, lineHeight: '1.8' }}
+              className="prose max-w-none space-y-6 [&>p]:mb-6 [&>p]:leading-relaxed [&>p]:block"
+              style={{ fontSize: `${fontSize}px`, lineHeight: '2' }}
               dangerouslySetInnerHTML={{ __html: article.content }}
             />
 
