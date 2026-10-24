@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  ChevronLeft, ChevronRight, Loader2, Play, Square, Trash2,
+  ChevronLeft, ChevronRight, ChevronDown, Loader2, Play, Square, Trash2,
   ExternalLink, Search, ArrowUpDown, AlertTriangle, CheckCircle2, Circle,
-  Sparkles, Globe, Library,
+  Sparkles, Globe, BookOpen, Download, FolderOpen,
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 
@@ -14,7 +14,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function StatusBadge({ status }: { status: NovelChapter['status'] }) {
   if (status === 'translated')
     return (
-      <span className="inline-flex items-center gap-1 px-1.5 h-5 rounded-full text-[10px] bg-green-600 text-white shrink-0">
+      <span className="inline-flex items-center gap-1 px-1.5 h-5 rounded-full text-[10px] font-medium bg-green-600 text-white shrink-0">
         <Sparkles className="w-3 h-3" /> แปลแล้ว
       </span>
     );
@@ -130,8 +130,13 @@ export default function ProjectClient({ id }: { id: string }) {
   if (notFound) {
     return (
       <div className="min-h-screen bg-bg text-fg flex flex-col items-center justify-center gap-3 px-6 text-center">
-        <p className="text-sm text-muted">ไม่พบโปรเจกต์นี้ (อาจถูกลบไปแล้วหรือเปิดบนเบราว์เซอร์เครื่องอื่น)</p>
-        <Link href="/" className="text-sm text-accent-soft-fg underline">กลับหน้าโปรเจกต์</Link>
+        <FolderOpen className="w-10 h-10 text-line" />
+        <p className="text-sm text-muted max-w-xs leading-relaxed">
+          ไม่พบโปรเจกต์นี้ (อาจถูกลบไปแล้วหรือเปิดบนเบราว์เซอร์เครื่องอื่น)
+        </p>
+        <Link href="/" className="inline-flex items-center gap-1.5 h-9 px-4 text-sm bg-accent text-accent-fg rounded-lg font-medium">
+          <ChevronLeft className="w-4 h-4" /> กลับหน้าโปรเจกต์
+        </Link>
       </div>
     );
   }
@@ -144,48 +149,52 @@ export default function ProjectClient({ id }: { id: string }) {
     );
   }
 
+  const total = project.chapters.length;
   const fetchedCount = project.chapters.filter((c) => c.status !== 'pending').length;
+  const pendingCount = total - fetchedCount;
   const translatedCount = project.chapters.filter((c) => c.status === 'translated').length;
   const orders = project.chapters.map((c) => c.order);
   const chapters = project.chapters
     .filter((c) => !filter || c.title.includes(filter.trim()))
     .sort((a, b) => (sortDesc ? b.order - a.order : a.order - b.order));
   const hasOriginalOrderAsc = orders.length > 1 && orders[0] <= orders[orders.length - 1];
+  const progressPct = total ? ((queue.running ? queue.done : fetchedCount) / total) * 100 : 0;
 
   return (
     <div className="min-h-screen bg-bg text-fg transition-colors duration-200">
       {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-md p-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
+      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-md">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3 px-4 sm:px-6 h-14">
+          <div className="flex items-center gap-2 min-w-0">
             <Link
               href="/"
-              className="inline-flex items-center gap-1 text-sm text-fg hover:text-accent-soft-fg shrink-0"
+              className="inline-flex items-center gap-0.5 h-8 pl-1 pr-2 rounded-lg text-sm text-muted hover:text-accent-soft-fg shrink-0 cursor-pointer transition-colors"
               title="กลับหน้าโปรเจกต์แปล"
             >
               <ChevronLeft className="w-4 h-4" />
               โปรเจกต์
             </Link>
+            <div className="h-6 w-px bg-line shrink-0" />
             <div className="min-w-0">
-              <h1 className="text-base font-bold leading-tight truncate">{project.title}</h1>
-              <p className="text-xs text-muted truncate flex items-center gap-1.5">
-                <Globe className="w-3 h-3 shrink-0" /> {project.host} · {project.chapters.length} บท
+              <h1 className="text-sm sm:text-base font-bold leading-tight truncate">{project.title}</h1>
+              <p className="text-[11px] text-muted leading-tight truncate hidden sm:flex items-center gap-1.5">
+                <Globe className="w-3 h-3 shrink-0" /> {project.host} · {total} บท
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <a
               href={project.sourceUrl}
               target="_blank"
               rel="noreferrer"
-              className="h-9 w-9 inline-flex items-center justify-center border border-line rounded-lg hover:bg-card text-muted"
+              className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-line text-muted hover:text-accent-soft-fg hover:border-accent-line hover:bg-accent-soft transition-colors cursor-pointer"
               title="เปิดหน้าสารบัญต้นฉบับ"
             >
               <ExternalLink className="w-4 h-4" />
             </a>
             <button
               onClick={handleDelete}
-              className="h-9 w-9 inline-flex items-center justify-center border border-line rounded-lg hover:text-danger-fg hover:border-danger-line text-muted"
+              className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-line text-muted hover:text-danger-fg hover:border-danger-line transition-colors cursor-pointer"
               aria-label="ลบโปรเจกต์"
             >
               <Trash2 className="w-4 h-4" />
@@ -194,14 +203,30 @@ export default function ProjectClient({ id }: { id: string }) {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-6 space-y-5">
-        {/* สถิติ + ควบคุมการดึงข้อมูล */}
-        <section className="rounded-xl border border-line bg-card p-4 space-y-3">
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <StatusBadge status="pending" /> <span className="text-muted mr-2">ยังไม่ดึง {project.chapters.length - fetchedCount}</span>
-            <StatusBadge status="fetched" /> <span className="text-muted mr-2">{fetchedCount}</span>
-            <StatusBadge status="translated" /> <span className="text-muted">{translatedCount}</span>
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-4 sm:space-y-5">
+        {/* แถบสถิติ + ความคืบหน้า */}
+        <section className="rounded-xl border border-line bg-card shadow-sm p-4 space-y-3">
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div>
+              <p className="text-lg sm:text-xl font-bold leading-none">{pendingCount}</p>
+              <p className="text-[11px] text-muted mt-1">ยังไม่ดึง</p>
+            </div>
+            <div className="border-x border-line">
+              <p className="text-lg sm:text-xl font-bold leading-none text-accent-soft-fg">{fetchedCount}</p>
+              <p className="text-[11px] text-muted mt-1">ดึงแล้ว</p>
+            </div>
+            <div>
+              <p className="text-lg sm:text-xl font-bold leading-none text-green-600">{translatedCount}</p>
+              <p className="text-[11px] text-muted mt-1">แปลแล้ว</p>
+            </div>
           </div>
+          <div className="h-1.5 rounded-full bg-surface overflow-hidden">
+            <div
+              className={`h-full transition-all ${queue.running ? 'bg-accent animate-pulse' : 'bg-accent'}`}
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => {
@@ -211,12 +236,12 @@ export default function ProjectClient({ id }: { id: string }) {
                   void fetchAllPending();
                 }
               }}
-              disabled={fetchedCount === project.chapters.length && !queue.running}
-              className={`inline-flex h-9 items-center gap-1.5 px-3 rounded-lg text-sm border ${
+              disabled={pendingCount === 0 && !queue.running}
+              className={`inline-flex h-9 items-center justify-center gap-1.5 px-3 rounded-lg text-sm font-medium transition-all disabled:opacity-40 cursor-pointer ${
                 queue.running
-                  ? 'bg-danger-fg text-white border-transparent'
-                  : 'bg-accent text-accent-fg border-transparent'
-              } disabled:opacity-40`}
+                  ? 'bg-danger-fg text-white border border-transparent'
+                  : 'bg-accent text-accent-fg border border-transparent hover:brightness-110'
+              }`}
             >
               {queue.running ? (
                 <>
@@ -224,106 +249,121 @@ export default function ProjectClient({ id }: { id: string }) {
                 </>
               ) : (
                 <>
-                  <Play className="w-3.5 h-3.5" /> ดึงเนื้อหาที่ยังไม่ได้ ({project.chapters.length - fetchedCount})
+                  <Play className="w-3.5 h-3.5" /> ดึงที่ยังไม่ได้ ({pendingCount})
                 </>
               )}
             </button>
             <button
               onClick={() => setSortDesc(!sortDesc)}
-              className="inline-flex h-9 items-center gap-1.5 px-3 rounded-lg text-sm border border-line bg-surface hover:bg-card"
+              className="inline-flex h-9 items-center gap-1.5 px-3 rounded-lg text-sm border border-line bg-surface hover:bg-card hover:border-accent-line transition-colors cursor-pointer"
               title={hasOriginalOrderAsc ? 'สารบัญต้นฉบับเรียงบทจากน้อยไปมาก' : 'สารบัญต้นฉบับเรียงบทแบบย้อนกลับ'}
             >
               <ArrowUpDown className="w-3.5 h-3.5" />
               {sortDesc ? 'ใหม่…เก่า' : 'เก่า…ใหม่'}
             </button>
-            <div className="relative flex-1 min-w-[10rem]">
-              <Search className="w-3.5 h-3.5 text-muted absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <div className="relative flex-1 min-w-[10rem] basis-full sm:basis-auto">
+              <Search className="w-3.5 h-3.5 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder="ค้นหาชื่อบท..."
-                className="w-full h-9 pl-8 pr-3 text-sm bg-bg border border-line rounded-lg text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent"
+                className="w-full h-9 pl-9 pr-3 text-sm bg-bg border border-line rounded-lg text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60 focus:border-accent-line"
               />
             </div>
           </div>
           {queue.running && (
-            <div className="h-1.5 rounded-full bg-surface overflow-hidden">
-              <div
-                className="h-full bg-accent transition-all"
-                style={{ width: `${queue.total ? (queue.done / queue.total) * 100 : 0}%` }}
-              />
-            </div>
+            <p className="text-[11px] text-muted flex items-center gap-1.5">
+              <Loader2 className="animate-spin w-3 h-3" />
+              กำลังดึงแบบลำดับ — เว้นจังหวะ 0.7 วิ/บท กัน rate-limit ปิดแท็บนี้ไม่ได้ระหว่างลงมือทำ
+            </p>
           )}
         </section>
 
         {/* รายการบท */}
-        <section className="rounded-xl border border-line bg-card divide-y divide-line">
+        <section className="rounded-xl border border-line bg-card shadow-sm divide-y divide-line">
           {chapters.length === 0 && (
-            <div className="p-8 text-center text-sm text-muted">ไม่พบบทที่ตรงกับคำค้น</div>
+            <div className="p-10 text-center">
+              <Search className="w-8 h-8 mx-auto mb-2 text-line" />
+              <p className="text-sm text-muted">ไม่พบบทที่ตรงกับคำค้น</p>
+            </div>
           )}
           {chapters.map((c) => {
             const busy = busyIds.has(c.id);
+            const expanded = expandedId === c.id;
             return (
               <div key={c.id}>
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <span className="text-xs text-muted w-12 shrink-0 tabular-nums">
+                <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 hover:bg-surface/50 transition-colors">
+                  <span className="hidden sm:block text-xs text-muted w-10 shrink-0 tabular-nums text-right">
                     {c.order + 1}
                   </span>
                   <button
-                    onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
-                    className="flex-1 min-w-0 text-left"
+                    onClick={() => setExpandedId(expanded ? null : c.id)}
+                    className="flex-1 min-w-0 text-left cursor-pointer"
+                    aria-expanded={expanded}
                   >
-                    <span className="text-sm truncate block">{c.title}</span>
+                    <span className="text-sm leading-snug line-clamp-2">{c.title}</span>
                     {c.error && (
-                      <span className="text-xs text-danger-fg truncate block mt-0.5">{c.error}</span>
+                      <span className="flex items-center gap-1 text-xs text-danger-fg truncate mt-0.5">
+                        <AlertTriangle className="w-3 h-3 shrink-0" /> {c.error}
+                      </span>
                     )}
                   </button>
                   <StatusBadge status={c.status} />
-                  {!busy && (
-                    <button
-                      onClick={() => void fetchChapter(c)}
-                      className="inline-flex h-7 items-center gap-1 px-2 rounded-md text-xs border border-line bg-surface hover:bg-card shrink-0"
-                      title="ดึงเนื้อหาบทนี้"
-                    >
-                      <ChevronRight className="w-3 h-3" /> ดึง
-                    </button>
-                  )}
+                  <button
+                    onClick={() => void fetchChapter(c)}
+                    disabled={busy}
+                    className={`hidden md:inline-flex h-7 items-center gap-1 px-2.5 rounded-md text-xs border border-line bg-surface hover:bg-card hover:border-accent-line transition-colors shrink-0 cursor-pointer disabled:opacity-40 ${
+                      c.status !== 'pending' ? 'opacity-60' : ''
+                    }`}
+                    title="ดึงเนื้อหาบทนี้"
+                  >
+                    <ChevronRight className="w-3 h-3" /> ดึง
+                  </button>
                   {busy && <Loader2 className="animate-spin w-4 h-4 text-accent shrink-0" />}
-                  <ChevronRight
-                    className={`w-4 h-4 text-muted shrink-0 transition-transform ${expandedId === c.id ? 'rotate-90' : ''}`}
+                  <ChevronDown
+                    className={`w-4 h-4 text-muted shrink-0 transition-transform cursor-pointer ${expanded ? 'rotate-180' : ''}`}
+                    onClick={() => setExpandedId(expanded ? null : c.id)}
                   />
                 </div>
 
-                {expandedId === c.id && (
-                  <div className="px-4 pb-4 space-y-3">
+                {expanded && (
+                  <div className="px-3 sm:px-4 pb-4 pt-3 space-y-3 bg-surface/50 border-t border-line/60">
                     <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => void fetchChapter(c)}
+                        disabled={busy}
+                        className="md:hidden inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs bg-accent text-accent-fg font-medium cursor-pointer disabled:opacity-50"
+                      >
+                        <ChevronRight className="w-3 h-3" /> ดึงเนื้อหา
+                      </button>
                       <Link
                         href={`/read?url=${encodeURIComponent(c.url)}`}
-                        className="inline-flex items-center gap-1 px-2.5 h-7 rounded-md text-xs bg-accent text-accent-fg"
+                        className="inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs bg-accent text-accent-fg font-medium cursor-pointer"
                       >
-                        <ExternalLink className="w-3 h-3" /> เปิดใน Reader
+                        <BookOpen className="w-3 h-3" /> เปิดใน Reader
                       </Link>
                       <button
                         onClick={() => void fetchChapter(c, true)}
-                        className="inline-flex items-center gap-1 px-2.5 h-7 rounded-md text-xs border border-line bg-surface hover:bg-card"
+                        className="inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs border border-line bg-surface hover:bg-card transition-colors cursor-pointer"
                       >
-                        ลองใหม่ (Force Full Render)
+                        ลองใหม่ (Force Render)
                       </button>
                       <button
                         disabled
-                        title="รอ Phase 3 — ต่อยอด AI key แล้วใช้งานได้"
-                        className="inline-flex items-center gap-1 px-2.5 h-7 rounded-md text-xs border border-line bg-surface text-muted opacity-60 cursor-not-allowed"
+                        title="รอ Phase 3 — ต่อยอดด้วย AI key แล้วใช้งานได้"
+                        className="inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs border border-line bg-surface text-muted opacity-60 cursor-not-allowed"
                       >
                         <Sparkles className="w-3 h-3" /> แปลด้วย AI
                       </button>
                     </div>
-                    <pre className="text-xs leading-relaxed whitespace-pre-wrap font-sans max-h-56 overflow-y-auto p-3 rounded-lg bg-surface border border-line">
+                    <pre className="text-xs leading-relaxed whitespace-pre-wrap font-sans max-h-56 overflow-y-auto p-3 rounded-lg bg-bg border border-line">
                       {c.originalText?.slice(0, 2000) || 'ยังไม่ได้ดึงเนื้อหา'}
                       {c.originalText && c.originalText.length > 2000 && ' …'}
                     </pre>
                     {c.originalText && (
-                      <p className="text-[11px] text-muted">
-                        ({c.originalText.length.toLocaleString()} ตัวอักษร)
+                      <p className="flex items-center gap-1 text-[11px] text-muted">
+                        <Download className="w-3 h-3" />
+                        {c.originalText.length.toLocaleString()} ตัวอักษร
                       </p>
                     )}
                   </div>
@@ -332,6 +372,13 @@ export default function ProjectClient({ id }: { id: string }) {
             );
           })}
         </section>
+
+        {!queue.running && pendingCount > 0 && (
+          <p className="text-[11px] text-muted text-center flex items-center justify-center gap-1.5">
+            <Sparkles className="w-3 h-3" />
+            กดปุ่ม “ดึงที่ยังไม่ได้” ด้านบนเพื่อดึงบททั้งหมดแบบลำดับในครั้งเดียว หรือขยายแต่ละบทเพื่อดึงเฉพาะที่ต้องการ
+          </p>
+        )}
       </main>
     </div>
   );

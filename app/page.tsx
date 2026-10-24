@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Library, BookOpen, Loader2, Trash2, Download,
-  ChevronRight, AlertTriangle, ExternalLink, Globe,
+  ChevronRight, AlertTriangle, ExternalLink, Globe, Sparkles, FolderOpen,
 } from 'lucide-react';
 import { getStore, NovelProject } from '@/lib/storage';
 
@@ -15,6 +15,73 @@ const EXAMPLE_SITES = [
   { label: '69书吧 69shu', host: 'www.69shu.pro' },
   { label: '起点中文 Qidian', host: 'www.qidian.com' },
 ];
+
+function ProjectCard({
+  project,
+  onDelete,
+}: {
+  project: NovelProject;
+  onDelete: (p: NovelProject) => void;
+}) {
+  const fetched = project.chapters.filter((c) => c.status !== 'pending').length;
+  const translated = project.chapters.filter((c) => c.status === 'translated').length;
+  const pct = project.chapters.length ? (fetched / project.chapters.length) * 100 : 0;
+
+  return (
+    <article className="group relative rounded-xl border border-line bg-card shadow-sm hover:shadow-md hover:border-accent-line transition-all">
+      <div className="flex items-center gap-3 p-4">
+        <a href={`/project/${project.id}`} className="flex-1 min-w-0 block cursor-pointer">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-accent shrink-0" />
+            <span className="font-semibold text-sm truncate">{project.title}</span>
+          </div>
+          <div className="text-xs text-muted mt-1.5 flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1 max-w-full">
+              <Globe className="w-3 h-3 shrink-0" />
+              <span className="truncate">{project.host}</span>
+            </span>
+            <span aria-hidden className="text-line">·</span>
+            <span className="shrink-0">{project.chapters.length} บท</span>
+            <span aria-hidden className="text-line">·</span>
+            <span className="inline-flex items-center gap-1 shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent/60" />
+              ดึงแล้ว {fetched}
+            </span>
+            {translated > 0 && (
+              <span className="inline-flex items-center gap-1 shrink-0">
+                <Sparkles className="w-3 h-3 text-green-600" />
+                แปลแล้ว {translated}
+              </span>
+            )}
+          </div>
+        </a>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <a
+            href={`/project/${project.id}`}
+            aria-label={`เปิดโปรเจกต์ ${project.title}`}
+            className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted hover:text-accent-soft-fg hover:bg-accent-soft transition-colors cursor-pointer"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </a>
+          <button
+            onClick={() => onDelete(project)}
+            className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted hover:text-danger-fg hover:border-danger-line transition-colors cursor-pointer"
+            aria-label={`ลบโปรเจกต์ ${project.title}`}
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+      {/* แถบความคืบหน้าการดึงข้อมูล */}
+      <div className="h-1 rounded-b-xl bg-surface overflow-hidden">
+        <div
+          className="h-full bg-accent transition-all group-hover:brightness-110"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </article>
+  );
+}
 
 export default function ProjectsHomePage() {
   const router = useRouter();
@@ -87,56 +154,75 @@ export default function ProjectsHomePage() {
   return (
     <div className="min-h-screen bg-bg text-fg transition-colors duration-200">
       {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-md p-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
-            <Library className="w-5 h-5 text-accent" />
-            <div>
-              <h1 className="text-base font-bold leading-tight">Novel Translator</h1>
-              <p className="text-xs text-muted">แปลนิยายจีนเป็นไทยด้วย AI — เริ่มจากวางลิงก์หน้าสารบัญ</p>
+      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-md">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3 px-4 sm:px-6 h-14">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="h-8 w-8 inline-flex items-center justify-center rounded-lg bg-accent text-accent-fg shrink-0">
+              <Library className="w-4 h-4" />
+            </span>
+            <div className="min-w-0">
+              <h1 className="text-base font-bold leading-tight truncate">Novel Translator</h1>
+              <p className="text-[11px] text-muted leading-tight truncate hidden sm:block">
+                แปลนิยายจีนเป็นไทยด้วย AI — เริ่มจากวางลิงก์หน้าสารบัญ
+              </p>
             </div>
           </div>
           <a
             href="/read"
-            className="inline-flex items-center gap-1.5 h-9 px-3 border border-line rounded-lg text-sm bg-card hover:bg-surface shrink-0"
+            className="inline-flex items-center gap-1.5 h-8 px-3 border border-line rounded-lg text-xs bg-card hover:bg-surface hover:border-accent-line transition-colors shrink-0 cursor-pointer"
           >
-            <BookOpen className="w-4 h-4" />
-            อ่านด่วน
+            <BookOpen className="w-3.5 h-3.5" />
+            อ่านด่วน (URL ใดก็ได้)
           </a>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8 space-y-8">
-        {/* สร้างโปรเจกต์ใหม่ */}
-        <section className="rounded-xl border border-line bg-card p-5 space-y-4">
-          <h2 className="text-sm font-semibold">เริ่มโปรเจกต์แปลเรื่องใหม่</h2>
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
+        {/* สร้างโปรเจกต์ใหม่ — Hero */}
+        <section className="rounded-2xl border border-line bg-card shadow-sm p-5 sm:p-6 space-y-4">
+          <div className="flex items-start gap-3">
+            <span className="h-9 w-9 inline-flex items-center justify-center rounded-lg bg-accent-soft text-accent-soft-fg shrink-0">
+              <FolderOpen className="w-4.5 h-4.5" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold leading-snug">เริ่มโปรเจกต์แปลเรื่องใหม่</h2>
+              <p className="text-xs text-muted mt-0.5 leading-relaxed">
+                วางลิงก์หน้าสารบัญ (目录) ของนิยายจีน — ระบบจะจับรายชื่อบทให้อัตโนมัติ
+              </p>
+            </div>
+          </div>
+
           <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-2">
             <input
               type="url"
               required
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="วางลิงก์หน้าสารบัญ (目录) ของนิยายจีน เช่น https://www.uukanshu.cc/b/xxxx/"
-              className="flex-1 px-4 h-10 bg-bg border border-line rounded-lg text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent"
+              placeholder="https://www.uukanshu.cc/b/xxxx/"
+              className="flex-1 px-4 h-11 bg-bg border border-line rounded-xl text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60 focus:border-accent-line"
             />
             <button
               type="submit"
               disabled={creating}
-              className="inline-flex h-10 items-center justify-center gap-1.5 px-4 bg-accent text-accent-fg text-sm rounded-lg hover:brightness-110 disabled:opacity-50 shrink-0"
+              className="inline-flex h-11 items-center justify-center gap-1.5 px-5 bg-accent text-accent-fg text-sm font-medium rounded-xl hover:brightness-110 disabled:opacity-50 transition-all cursor-pointer"
             >
-              {creating ? <Loader2 className="animate-spin w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              {creating ? (
+                <Loader2 className="animate-spin w-4 h-4" />
+              ) : (
+                <ChevronRight className="w-4 h-4" />
+              )}
               สร้างโปรเจกต์
             </button>
           </form>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 -mt-1">
             <span className="text-xs text-muted">เว็บตัวอย่าง:</span>
             {EXAMPLE_SITES.map((site) => (
               <button
                 key={site.host}
                 type="button"
                 onClick={() => setUrl(`https://${site.host}/`)}
-                className="inline-flex items-center gap-1 px-2.5 h-7 rounded-full border border-line bg-surface text-xs hover:bg-card"
+                className="inline-flex items-center gap-1 px-2.5 h-7 rounded-full border border-line bg-surface text-xs hover:bg-card hover:border-accent-line transition-colors cursor-pointer"
               >
                 <Globe className="w-3 h-3 text-muted" />
                 {site.label}
@@ -144,20 +230,14 @@ export default function ProjectsHomePage() {
             ))}
           </div>
 
-          <p className="text-xs text-muted leading-relaxed">
-            เคล็ดลับ: เว็บจีนบางแห่ง (โดยเฉพาะ Qidian) ติด Cloudflare/ต้อง password — แอปจะไปดึงผ่าน
-            <span className="text-fg"> ScraperAPI </span>
-            อัตโนมัติถ้าตั้ง <code className="text-xs bg-surface px-1 rounded">SCRAPER_API_KEY</code> ไว้บน Vercel
-          </p>
-
           {chapterNotice && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-accent-soft border border-accent-line text-accent-soft-fg text-xs">
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-accent-soft border border-accent-line text-accent-soft-fg text-xs leading-relaxed">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-0">
                 <p>{chapterNotice}</p>
                 <a
                   href={`/read?url=${encodeURIComponent(url)}`}
-                  className="inline-flex items-center gap-1 underline hover:text-accent"
+                  className="inline-flex items-center gap-1 underline hover:brightness-110 cursor-pointer"
                 >
                   <ExternalLink className="w-3 h-3" />
                   เปิดหน้านี้ด้วยอ่านด่วน
@@ -166,7 +246,7 @@ export default function ProjectsHomePage() {
             </div>
           )}
           {error && (
-            <div className="p-3 rounded-lg bg-danger-bg border border-danger-line text-danger-fg text-xs">
+            <div className="p-3 rounded-xl bg-danger-bg border border-danger-line text-danger-fg text-xs">
               {error}
             </div>
           )}
@@ -174,75 +254,49 @@ export default function ProjectsHomePage() {
 
         {/* รายการโปรเจกต์ */}
         <section className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <h2 className="text-sm font-semibold">
-              โปรเจกต์แปลของฉัน {mounted && <span className="text-muted font-normal">({projects.length})</span>}
+              โปรเจกต์แปลของฉัน{' '}
+              {mounted && <span className="text-muted font-normal">({projects.length})</span>}
             </h2>
             <button
               onClick={handleExport}
               disabled={projects.length === 0}
-              className="inline-flex items-center gap-1.5 px-2.5 h-7 rounded-lg border border-line text-xs bg-surface hover:bg-card disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border border-line text-xs bg-card hover:bg-surface hover:border-accent-line transition-colors disabled:opacity-40 cursor-pointer"
               title="ส่งออกทุกโปรเจกต์เป็นไฟล์ JSON (สำรอง/ย้ายไป Supabase ภายหลัง)"
             >
-              <Download className="w-3 h-3" />
+              <Download className="w-3.5 h-3.5" />
               ส่งออก JSON
             </button>
           </div>
 
           {mounted && projects.length === 0 && (
-            <div className="text-center py-16 text-muted text-sm rounded-xl border border-dashed border-line">
-              ยังไม่มีโปรเจกต์ — วางลิงก์หน้าสารบัญด้านบนเพื่อเริ่มเรื่องแรก
+            <div className="rounded-xl border border-dashed border-line bg-card/50 py-12 px-6 text-center">
+              <FolderOpen className="w-10 h-10 mx-auto mb-3 text-line" />
+              <p className="text-sm text-muted font-medium">ยังไม่มีโปรเจกต์</p>
+              <p className="text-xs text-muted mt-1">
+                วางลิงก์หน้าสารบัญด้านบนเพื่อเริ่มเรื่องแรกของคุณ
+              </p>
             </div>
           )}
 
           {!mounted ? (
-            <div className="text-center py-16 text-muted text-sm">
+            <div className="text-center py-12 text-muted text-sm">
               <Loader2 className="animate-spin w-5 h-5 mx-auto mb-2" />
               กำลังโหลดโปรเจกต์...
             </div>
           ) : (
-            <div className="grid gap-2">
-              {projects.map((p) => {
-                const fetched = p.chapters.filter((c) => c.status !== 'pending').length;
-                const translated = p.chapters.filter((c) => c.status === 'translated').length;
-                return (
-                  <div
-                    key={p.id}
-                    className="flex items-center gap-3 p-4 rounded-xl border border-line bg-card hover:border-accent-line transition-colors"
-                  >
-                    <a href={`/project/${p.id}`} className="flex-1 min-w-0 block">
-                      <div className="font-medium text-sm truncate">{p.title}</div>
-                      <div className="text-xs text-muted mt-1 truncate flex items-center gap-1.5">
-                        <Globe className="w-3 h-3 shrink-0" />
-                        {p.host}
-                        <span>·</span>
-                        บททั้งหมด {p.chapters.length} · ดึงแล้ว {fetched} · แปลแล้ว {translated}
-                      </div>
-                    </a>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <a
-                        href={`/project/${p.id}`}
-                        className="px-3 h-8 inline-flex items-center text-xs bg-accent text-accent-fg rounded-lg"
-                      >
-                        เปิด
-                      </a>
-                      <button
-                        onClick={() => handleDelete(p)}
-                        className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-line text-muted hover:text-danger-fg hover:border-danger-line"
-                        aria-label={`ลบโปรเจกต์ ${p.title}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="grid gap-2.5">
+              {projects.map((p) => (
+                <ProjectCard key={p.id} project={p} onDelete={handleDelete} />
+              ))}
             </div>
           )}
         </section>
 
-        <p className="text-xs text-muted text-center pt-2">
-          ข้อมูลทั้งหมดเก็บใน localStorage ของเบราว์เซอร์นี้เท่านั้น (จำกัด ∼5MB) — สำรองด้วย “ส่งออก JSON” แล้วจะผูก Supabase ภายหลังได้ทันที
+        <p className="text-[11px] text-muted text-center pt-2 leading-relaxed max-w-lg mx-auto">
+          ข้อมูลทั้งหมดเก็บใน localStorage ของเบราว์เซอร์นี้เท่านั้น (จำกัด ∼5MB) — สำรองด้วย
+          “ส่งออก JSON” แล้วจะผูก Supabase ภายหลังได้ทันที
         </p>
       </main>
     </div>

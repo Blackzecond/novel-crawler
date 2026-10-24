@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   Sun, Moon, BookOpen, Loader2, Copy, Check, 
-  ChevronLeft, ChevronRight, ChevronDown, Play, Pause, 
-  History, RotateCcw, Trash2, Library 
+  ChevronLeft, ChevronRight, Play, Pause, 
+  History, RotateCcw, Trash2, Library, Settings, X,
 } from 'lucide-react';
 
 interface ArticleData {
@@ -30,18 +30,18 @@ export default function ReaderPage() {
   
   // Customization State
   const [fontSize, setFontSize] = useState(18);
-  const [lineHeight, setLineHeight] = useState<'normal' | 'relaxed' | 'loose'>('relaxed');
   const [fontFamily, setFontFamily] = useState<'sans' | 'serif' | 'mono'>('sans');
   const [theme, setTheme] = useState<'light' | 'dark' | 'sepia'>('light');
 
   // History & Features State
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [autoScroll, setAutoScroll] = useState(false);
   const [scrollSpeed, setScrollSpeed] = useState(1);
-  const [showFontMenu, setShowFontMenu] = useState(false);
   const scrollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const fontDropdownRef = useRef<HTMLDivElement | null>(null);
+  const settingsRef = useRef<HTMLDivElement | null>(null);
+  const settingsBtnRef = useRef<HTMLButtonElement | null>(null);
 
   // โหลดประวัติการอ่านจาก localStorage เมื่อเปิดเว็บครั้งแรก
   useEffect(() => {
@@ -65,16 +65,17 @@ export default function ReaderPage() {
     }
   }, []);
 
-  // ปิด dropdown ฟอนต์เมื่อคลิกนอกกรอบหรือกด Esc
+  // ปิดแผงการตั้งค่าเมื่อคลิกนอกกรอบหรือกด Esc
   useEffect(() => {
-    if (!showFontMenu) return;
+    if (!showSettings) return;
     const handlePointerDown = (e: MouseEvent | TouchEvent) => {
-      if (fontDropdownRef.current && !fontDropdownRef.current.contains(e.target as Node)) {
-        setShowFontMenu(false);
-      }
+      const target = e.target as Node;
+      // ไม่ปิดถ้ากดที่แผงการตั้งค่าเอง หรือที่ปุ่ม toggle (กันคลิกแล้วเปิดซ้ำ)
+      if (settingsRef.current?.contains(target) || settingsBtnRef.current?.contains(target)) return;
+      setShowSettings(false);
     };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowFontMenu(false);
+      if (e.key === 'Escape') setShowSettings(false);
     };
     document.addEventListener('mousedown', handlePointerDown);
     document.addEventListener('touchstart', handlePointerDown);
@@ -84,7 +85,7 @@ export default function ReaderPage() {
       document.removeEventListener('touchstart', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [showFontMenu]);
+  }, [showSettings]);
 
   // ระบบ Auto-Scroll
   useEffect(() => {
@@ -168,181 +169,217 @@ export default function ReaderPage() {
     mono: 'font-mono',
   };
 
-  const lineHeightClasses = {
-    normal: '[&>p]:leading-normal',
-    relaxed: '[&>p]:leading-relaxed',
-    loose: '[&>p]:leading-loose',
-  };
+  const themes = [
+    { id: 'light' as const, label: 'สว่าง', icon: <Sun className="w-4 h-4" /> },
+    { id: 'sepia' as const, label: 'กระดาษ', icon: <span aria-hidden className="text-sm">📖</span> },
+    { id: 'dark' as const, label: 'มืด', icon: <Moon className="w-4 h-4" /> },
+  ];
+
+  const fonts = [
+    { id: 'sans' as const, label: 'Sans' },
+    { id: 'serif' as const, label: 'Serif' },
+    { id: 'mono' as const, label: 'Mono' },
+  ] as const;
 
   return (
     <div className={`min-h-screen bg-bg text-fg transition-colors duration-200 ${fontClasses[fontFamily]}`}>
-      {/* Header Bar */}
-      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-md p-4">
-        <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-4 justify-between items-center">
-          <div className="flex items-center gap-3 shrink-0">
-            <a
-              href="/"
-              className="inline-flex items-center gap-1.5 text-sm text-fg hover:text-accent-soft-fg"
-              title="กลับหน้าโปรเจกต์แปล"
-            >
-              <Library className="w-4 h-4" />
-              โปรเจกต์แปล
-            </a>
-          </div>
+      {/* Header Bar — บางเบา คุมสูงตายตัว */}
+      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-md">
+        <div className="max-w-3xl mx-auto flex items-center gap-2 h-14 px-3 sm:px-6">
+          <a
+            href="/"
+            className="inline-flex items-center gap-1.5 h-8 pl-1 pr-2 rounded-lg text-sm text-muted hover:text-accent-soft-fg shrink-0 cursor-pointer transition-colors"
+            title="กลับหน้าโปรเจกต์แปล"
+          >
+            <Library className="w-4 h-4" />
+            <span className="hidden sm:inline">โปรเจกต์แปล</span>
+          </a>
 
-          <form onSubmit={handleFormSubmit} className="flex gap-2 w-full md:w-auto flex-1">
+          <form onSubmit={handleFormSubmit} className="flex gap-2 flex-1 min-w-0">
             <input
               type="url"
               placeholder="วาง URL นิยายที่ต้องการอ่าน..."
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              className="flex-1 px-4 py-2 bg-card border border-line rounded-lg text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent text-sm"
+              className="flex-1 min-w-0 px-3 h-9 bg-card border border-line rounded-lg text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60 focus:border-accent-line text-sm"
               required
             />
             <button
               type="submit"
               disabled={loading}
-              className="px-4 py-2 bg-accent text-accent-fg text-sm rounded-lg hover:brightness-110 disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+              className="h-9 px-3 sm:px-4 bg-accent text-accent-fg text-sm font-medium rounded-lg hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-1.5 shrink-0 cursor-pointer transition-all"
             >
               {loading ? <Loader2 className="animate-spin w-4 h-4" /> : <BookOpen className="w-4 h-4" />}
-              ดึงเนื้อหา
+              <span className="hidden sm:inline">ดึงเนื้อหา</span>
             </button>
           </form>
 
-          {/* Controller Toolbar */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* History Toggle */}
+          {/* History + Settings toggles */}
+          <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => setShowHistory(!showHistory)}
-              className="inline-flex h-9 w-9 items-center justify-center border border-line rounded-lg hover:bg-card shrink-0"
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors cursor-pointer shrink-0 ${showHistory ? 'bg-accent-soft border-accent-line text-accent-soft-fg' : 'border-line text-muted hover:bg-card hover:text-fg'}`}
               title="ประวัติการอ่าน"
               aria-label="ประวัติการอ่าน"
+              aria-expanded={showHistory}
             >
               <History className="w-4 h-4" />
             </button>
-
-            {/* Font Family — custom dropdown (native select popup ไม่เข้าธีม) */}
-            <div ref={fontDropdownRef} className="relative shrink-0">
+            <div className="shrink-0">
               <button
                 type="button"
-                onClick={() => setShowFontMenu(!showFontMenu)}
-                aria-haspopup="listbox"
-                aria-expanded={showFontMenu}
-                aria-label="เลือกชนิดฟอนต์"
-                className="inline-flex h-9 items-center gap-1 px-2 border border-line rounded-lg text-sm bg-card text-fg hover:bg-surface"
+                ref={settingsBtnRef}
+                onClick={() => setShowSettings(!showSettings)}
+                aria-haspopup="dialog"
+                aria-expanded={showSettings}
+                aria-label="การตั้งค่าการอ่าน"
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors cursor-pointer shrink-0 ${showSettings ? 'bg-accent-soft border-accent-line text-accent-soft-fg' : 'border-line text-muted hover:bg-card hover:text-fg'}`}
               >
-                {fontFamily === 'sans' ? 'Sans' : fontFamily === 'serif' ? 'Serif' : 'Mono'}
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showFontMenu ? 'rotate-180' : ''}`} />
-              </button>
-              {showFontMenu && (
-                <div
-                  role="listbox"
-                  className="absolute z-30 top-full mt-1 w-32 py-1 rounded-lg border border-line bg-card shadow-lg"
-                >
-                  {(['sans', 'serif', 'mono'] as const).map((f) => (
-                    <button
-                      key={f}
-                      type="button"
-                      role="option"
-                      aria-selected={fontFamily === f}
-                      onClick={() => { setFontFamily(f); setShowFontMenu(false); }}
-                      className={`w-full flex items-center justify-between gap-2 text-left px-3 py-1.5 text-sm hover:bg-surface ${fontFamily === f ? 'text-accent-soft-fg font-medium' : 'text-fg'}`}
-                    >
-                      {f === 'sans' ? 'Sans' : f === 'serif' ? 'Serif' : 'Mono'}
-                      {fontFamily === f && <Check className="w-3.5 h-3.5" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Font Size */}
-            <div className="flex items-center border border-line rounded-lg h-9 px-1 bg-card shrink-0">
-              <button onClick={() => setFontSize(Math.max(14, fontSize - 2))} className="inline-flex h-7 items-center justify-center px-1.5 text-xs font-bold" aria-label="ลดขนาดอักษร">A-</button>
-              <span className="text-xs px-1">{fontSize}px</span>
-              <button onClick={() => setFontSize(Math.min(28, fontSize + 2))} className="inline-flex h-7 items-center justify-center px-1.5 text-xs font-bold" aria-label="เพิ่มขนาดอักษร">A+</button>
-            </div>
-
-            {/* Theme Selector */}
-            <div className="flex items-center gap-1 border border-line rounded-lg h-9 px-1 bg-card shrink-0">
-              <button onClick={() => setTheme('light')} className={`inline-flex h-7 w-7 items-center justify-center rounded ${theme === 'light' ? 'bg-gray-200 text-black' : ''}`} aria-label="ธีมสว่าง">
-                <Sun className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={() => setTheme('sepia')} className={`inline-flex h-7 w-7 items-center justify-center rounded ${theme === 'sepia' ? 'bg-[#e2d5b7] text-[#5f4b32]' : ''}`} title="ธีมกระดาษ (Sepia)" aria-label="ธีมกระดาษสีสลัก">
-                📖
-              </button>
-              <button onClick={() => setTheme('dark')} className={`inline-flex h-7 w-7 items-center justify-center rounded ${theme === 'dark' ? 'bg-gray-700 text-white' : ''}`} aria-label="ธีมมืด">
-                <Moon className="w-3.5 h-3.5" />
+                <Settings className="w-4 h-4" />
               </button>
             </div>
           </div>
         </div>
       </header>
 
-      {/* History Drawer Modal */}
+      {/* แผงการตั้งค่า — วางนอก <header> เพราะ backdrop-blur ทำ fixed คำนวณผิดที่:
+          ยึดขอบล่างจอบนมือถือ, ปรากฏใต้ header มุมขวาบนเดสก์ท็อป */}
+      {showSettings && (
+        <div
+          ref={settingsRef}
+          role="dialog"
+          aria-label="การตั้งค่าการอ่าน"
+          className={`fixed z-30 inset-x-0 bottom-0 sm:inset-x-auto sm:bottom-auto sm:top-[4.25rem] sm:right-6 sm:w-72 p-4 sm:p-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-3 rounded-t-2xl sm:rounded-xl border border-line bg-card shadow-xl space-y-4 sm:space-y-3`}
+        >
+                  <div className="flex items-center justify-between sm:hidden -mb-1">
+                    <h3 className="text-sm font-bold">การตั้งค่าการอ่าน</h3>
+                    <button onClick={() => setShowSettings(false)} className="h-7 w-7 inline-flex items-center justify-center rounded-lg text-muted hover:text-fg cursor-pointer" aria-label="ปิดการตั้งค่า">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* ธีม */}
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] font-medium text-muted uppercase tracking-wide">ธีมสี</p>
+                    <div className="flex gap-1.5">
+                      {themes.map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => setTheme(t.id)}
+                          className={`flex-1 h-9 inline-flex items-center justify-center gap-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
+                            theme === t.id
+                              ? 'bg-accent-soft border-accent-line text-accent-soft-fg'
+                              : 'border-line bg-surface text-muted hover:text-fg'
+                          }`}
+                          aria-pressed={theme === t.id}
+                          title={t.label}
+                        >
+                          {t.icon}
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ฟอนต์ */}
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] font-medium text-muted uppercase tracking-wide">ชนิดฟอนต์</p>
+                    <div className="flex gap-1.5">
+                      {fonts.map((f) => (
+                        <button
+                          key={f.id}
+                          onClick={() => setFontFamily(f.id)}
+                          className={`flex-1 h-8 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
+                            fontFamily === f.id
+                              ? 'bg-accent-soft border-accent-line text-accent-soft-fg'
+                              : 'border-line bg-surface text-muted hover:text-fg'
+                          }`}
+                          aria-pressed={fontFamily === f.id}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ขนาดอักษร */}
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] font-medium text-muted uppercase tracking-wide">ขนาดอักษร ({fontSize}px)</p>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setFontSize(Math.max(14, fontSize - 2))} className="h-8 flex-1 rounded-lg border border-line bg-surface text-xs font-bold hover:bg-card cursor-pointer" aria-label="ลดขนาดอักษร">A-</button>
+                      <div className="flex-1 h-1.5 rounded-full bg-surface overflow-hidden shrink-0">
+                        <div className="h-full bg-accent transition-all" style={{ width: `${((fontSize - 14) / 14) * 100}%` }} />
+                      </div>
+                      <button onClick={() => setFontSize(Math.min(28, fontSize + 2))} className="h-8 flex-1 rounded-lg border border-line bg-surface text-xs font-bold hover:bg-card cursor-pointer" aria-label="เพิ่มขนาดอักษร">A+</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+      {/* History Drawer */}
       {showHistory && (
-        <div className="max-w-4xl mx-auto p-4 border-b border-line bg-surface transition-all">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="font-bold flex items-center gap-2 text-sm">
-              <History className="w-4 h-4" /> ประวัติการอ่านล่าสุด ({history.length})
-            </h3>
-            {history.length > 0 && (
-              <button onClick={clearHistory} className="text-xs text-danger-fg flex items-center gap-1 hover:underline">
-                <Trash2 className="w-3 h-3" /> ล้างประวัติ
-              </button>
+        <div className="border-b border-line bg-surface">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
+            <div className="flex justify-between items-center mb-2.5">
+              <h3 className="font-bold flex items-center gap-2 text-sm">
+                <History className="w-4 h-4" /> ประวัติการอ่านล่าสุด ({history.length})
+              </h3>
+              {history.length > 0 && (
+                <button onClick={clearHistory} className="text-xs text-danger-fg flex items-center gap-1 hover:underline cursor-pointer">
+                  <Trash2 className="w-3 h-3" /> ล้างประวัติ
+                </button>
+              )}
+            </div>
+
+            {history.length === 0 ? (
+              <p className="text-xs text-muted py-2">ยังไม่มีประวัติการอ่าน</p>
+            ) : (
+              <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                {history.map((item, index) => (
+                  <div key={index} className="flex justify-between items-center gap-2 bg-card border border-line p-2 rounded-lg">
+                    <span className="truncate font-medium min-w-0 flex-1 text-xs">{item.title}</span>
+                    <button
+                      onClick={() => {
+                        setShowHistory(false);
+                        fetchArticle(item.url);
+                      }}
+                      className="px-2.5 h-7 bg-accent text-accent-fg rounded-md text-xs font-medium shrink-0 cursor-pointer"
+                    >
+                      อ่านต่อ
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-
-          {history.length === 0 ? (
-            <p className="text-xs text-muted py-2">ยังไม่มีประวัติการอ่าน</p>
-          ) : (
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {history.map((item, index) => (
-                <div key={index} className="flex justify-between items-center bg-card border border-line p-2 rounded text-xs gap-2">
-                  <span className="truncate font-medium flex-1">{item.title}</span>
-                  <button
-                    onClick={() => {
-                      setShowHistory(false);
-                      fetchArticle(item.url);
-                    }}
-                    className="px-2 py-1 bg-accent text-accent-fg rounded shrink-0"
-                  >
-                    อ่านต่อ
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
 
       {/* Main Reader View */}
-      <main className="max-w-3xl mx-auto px-6 py-8">
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {error && (
-          <div className="p-4 bg-danger-bg border border-danger-line text-danger-fg rounded-lg mb-6 space-y-3">
+          <div className="p-4 bg-danger-bg border border-danger-line text-danger-fg rounded-xl mb-6 space-y-3">
             <p className="text-sm font-semibold">{error}</p>
             <button
               onClick={() => fetchArticle(url, true)}
-              className="px-3 py-1.5 bg-red-600 text-white text-xs rounded hover:brightness-110 flex items-center gap-1"
+              className="h-9 px-3 bg-danger-fg text-white text-xs font-medium rounded-lg hover:brightness-110 inline-flex items-center gap-1.5 cursor-pointer"
             >
-              <RotateCcw className="w-3 h-3" /> ลองใหม่ด้วยโหมดดึงข้อมูลลึก (Force Full Render)
+              <RotateCcw className="w-3 h-3" /> ลองใหม่ (Force Full Render)
             </button>
           </div>
         )}
 
         {article && (
-          <article className="space-y-6">
-            <div className="flex flex-col gap-4 border-b border-line pb-4">
-              <h1 className="text-2xl md:text-3xl font-bold leading-tight">
-                {article.title}
-              </h1>
+          <article className="space-y-5">
+            <div className="space-y-4 border-b border-line pb-5">
+              <h1 className="text-2xl sm:text-3xl font-bold leading-tight">{article.title}</h1>
 
               {/* Action Toolbar */}
-              <div className="flex flex-wrap justify-between items-center gap-2 pt-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleCopy}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-surface text-fg rounded-md border border-line hover:bg-card"
+                    className="inline-flex items-center gap-1.5 h-8 px-3 text-xs bg-surface text-fg rounded-lg border border-line hover:bg-card hover:border-accent-line transition-colors cursor-pointer"
                   >
                     {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
                     {copied ? 'คัดลอกแล้ว!' : 'คัดลอกเนื้อหา'}
@@ -351,12 +388,12 @@ export default function ReaderPage() {
                   {/* Auto Scroll Controls */}
                   <button
                     onClick={() => setAutoScroll(!autoScroll)}
-                    className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md border border-line ${
-                      autoScroll ? 'bg-green-600 text-white' : 'bg-surface text-fg'
+                    className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs rounded-lg border transition-colors cursor-pointer ${
+                      autoScroll ? 'bg-green-600 text-white border-transparent' : 'bg-surface text-fg border-line hover:bg-card'
                     }`}
                   >
                     {autoScroll ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                    {autoScroll ? 'หยุดเลื่อน' : 'เลื่อนเลื่อนออโต้'}
+                    {autoScroll ? 'หยุดเลื่อน' : 'เลื่อนอัตโนมัติ'}
                   </button>
                 </div>
 
@@ -365,14 +402,14 @@ export default function ReaderPage() {
                   <button
                     onClick={() => article.prevUrl && fetchArticle(article.prevUrl)}
                     disabled={!article.prevUrl || loading}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-accent-soft text-accent-soft-fg rounded-md disabled:opacity-40 border border-accent-line"
+                    className="inline-flex items-center gap-1 h-8 px-3 text-xs bg-accent-soft text-accent-soft-fg rounded-lg disabled:opacity-40 border border-accent-line font-medium cursor-pointer transition-colors"
                   >
                     <ChevronLeft className="w-3.5 h-3.5" /> ตอนก่อนหน้า
                   </button>
                   <button
                     onClick={() => article.nextUrl && fetchArticle(article.nextUrl)}
                     disabled={!article.nextUrl || loading}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-accent text-accent-fg rounded-md disabled:opacity-40"
+                    className="inline-flex items-center gap-1 h-8 px-3 text-xs bg-accent text-accent-fg rounded-lg disabled:opacity-40 font-medium cursor-pointer transition-colors"
                   >
                     ตอนถัดไป <ChevronRight className="w-3.5 h-3.5" />
                   </button>
@@ -382,24 +419,24 @@ export default function ReaderPage() {
 
             {/* Article Content Render */}
             <div
-              className={`prose max-w-none space-y-6 [&>p]:mb-6 [&>p]:block ${lineHeightClasses[lineHeight]}`}
+              className="space-y-6 [&>p]:mb-6 [&>p]:block leading-relaxed"
               style={{ fontSize: `${fontSize}px` }}
               dangerouslySetInnerHTML={{ __html: article.content }}
             />
 
             {/* Bottom Chapter Navigation */}
-            <div className="flex justify-between items-center pt-8 border-t border-line mt-10">
+            <div className="flex justify-between items-center gap-2 pt-6 mt-8 border-t border-line">
               <button
                 onClick={() => article.prevUrl && fetchArticle(article.prevUrl)}
                 disabled={!article.prevUrl || loading}
-                className="flex items-center gap-1 px-4 py-2 text-sm bg-accent-soft text-accent-soft-fg rounded-md disabled:opacity-40 border border-accent-line"
+                className="inline-flex items-center gap-1 h-9 px-4 text-sm bg-accent-soft text-accent-soft-fg rounded-lg disabled:opacity-40 border border-accent-line font-medium cursor-pointer transition-colors"
               >
                 <ChevronLeft className="w-4 h-4" /> ตอนก่อนหน้า
               </button>
               <button
                 onClick={() => article.nextUrl && fetchArticle(article.nextUrl)}
                 disabled={!article.nextUrl || loading}
-                className="flex items-center gap-1 px-4 py-2 text-sm bg-accent text-accent-fg rounded-md disabled:opacity-40"
+                className="inline-flex items-center gap-1 h-9 px-4 text-sm bg-accent text-accent-fg rounded-lg disabled:opacity-40 font-medium cursor-pointer transition-colors"
               >
                 ตอนถัดไป <ChevronRight className="w-4 h-4" />
               </button>
@@ -408,8 +445,10 @@ export default function ReaderPage() {
         )}
 
         {!article && !loading && !error && (
-          <div className="text-center py-20 text-muted text-sm">
-            วาง URL ด้านบนเพื่อเริ่มอ่าน หรือเปิดเลือกเรื่องจากประวัติการอ่าน
+          <div className="text-center py-20 px-6">
+            <BookOpen className="w-10 h-10 mx-auto mb-3 text-line" />
+            <p className="text-sm text-muted font-medium">ยังไม่ได้เปิดหน้าให้อ่าน</p>
+            <p className="text-xs text-muted mt-1">วาง URL ด้านบนเพื่อเริ่มอ่าน หรือกดไอคอนประวัติการอ่าน</p>
           </div>
         )}
       </main>
