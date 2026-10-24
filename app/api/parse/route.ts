@@ -2,17 +2,45 @@ import { NextRequest, NextResponse } from 'next/server';
 import { parseHTML } from 'linkedom';
 import { Readability } from '@mozilla/readability';
 
-function formatNovelContent(htmlContent: string): string {
-  if (!htmlContent) return '';
-  // แปลง <br> ซ้ำๆ หรือ \n ให้กลายเป็นย่อหน้า <p>
-  let formatted = htmlContent
-    .replace(/(<br\s*\/?>\s*){2,}/gi, '</p><p>')
-    .replace(/(<br\s*\/?>)/gi, '</p><p>');
-
-  if (!formatted.startsWith('<p>')) {
-    formatted = `<p>${formatted}</p>`;
+// คำนวณ Session Number จากชื่อโดเมนเพื่อใช้ IP และ Cookie เดิมผ่าน Cloudflare
+function getDomainSessionId(urlStr: string): number {
+  try {
+    const hostname = new URL(urlStr).hostname;
+    let hash = 0;
+    for (let i = 0; i < hostname.length; i++) {
+      hash = (hash << 5) - hash + hostname.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash % 9000) + 1000;
+  } catch (e) {
+    return 5555;
   }
-  return formatted;
+}
+
+// จัดระเบียบข้อความ ย่อยแท็ก <br> และย่อหน้าให้มี \n\n ชัดเจน
+function processNovelContent(rawHtml: string) {
+  if (!rawHtml) return { formattedHtml: '', plainText: '' };
+
+  let clean = rawHtml
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/(<br\s*\/?>\s*)+/gi, '</p><p>')
+    .replace(/<p>\s*<\/p>/gi, '');
+
+  if (!clean.startsWith('<p>')) {
+    clean = `<p>${clean}</p>`;
+  }
+
+  const { document } = parseHTML(`<div>${clean}</div>`);
+  const paragraphs = Array.from(document.querySelectorAll('p'))
+    .map((p: any) => (p.textContent || '').trim())
+    .filter((text: string) => text.length > 0);
+
+  // สร้างข้อความแบบเว้นย่อหน้า \n\n สำหรับกดคัดลอก
+  const plainText = paragraphs.join('\n\n');
+  // สร้าง HTML ย่อหน้า <p>
+  const formattedHtml = paragraphs.map((text: string) => `<p>${text}</p>`).join('');
+
+  return { formattedHtml, plainText };
 }
 
 function findNavigationUrls(doc: any, baseUrl: string) {
@@ -49,9 +77,10 @@ export async function POST(req: NextRequest) {
 
     const targetUrl = body.url;
     const apiKey = process.env.SCRAPER_API_KEY || '';
+    const sessionId = getDomainSessionId(targetUrl);
     let html = '';
 
-    // 1. ลองดึงตรงแบบ Fast Fetch (3 วินาที)
+    // 1. Fast Fetch ตรง (ไม่ผ่าน Proxy)
     try {
       const directRes = await fetch(targetUrl, {
         headers: {
@@ -69,11 +98,11 @@ export async function POST(req: NextRequest) {
       }
     } catch (e) {}
 
-    // 2. ถ้าติดล็อก ให้ใช้ ScraperAPI แบบเร็ว (ไม่ใช้ render=true เพื่อประหยัดเวลาเหลือ 2-3 วิ)
+    // 2. Fast Proxy ผ่าน ScraperAPI พร้อม session_number (จำ Cookie/IP)
     if (!html && apiKey) {
       try {
-        const fastProxyUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&keep_headers=true`;
-        const res = await fetch(fastProxyUrl, { signal: AbortSignal.timeout(8000) });
+        const fastProxyUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&session_number=${sessionId}&keep_headers=true`;
+        const res = await fetch(fastProxyUrl, { signal: AbortSignal.timeout(7000) });
         if (res.ok) {
           const tempHtml = await res.text();
           if (!tempHtml.includes('正在验证浏览器') && !tempHtml.includes('cf-challenge')) {
@@ -83,9 +112,9 @@ export async function POST(req: NextRequest) {
       } catch (e) {}
     }
 
-    // 3. ถ้ายังติด Cloudflare JS Challenge จริงๆ ค่อยสลับไปใช้โหมด Full Render (สำรองสุดท้าย)
+    // 3. Fallback: Full Render พร้อมจำ session_number
     if (!html && apiKey) {
-      const renderUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&render=true`;
+      const renderUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&session_number=${sessionId}&render=true`;
       const res = await fetch(renderUrl);
       if (res.ok) {
         html = await res.text();
@@ -101,7 +130,6 @@ export async function POST(req: NextRequest) {
 
     const { document } = parseHTML(html);
     const navUrls = findNavigationUrls(document, targetUrl);
-
     const reader = new Readability(document);
     const article = reader.parse();
 
@@ -112,10 +140,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const { formattedHtml, plainText } = processNovelContent(article.content);
+
     return NextResponse.json({
       title: article.title || 'ไม่มีชื่อเรื่อง',
-      content: formatNovelContent(article.content),
-      textContent: article.textContent || '',
+      content: formattedHtml,
+      textContent: plainText,
       prevUrl: navUrls.prevUrl,
       nextUrl: navUrls.nextUrl,
     });

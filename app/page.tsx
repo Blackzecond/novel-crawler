@@ -60,6 +60,7 @@ export default function ReaderPage() {
 
   const handleCopy = async () => {
     if (!article) return;
+    // คัดลอกข้อความที่มี \n\n เว้นบรรทัดระหว่างย่อหน้าเหมือนต้นฉบับ
     const textToCopy = `${article.title}\n\n${article.textContent.trim()}`;
     await navigator.clipboard.writeText(textToCopy);
     setCopied(true);
@@ -74,7 +75,6 @@ export default function ReaderPage() {
 
   return (
     <div className={`min-h-screen transition-colors duration-200 ${themeStyles[theme]}`}>
-      {/* Control Bar */}
       <header className="sticky top-0 z-10 border-b backdrop-blur-md bg-opacity-80 p-4">
         <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-4 justify-between items-center">
           <form onSubmit={handleFormSubmit} className="flex gap-2 w-full md:w-auto flex-1">
@@ -118,7 +118,6 @@ export default function ReaderPage() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-3xl mx-auto px-6 py-10">
         {error && (
           <div className="p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg mb-6">
@@ -133,7 +132,6 @@ export default function ReaderPage() {
                 {article.title}
               </h1>
 
-              {/* Action Bar */}
               <div className="flex flex-wrap justify-between items-center gap-2 pt-2">
                 <button
                   onClick={handleCopy}
@@ -162,14 +160,13 @@ export default function ReaderPage() {
               </div>
             </div>
 
-            {/* Reader Text with Paragraph Spacing */}
+            {/* แสดงผลย่อหน้าพร้อมเว้นระยะห่าง \n\n สบายตา */}
             <div
-              className="prose max-w-none space-y-6 [&>p]:mb-6 [&>p]:leading-relaxed [&>p]:block"
-              style={{ fontSize: `${fontSize}px`, lineHeight: '2' }}
+              className="prose max-w-none space-y-6 [&>p]:mb-6 [&>p]:leading-loose [&>p]:block"
+              style={{ fontSize: `${fontSize}px` }}
               dangerouslySetInnerHTML={{ __html: article.content }}
             />
 
-            {/* Bottom Navigation */}
             <div className="flex justify-between items-center pt-8 border-t mt-10">
               <button
                 onClick={() => article.prevUrl && fetchArticle(article.prevUrl)}
