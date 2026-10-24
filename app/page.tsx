@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   Sun, Moon, BookOpen, Loader2, Copy, Check, 
-  ChevronLeft, ChevronRight, Play, Pause, 
+  ChevronLeft, ChevronRight, ChevronDown, Play, Pause, 
   History, RotateCcw, Trash2, Settings 
 } from 'lucide-react';
 
@@ -39,7 +39,9 @@ export default function ReaderPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [autoScroll, setAutoScroll] = useState(false);
   const [scrollSpeed, setScrollSpeed] = useState(1);
+  const [fontOpen, setFontOpen] = useState(false);
   const scrollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const fontDropdownRef = useRef<HTMLDivElement | null>(null);
 
   // โหลดประวัติการอ่านจาก localStorage เมื่อเปิดเว็บครั้งแรก
   useEffect(() => {
@@ -53,6 +55,27 @@ export default function ReaderPage() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  // ปิด dropdown ฟอนต์เมื่อคลิกนอกวงหรือกด Esc
+  useEffect(() => {
+    if (!fontOpen) return;
+    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+      if (fontDropdownRef.current && !fontDropdownRef.current.contains(e.target as Node)) {
+        setFontOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFontOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [fontOpen]);
 
   // ระบบ Auto-Scroll
   useEffect(() => {
@@ -178,16 +201,40 @@ export default function ReaderPage() {
               <History className="w-4 h-4" />
             </button>
 
-            {/* Font Family */}
-            <select
-              value={fontFamily}
-              onChange={(e: any) => setFontFamily(e.target.value)}
-              className="h-9 px-2 border border-line rounded-lg text-sm bg-card text-fg shrink-0"
-            >
-              <option value="sans">Sans</option>
-              <option value="serif">Serif</option>
-              <option value="mono">Mono</option>
-            </select>
+            {/* Font Family — custom dropdown (native select popup ไม่เข้าธีม) */}
+            <div ref={fontDropdownRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setFontOpen(!fontOpen)}
+                aria-haspopup="listbox"
+                aria-expanded={fontOpen}
+                aria-label="เลือกชนิดฟอนต์"
+                className="inline-flex h-9 items-center gap-1 px-2 border border-line rounded-lg text-sm bg-card text-fg hover:bg-surface"
+              >
+                {fontFamily === 'sans' ? 'Sans' : fontFamily === 'serif' ? 'Serif' : 'Mono'}
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${fontOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {fontOpen && (
+                <div
+                  role="listbox"
+                  className="absolute z-30 top-full mt-1 w-32 py-1 rounded-lg border border-line bg-card shadow-lg"
+                >
+                  {(['sans', 'serif', 'mono'] as const).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      role="option"
+                      aria-selected={fontFamily === f}
+                      onClick={() => { setFontFamily(f); setFontOpen(false); }}
+                      className={`w-full flex items-center justify-between gap-2 text-left px-3 py-1.5 text-sm hover:bg-surface ${fontFamily === f ? 'text-accent-soft-fg font-medium' : 'text-fg'}`}
+                    >
+                      {f === 'sans' ? 'Sans' : f === 'serif' ? 'Serif' : 'Mono'}
+                      {fontFamily === f && <Check className="w-3.5 h-3.5" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Font Size */}
             <div className="flex items-center border border-line rounded-lg h-9 px-1 bg-card shrink-0">

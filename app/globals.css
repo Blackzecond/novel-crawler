@@ -6,6 +6,7 @@
 */
 :root,
 [data-theme='light'] {
+  color-scheme: light;
   --bg: #ffffff;
   --surface: #f6f7f9;
   --card: #ffffff;
@@ -23,6 +24,7 @@
 }
 
 [data-theme='dark'] {
+  color-scheme: dark;
   --bg: #111827;
   --surface: #1f2937;
   --card: #374151;
@@ -40,6 +42,7 @@
 }
 
 [data-theme='sepia'] {
+  color-scheme: light;
   --bg: #fbf0d9;
   --surface: #f1e3c3;
   --card: #f7ecd4;
@@ -81,4 +84,11 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-thai-sans), Arial, sans-serif;
+}
+
+/* popup ของ <select> พื้นบ้านไม่รับคลาส Tailwind — ต้องสีที่ option โดยตรง */
+select option,
+select optgroup {
+  background-color: var(--card);
+  color: var(--fg);
 }
