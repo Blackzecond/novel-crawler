@@ -4,9 +4,9 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Sun, Moon, BookOpen, Loader2, Copy, Check, 
   ChevronLeft, ChevronRight, Play, Pause, 
-  History, RotateCcw, Trash2, Library, Settings, X,
+  History, RotateCcw, Trash2, Library, Settings, X, List,
 } from 'lucide-react';
-import { getStore } from '@/lib/storage';
+import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 import {
   loadReaderSettings, saveReaderSettings, applySavedTheme,
   readerDefaults, ReaderFont, ReaderTheme,
@@ -28,6 +28,9 @@ interface HistoryItem {
 
 export default function ReaderPage() {
   const [url, setUrl] = useState('');
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [readerProject, setReaderProject] = useState<NovelProject | null>(null);
+  const [showToc, setShowToc] = useState(false);
   const [loading, setLoading] = useState(false);
   const [article, setArticle] = useState<ArticleData | null>(null);
   const [error, setError] = useState('');
@@ -70,12 +73,15 @@ export default function ReaderPage() {
     saveReaderSettings({ fontSize, fontFamily, theme });
   }, [fontSize, fontFamily, theme]);
 
-  // รับ ?url= จาก router (เปิดบทจากโปรเจกต์) แล้วดึงเนื้อหาทันที
+  // รับ URL และ projectId จากหน้าโปรเจกต์ เพื่อใช้ cache และสารบัญของเรื่องนั้น
   useEffect(() => {
-    const target = new URLSearchParams(window.location.search).get('url');
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get('url');
+    const targetProjectId = params.get('projectId');
+    if (targetProjectId) setProjectId(targetProjectId);
     if (target) {
       setUrl(target);
-      void fetchArticle(target);
+      void fetchArticle(target, false, targetProjectId);
     }
   }, []);
 
@@ -130,52 +136,58 @@ export default function ReaderPage() {
     localStorage.removeItem('novel_history');
   };
 
-  const fetchArticle = async (targetUrl: string, forceRender = false) => {
+  const fetchArticle = async (targetUrl: string, forceRender = false, projectIdOverride?: string | null) => {
     if (!targetUrl) return;
-
-    setLoading(true);
-    setError('');
-    setUrl(targetUrl);
-    setAutoScroll(false);
-
+    const activeProjectId = projectIdOverride === undefined ? projectId : projectIdOverride;
+    setLoading(true); setError(''); setUrl(targetUrl); setAutoScroll(false);
     try {
-      const res = await fetch('/api/parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: targetUrl, forceRender }),
-      });
-
+      let project: NovelProject | null = null;
+      let chapter: NovelChapter | null = null;
+      if (activeProjectId) {
+        project = await getStore().getProject(activeProjectId);
+        if (project) { setReaderProject(project); chapter = project.chapters.find((item) => item.url === targetUrl) ?? null; }
+      }
+      if (!forceRender && activeProjectId && project && chapter && chapter.status !== 'pending') {
+        const cached = await getStore().getChapterContent(activeProjectId, chapter.id);
+        if (cached?.readerContent !== undefined) {
+          const index = project.chapters.findIndex((item) => item.url === targetUrl);
+          const cachedArticle: ArticleData = {
+            title: chapter.title, content: cached.readerContent,
+            textContent: cached.originalText ?? cached.readerContent.replace(/<[^>]*>/g, ' ').trim(),
+            prevUrl: index > 0 ? project.chapters[index - 1].url : null,
+            nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : null,
+          };
+          setArticle(cachedArticle); saveToHistory(targetUrl, cachedArticle.title);
+          void getStore().updateProject(activeProjectId, { lastReadChapterId: chapter.id });
+          window.scrollTo({ top: 0, behavior: 'smooth' }); return;
+        }
+      }
+      const res = await fetch('/api/parse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: targetUrl, forceRender }) });
       const contentType = res.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const rawText = await res.text().catch(() => '');
         throw new Error(`Server ตอบกลับผิดพลาด (${res.status}): ${rawText.slice(0, 100)}...`);
       }
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
-
-      setArticle(data);
-      saveToHistory(targetUrl, data.title);
-      // บันทึกว่าบทนี้เป็น “ที่อ่านล่าสุด” ของโปรเจกต์ที่มีบท URL นี้ (ทำปุ่มอ่านต่อบนหน้าโปรเจกต์)
-      void (async () => {
-        try {
-          const projects = await getStore().listProjects();
-          const owner = projects.find((p) => p.chapters.some((c) => c.url === targetUrl));
-          const chapter = owner?.chapters.find((c) => c.url === targetUrl);
-          if (owner && chapter) await getStore().updateProject(owner.id, { lastReadChapterId: chapter.id });
-        } catch (progressError) {
-          // Reading the article should still succeed if saving cross-device progress fails.
-          console.warn('Could not update last-read progress:', progressError);
+      let articleData: ArticleData = data;
+      if (activeProjectId && project && chapter) {
+        const savedChapter = await getStore().updateChapter(activeProjectId, chapter.id, {
+          url: chapter.url, title: chapter.title || data.title, order: chapter.order,
+          originalText: data.textContent, readerContent: data.content, status: 'fetched', error: undefined,
+        });
+        if (savedChapter) {
+          await getStore().updateProject(activeProjectId, { lastReadChapterId: savedChapter.id });
+          const refreshed = await getStore().getProject(activeProjectId); if (refreshed) setReaderProject(refreshed);
         }
-      })();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+        const index = project.chapters.findIndex((item) => item.url === targetUrl);
+        articleData = { ...data, title: chapter.title || data.title,
+          prevUrl: index > 0 ? project.chapters[index - 1].url : null,
+          nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : null };
+      }
+      setArticle(articleData); saveToHistory(targetUrl, articleData.title); window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err: any) { setError(err.message); } finally { setLoading(false); }
   };
-
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     fetchArticle(url);
@@ -268,6 +280,27 @@ export default function ReaderPage() {
         </div>
       </header>
 
+      {projectId && (
+        <div className="max-w-3xl mx-auto px-3 sm:px-6 pt-2">
+          <button type="button" onClick={async () => {
+            const next = !showToc; setShowToc(next);
+            if (next && !readerProject) { try { setReaderProject(await getStore().getProject(projectId)); } catch (err) { setError(err instanceof Error ? err.message : String(err)); } }
+          }} className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line bg-card text-xs hover:border-accent-line" aria-expanded={showToc}>
+            <List className="w-3.5 h-3.5" /> สารบัญ{readerProject ? ` (${readerProject.chapters.length})` : ''}
+          </button>
+          {showToc && readerProject && (
+            <div className="mt-2 max-h-[55vh] overflow-y-auto rounded-xl border border-line bg-card shadow-sm divide-y divide-line">
+              {readerProject.chapters.map((chapter) => (
+                <button key={chapter.url} type="button" onClick={() => { setShowToc(false); void fetchArticle(chapter.url); }}
+                  className={`w-full text-left px-3 py-2.5 text-sm hover:bg-surface ${chapter.url === url ? 'bg-accent-soft text-accent-soft-fg font-semibold' : ''}`}>
+                  <span className="mr-2 text-xs text-muted">{chapter.order + 1}.</span>{chapter.title}
+                  {chapter.status !== 'pending' && <span className="ml-2 text-[10px] text-green-600">แคชแล้ว</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {/* แผงการตั้งค่า — วางนอก <header> เพราะ backdrop-blur ทำ fixed คำนวณผิดที่:
           ยึดขอบล่างจอบนมือถือ, ปรากฏใต้ header มุมขวาบนเดสก์ท็อป */}
       {showSettings && (
