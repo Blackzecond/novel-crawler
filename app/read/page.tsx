@@ -31,6 +31,7 @@ export default function ReaderPage() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [readerProject, setReaderProject] = useState<NovelProject | null>(null);
   const [showToc, setShowToc] = useState(false);
+  const [tocFilter, setTocFilter] = useState('');
   const [loading, setLoading] = useState(false);
   const [article, setArticle] = useState<ArticleData | null>(null);
   const [error, setError] = useState('');
@@ -289,14 +290,19 @@ export default function ReaderPage() {
             <List className="w-3.5 h-3.5" /> สารบัญ{readerProject ? ` (${readerProject.chapters.length})` : ''}
           </button>
           {showToc && readerProject && (
-            <div className="mt-2 max-h-[55vh] overflow-y-auto rounded-xl border border-line bg-card shadow-sm divide-y divide-line">
-              {readerProject.chapters.map((chapter) => (
+            <div className="mt-2 rounded-xl border border-line bg-card shadow-sm overflow-hidden">
+              <div className="p-2 border-b border-line bg-surface">
+                <input value={tocFilter} onChange={(event) => setTocFilter(event.target.value)} placeholder="ค้นหาตอนในสารบัญ..." className="w-full h-9 px-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:ring-2 focus:ring-accent/60" />
+              </div>
+              <div className="max-h-[50vh] overflow-y-auto divide-y divide-line">
+              {readerProject.chapters.filter((chapter) => !tocFilter.trim() || chapter.title.toLowerCase().includes(tocFilter.trim().toLowerCase())).map((chapter) => (
                 <button key={chapter.url} type="button" onClick={() => { setShowToc(false); void fetchArticle(chapter.url); }}
                   className={`w-full text-left px-3 py-2.5 text-sm hover:bg-surface ${chapter.url === url ? 'bg-accent-soft text-accent-soft-fg font-semibold' : ''}`}>
                   <span className="mr-2 text-xs text-muted">{chapter.order + 1}.</span>{chapter.title}
                   {chapter.status !== 'pending' && <span className="ml-2 text-[10px] text-green-600">แคชแล้ว</span>}
                 </button>
               ))}
+              </div>
             </div>
           )}
         </div>
