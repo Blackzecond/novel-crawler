@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { getLocalProjectsForMigration, getStore, NovelProject } from '@/lib/storage';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
-import { applySavedTheme } from '@/lib/readerPrefs';
+import { applySavedTheme, loadReaderSettings, saveReaderSettings } from '@/lib/readerPrefs';
+import { loadCloudReaderSettings, saveCloudReaderSettings } from '@/lib/cloudPreferences';
 
 // เว็บต้นฉบับจีนยอดนิยม — กดเพื่อใส่โดเมนต้นทางในช่อง URL
 // (วางเฉพาะลิงก์หน้าสารบัญ/目录 เช่น https://www.uukanshu.cc/b/123/ จึงจะจับรายการบทได้)
@@ -100,7 +101,22 @@ export default function ProjectsHomePage() {
   const [cloudUserId, setCloudUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    applySavedTheme(); // ใช้ธีมที่เคยตั้งไว้ใน reader ให้ต่อเนื่อง
+    applySavedTheme(); // ใช้ธีมในเครื่องทันที แล้วปรับเป็นค่าจาก Cloud หากมี
+    void (async () => {
+      try {
+        const localSettings = loadReaderSettings();
+        const cloudSettings = await loadCloudReaderSettings();
+        if (cloudSettings && Object.keys(cloudSettings).length > 0) {
+          const merged = { ...localSettings, ...cloudSettings };
+          saveReaderSettings(merged);
+          document.documentElement.dataset.theme = merged.theme;
+        } else {
+          await saveCloudReaderSettings(localSettings);
+        }
+      } catch (syncError) {
+        console.warn('Could not sync reader theme:', syncError);
+      }
+    })();
     void (async () => {
       try {
         if (isSupabaseConfigured()) {
