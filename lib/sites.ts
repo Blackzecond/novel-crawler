@@ -39,8 +39,9 @@ export function extractChapterList(html: string, baseUrl: string): TocResult {
 
   const { document } = parseHTML(html);
 
-  // เก็บทุกลิงก์ภายในเว็บเดียวกัน ตัดซ้ำ url+title, ตัดลิงก์กล่องเมนู
-  const seen = new Set<string>();
+  // เก็บทุกลิงก์ภายในเว็บเดียวกัน โดย URL เดียวกันต้องเหลือเพียงรายการเดียว
+  // ฐานข้อมูลกำหนด unique (project_id, source_url) จึงห้าม dedupe ด้วย url+title
+  const seenUrls = new Set<string>();
   const links: { url: string; title: string }[] = [];
   for (const a of Array.from(document.querySelectorAll('a')) as any[]) {
     const href = a.getAttribute('href');
@@ -50,9 +51,8 @@ export function extractChapterList(html: string, baseUrl: string): TocResult {
     const title = (a.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 140);
     if (!title || title.length > 120 || NAV_NOISE_RE.test(title)) continue;
     if (abs.href === base.href) continue;
-    const key = abs.href + '|' + title;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (seenUrls.has(abs.href)) continue;
+    seenUrls.add(abs.href);
     links.push({ url: abs.href, title });
   }
 
