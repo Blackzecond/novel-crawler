@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Library, BookOpen, Loader2, Trash2, Download, Upload,
-  ChevronRight, AlertTriangle, ExternalLink, Globe, Sparkles, FolderOpen,
+  ChevronRight, AlertTriangle, ExternalLink, Globe, Sparkles, FolderOpen, LogOut, CloudUpload,
 } from 'lucide-react';
-import { getStore, NovelProject } from '@/lib/storage';
-import { applySavedTheme } from '@/lib/readerPrefs';
+import { getLocalProjectsForMigration, getStore, NovelProject } from '@/lib/storage';
+import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
+import { applySavedTheme, loadReaderSettings, saveReaderSettings } from '@/lib/readerPrefs';
+import { loadCloudReaderSettings, saveCloudReaderSettings } from '@/lib/cloudPreferences';
 
 // เว็บต้นฉบับจีนยอดนิยม — กดเพื่อใส่โดเมนต้นทางในช่อง URL
 // (วางเฉพาะลิงก์หน้าสารบัญ/目录 เช่น https://www.uukanshu.cc/b/123/ จึงจะจับรายการบทได้)
@@ -94,16 +96,79 @@ export default function ProjectsHomePage() {
   const [chapterNotice, setChapterNotice] = useState<string>('');
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [importNotice, setImportNotice] = useState('');
+  const [localMigrationCount, setLocalMigrationCount] = useState(0);
+  const [migratingLocal, setMigratingLocal] = useState(false);
+  const [cloudUserId, setCloudUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    applySavedTheme(); // ใช้ธีมที่เคยตั้งไว้ใน reader ให้ต่อเนื่อง
+    applySavedTheme(); // ใช้ธีมในเครื่องทันที แล้วปรับเป็นค่าจาก Cloud หากมี
     void (async () => {
-      setProjects(await getStore().listProjects());
-      setMounted(true);
+      try {
+        const localSettings = loadReaderSettings();
+        const cloudSettings = await loadCloudReaderSettings();
+        if (cloudSettings && Object.keys(cloudSettings).length > 0) {
+          const merged = { ...localSettings, ...cloudSettings };
+          saveReaderSettings(merged);
+          document.documentElement.dataset.theme = merged.theme;
+        } else {
+          await saveCloudReaderSettings(localSettings);
+        }
+      } catch (syncError) {
+        console.warn('Could not sync reader theme:', syncError);
+      }
     })();
-  }, []);
+    void (async () => {
+      try {
+        if (isSupabaseConfigured()) {
+          const { data, error: sessionError } = await getSupabase().auth.getSession();
+          if (sessionError) throw sessionError;
+          if (!data.session?.user) {
+            router.replace('/login');
+            return;
+          }
+          const userId = data.session.user.id;
+          setCloudUserId(userId);
+          const migrationKey = `novel_cloud_migrated_v1_${userId}`;
+          if (window.localStorage.getItem(migrationKey) !== '1') {
+            setLocalMigrationCount(getLocalProjectsForMigration().length);
+          }
+        }
+        setProjects(await getStore().listProjects());
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'โหลดข้อมูลไม่สำเร็จ');
+      } finally {
+        setMounted(true);
+      }
+    })();
+  }, [router]);
 
   const loadProjects = async () => setProjects(await getStore().listProjects());
+
+  const migrateLocalProjects = async () => {
+    if (migratingLocal || !cloudUserId) return;
+    setMigratingLocal(true);
+    setImportNotice('');
+    try {
+      const localProjects = getLocalProjectsForMigration();
+      const result = await getStore().importProjects(localProjects);
+      if (result.imported > 0) {
+        window.localStorage.setItem(`novel_cloud_migrated_v1_${cloudUserId}`, '1');
+      }
+      setLocalMigrationCount(0);
+      await loadProjects();
+      setImportNotice(`ย้ายข้อมูลจากเครื่องสำเร็จ ${result.imported} เรื่อง${result.skipped ? ` (ข้าม ${result.skipped} เรื่องที่มีปัญหา)` : ''} — ข้อมูลต้นฉบับที่มีอยู่ถูกอัปโหลดไปยัง Storage`);
+    } catch (err) {
+      setImportNotice(`ย้ายข้อมูลไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setMigratingLocal(false);
+    }
+  };
+
+  const signOut = async () => {
+    const { error: signOutError } = await getSupabase().auth.signOut();
+    if (signOutError) setError(signOutError.message);
+    else router.replace('/login');
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -145,13 +210,25 @@ export default function ProjectsHomePage() {
     void loadProjects();
   };
 
-  const handleExport = () => {
-    const blob = new Blob([JSON.stringify(projects, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `novel-projects-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+  const handleExport = async () => {
+    try {
+      const completeProjects = await Promise.all(projects.map(async (project) => {
+        const chapters = await Promise.all(project.chapters.map(async (chapter) => {
+          const content = chapter.status === 'pending' ? null : await getStore().getChapterContent(project.id, chapter.id);
+          return content ? { ...chapter, originalText: content.originalText, translatedText: content.translatedText } : chapter;
+        }));
+        return { ...project, chapters };
+      }));
+      const blob = new Blob([JSON.stringify(completeProjects, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      const objectUrl = URL.createObjectURL(blob);
+      a.href = objectUrl;
+      a.download = `novel-projects-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      setImportNotice(`ส่งออกไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const handleImportFile = async (file: File) => {
@@ -191,10 +268,38 @@ export default function ProjectsHomePage() {
             <BookOpen className="w-3.5 h-3.5" />
             อ่านด่วน (URL ใดก็ได้)
           </a>
+          <a
+            href="/glossary-sets"
+            className="inline-flex items-center gap-1.5 h-8 px-3 border border-line rounded-lg text-xs bg-card hover:bg-surface hover:border-accent-line transition-colors shrink-0 cursor-pointer"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            คลังศัพท์
+          </a>
+          {isSupabaseConfigured() && (
+            <button onClick={() => void signOut()} title="ออกจากระบบ"
+              className="h-8 w-8 inline-flex items-center justify-center border border-line rounded-lg text-muted hover:text-fg bg-card shrink-0">
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
+        {localMigrationCount > 0 && (
+          <section className="rounded-xl border border-amber-300 bg-amber-50 text-amber-950 p-4 space-y-2">
+            <div className="flex items-center gap-2 font-semibold text-sm">
+              <CloudUpload className="w-4 h-4" /> พบข้อมูลนิยายเก่าในเบราว์เซอร์นี้ {localMigrationCount} เรื่อง
+            </div>
+            <p className="text-xs leading-relaxed">
+              ข้อมูลเก่ายังอยู่ในเครื่องและยังไม่ถูกลบ กดย้ายเพื่อคัดลอกข้อมูลเข้า Supabase และอัปโหลดเนื้อหาบทที่บันทึกไว้ไปยัง Storage
+            </p>
+            <button onClick={() => void migrateLocalProjects()} disabled={migratingLocal}
+              className="inline-flex items-center justify-center gap-2 h-9 px-3 rounded-lg bg-amber-900 text-white text-xs font-semibold disabled:opacity-50">
+              {migratingLocal ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudUpload className="w-4 h-4" />}
+              {migratingLocal ? 'กำลังย้ายข้อมูล…' : 'ย้ายข้อมูลจากเครื่องนี้'}
+            </button>
+          </section>
+        )}
         {/* สร้างโปรเจกต์ใหม่ — Hero */}
         <section className="rounded-2xl border border-line bg-card shadow-sm p-5 sm:p-6 space-y-4">
           <div className="flex items-start gap-3">

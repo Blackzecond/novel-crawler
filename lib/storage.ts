@@ -1,3 +1,5 @@
+import { supabaseStore } from '@/lib/cloudStorage';
+
 // ชั้นเก็บข้อมูลโปรเจกต์แปล — วันนี้ใช้ localStorage, วันหลังผูก Supabase
 // ทุกเมธอดเป็น async และออกแบบ signature ให้เปลี่ยนเป็น backend adapter ได้โดยไม่แก้ UI:
 // ตอนผูก Supabase เขียน supabaseStore ให้ implement NovelStore แล้วเปลี่ยนตรง getStore() จุดเดียว
@@ -10,6 +12,8 @@ export interface NovelChapter {
   status: 'pending' | 'fetched' | 'translated';
   originalText?: string;
   translatedText?: string;
+  /** Cached reader HTML; separate from plain text used by glossary/AI tools. */
+  readerContent?: string;
   error?: string;
 }
 
@@ -39,6 +43,7 @@ export interface NewProjectData {
 export interface NovelStore {
   listProjects(): Promise<NovelProject[]>;
   getProject(id: string): Promise<NovelProject | null>;
+  getChapterContent(projectId: string, chapterId: string): Promise<NovelChapter | null>;
   createProject(data: NewProjectData): Promise<NovelProject>;
   renameProject(id: string, title: string): Promise<NovelProject | null>;
   updateProject(
@@ -51,7 +56,7 @@ export interface NovelStore {
   updateChapter(
     projectId: string,
     chapterId: string,
-    patch: Partial<Omit<NovelChapter, 'id' | 'translatedText'>>
+    patch: Partial<Omit<NovelChapter, 'id'>>
   ): Promise<NovelChapter | null>;
 }
 
@@ -114,6 +119,11 @@ export const localStorageStore: NovelStore = {
 
   async getProject(id) {
     return loadAllValid().find((p) => p.id === id) ?? null;
+  },
+
+  async getChapterContent(projectId, chapterId) {
+    const project = loadAllValid().find((p) => p.id === projectId);
+    return project?.chapters.find((chapter) => chapter.id === chapterId) ?? null;
   },
 
   async createProject(data) {
@@ -200,6 +210,8 @@ export const localStorageStore: NovelStore = {
     );
     chapter.status = maxRank === 2 ? 'translated' : maxRank === 1 ? 'fetched' : 'pending';
     if ('originalText' in patch) chapter.originalText = patch.originalText;
+    if ('translatedText' in patch) chapter.translatedText = patch.translatedText;
+    if ('readerContent' in patch) chapter.readerContent = patch.readerContent;
     if ('error' in patch) chapter.error = patch.error;
     target.updatedAt = Date.now();
     saveAll(projects);
@@ -208,6 +220,15 @@ export const localStorageStore: NovelStore = {
 };
 
 // จุดเปลี่ยน adapter เพียงจุดเดียว — UI ทุกหน้าเรียกผ่าน getStore()
+export function getLocalProjectsForMigration(): NovelProject[] {
+  return loadAllValid();
+}
+
 export function getStore(): NovelStore {
+  if (typeof window !== 'undefined' &&
+      process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) {
+    return supabaseStore;
+  }
   return localStorageStore;
 }

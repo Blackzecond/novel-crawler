@@ -13,6 +13,7 @@ import {
   detectNamedTerms, hasAiKey, loadAiSettings, saveAiSettings,
   defaultAiSettings, AiDetectSettings,
 } from '@/lib/ai';
+import { loadCloudAiSettings, saveCloudAiSettings } from '@/lib/cloudPreferences';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -66,22 +67,80 @@ export default function ProjectClient({ id }: { id: string }) {
   const [aiForm, setAiForm] = useState<AiDetectSettings>(defaultAiSettings);
 
   const refresh = useCallback(async () => {
-    const p = await getStore().getProject(id);
-    if (!p) setNotFound(true);
-    setProject(p);
-    setLoaded(true);
+    try {
+      const p = await getStore().getProject(id);
+      if (!p) setNotFound(true);
+      setProject(p);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('กรุณาเข้าสู่ระบบ')) {
+        window.location.href = '/login';
+        return;
+      }
+      setNotFound(true);
+    } finally {
+      setLoaded(true);
+    }
   }, [id]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
+  // Sync non-secret AI configuration across devices; API keys stay in this browser.
+  useEffect(() => {
+    void (async () => {
+      const local = loadAiSettings();
+      try {
+        const cloud = await loadCloudAiSettings();
+        if (cloud && (cloud.baseUrl || cloud.model)) {
+          const merged = {
+            ...local,
+            baseUrl: cloud.baseUrl || local.baseUrl,
+            model: cloud.model || local.model,
+          };
+          saveAiSettings(merged);
+          setAiForm(merged);
+          setAiReady(hasAiKey(merged));
+        } else {
+          await saveCloudAiSettings(local);
+          setAiForm(local);
+          setAiReady(hasAiKey(local));
+        }
+      } catch (syncError) {
+        console.warn('Could not sync AI settings:', syncError);
+        setAiForm(local);
+        setAiReady(hasAiKey(local));
+      }
+    })();
+  }, []);
+
   const applyChapter = (updated: NovelChapter) => {
     setProject((prev) =>
       prev
-        ? { ...prev, chapters: prev.chapters.map((c) => (c.id === updated.id ? updated : c)) }
+        ? { ...prev, chapters: prev.chapters.map((c) => (c.id === updated.id || c.url === updated.url ? updated : c)) }
         : prev
     );
+  };
+
+  // โหลดเนื้อหาเฉพาะบทที่ผู้ใช้เปิด เพื่อลดการดาวน์โหลดนิยายทั้งเรื่องจาก Storage
+  const loadChapterContent = async (chapter: NovelChapter) => {
+    if (chapter.originalText !== undefined || chapter.status === 'pending') return chapter;
+    const loadedChapter = await getStore().getChapterContent(id, chapter.id);
+    if (loadedChapter) applyChapter(loadedChapter);
+    return loadedChapter ?? chapter;
+  };
+
+  const toggleExpanded = async (chapter: NovelChapter) => {
+    if (expandedId === chapter.id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(chapter.id);
+    try {
+      await loadChapterContent(chapter);
+    } catch (err) {
+      setGlossaryNotice(`โหลดเนื้อหาบทไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const fetchChapter = async (chapter: NovelChapter, forceRender = false): Promise<boolean> => {
@@ -96,22 +155,32 @@ export default function ProjectClient({ id }: { id: string }) {
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
 
       const updated = await getStore().updateChapter(id, chapter.id, {
+        url: chapter.url,
+        title: chapter.title,
+        order: chapter.order,
         originalText: data.textContent,
+        readerContent: data.content,
         status: 'fetched',
         error: undefined,
       });
       if (updated) applyChapter(updated);
 
       // โหมดอัตโนมัติ: ตรวจชื่อ/ศัพท์เฉพาะทันทีหลังดึงบทสำเร็จ (dedupe ที่ระดับโปรเจกต์)
-      if (data.textContent && updated) {
+      if (updated) {
         const latest = await getStore().getProject(id);
         if (latest?.glossaryMode === 'auto' && hasAiKey()) {
-          await runDetect(chapter.title, data.textContent);
+          // Read the persisted chapter text from Storage for automatic glossary detection.
+          const storedChapter = await getStore().getChapterContent(id, updated.id);
+          const storedText = storedChapter?.originalText ?? updated.originalText;
+          if (storedText) await runDetect(chapter.title, storedText);
         }
       }
       return true;
     } catch (err: any) {
       const updated = await getStore().updateChapter(id, chapter.id, {
+        url: chapter.url,
+        title: chapter.title,
+        order: chapter.order,
         status: chapter.status === 'fetched' ? 'fetched' : 'pending',
         error: err.message,
       });
@@ -211,10 +280,11 @@ export default function ProjectClient({ id }: { id: string }) {
   };
 
   const detectChapter = async (c: NovelChapter) => {
-    if (!c.originalText) return;
     setDetecBusyIds((prev) => new Set(prev).add(c.id));
     try {
-      await runDetect(c.title, c.originalText);
+      const chapter = await loadChapterContent(c);
+      if (!chapter.originalText) return;
+      await runDetect(c.title, chapter.originalText);
     } finally {
       setDetecBusyIds((prev) => {
         const next = new Set(prev);
@@ -259,6 +329,9 @@ export default function ProjectClient({ id }: { id: string }) {
   const saveAiForm = () => {
     saveAiSettings(aiForm);
     setAiReady(aiForm.apiKey.trim().length > 0);
+    void saveCloudAiSettings(aiForm).catch((syncError) => {
+      setGlossaryNotice(`บันทึกการตั้งค่า AI ลง Cloud ไม่สำเร็จ: ${syncError instanceof Error ? syncError.message : String(syncError)}`);
+    });
     setShowAiSettings(false);
   };
 
@@ -378,7 +451,7 @@ export default function ProjectClient({ id }: { id: string }) {
         <section className="rounded-xl border border-line bg-card shadow-sm p-4 space-y-3">
           {lastRead && (
             <Link
-              href={`/read?url=${encodeURIComponent(lastRead.url)}`}
+              href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(lastRead.url)}`}
               className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 h-8 px-3 text-xs font-medium bg-accent-soft text-accent-soft-fg border border-accent-line rounded-lg hover:brightness-105 cursor-pointer"
             >
               <History className="w-3.5 h-3.5" />
@@ -599,7 +672,7 @@ export default function ProjectClient({ id }: { id: string }) {
                     {c.order + 1}
                   </span>
                   <button
-                    onClick={() => setExpandedId(expanded ? null : c.id)}
+                    onClick={() => void toggleExpanded(c)}
                     className="flex-1 min-w-0 text-left cursor-pointer"
                     aria-expanded={expanded}
                   >
@@ -639,7 +712,7 @@ export default function ProjectClient({ id }: { id: string }) {
                         <ChevronRight className="w-3 h-3" /> ดึงเนื้อหา
                       </button>
                       <Link
-                        href={`/read?url=${encodeURIComponent(c.url)}`}
+                        href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(c.url)}`}
                         className="inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs bg-accent text-accent-fg font-medium cursor-pointer"
                       >
                         <BookOpen className="w-3 h-3" /> เปิดใน Reader
