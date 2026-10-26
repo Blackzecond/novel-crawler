@@ -415,7 +415,7 @@ export default function ProjectClient({ id }: { id: string }) {
         <section className="rounded-xl border border-line bg-card shadow-sm p-4 space-y-3">
           {lastRead && (
             <Link
-              href={`/read?url=${encodeURIComponent(lastRead.url)}`}
+              href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(lastRead.url)}`}
               className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 h-8 px-3 text-xs font-medium bg-accent-soft text-accent-soft-fg border border-accent-line rounded-lg hover:brightness-105 cursor-pointer"
             >
               <History className="w-3.5 h-3.5" />
@@ -676,7 +676,7 @@ export default function ProjectClient({ id }: { id: string }) {
                         <ChevronRight className="w-3 h-3" /> ดึงเนื้อหา
                       </button>
                       <Link
-                        href={`/read?url=${encodeURIComponent(c.url)}`}
+                        href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(c.url)}`}
                         className="inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs bg-accent text-accent-fg font-medium cursor-pointer"
                       >
                         <BookOpen className="w-3 h-3" /> เปิดใน Reader
