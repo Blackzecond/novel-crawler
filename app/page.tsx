@@ -194,13 +194,25 @@ export default function ProjectsHomePage() {
     void loadProjects();
   };
 
-  const handleExport = () => {
-    const blob = new Blob([JSON.stringify(projects, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `novel-projects-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+  const handleExport = async () => {
+    try {
+      const completeProjects = await Promise.all(projects.map(async (project) => {
+        const chapters = await Promise.all(project.chapters.map(async (chapter) => {
+          const content = await getStore().getChapterContent(project.id, chapter.id);
+          return content ? { ...chapter, originalText: content.originalText, translatedText: content.translatedText } : chapter;
+        }));
+        return { ...project, chapters };
+      }));
+      const blob = new Blob([JSON.stringify(completeProjects, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      const objectUrl = URL.createObjectURL(blob);
+      a.href = objectUrl;
+      a.download = `novel-projects-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      setImportNotice(`ส่งออกไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const handleImportFile = async (file: File) => {
