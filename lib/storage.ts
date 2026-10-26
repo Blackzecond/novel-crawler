@@ -1,3 +1,5 @@
+import { supabaseStore } from '@/lib/cloudStorage';
+
 // ชั้นเก็บข้อมูลโปรเจกต์แปล — วันนี้ใช้ localStorage, วันหลังผูก Supabase
 // ทุกเมธอดเป็น async และออกแบบ signature ให้เปลี่ยนเป็น backend adapter ได้โดยไม่แก้ UI:
 // ตอนผูก Supabase เขียน supabaseStore ให้ implement NovelStore แล้วเปลี่ยนตรง getStore() จุดเดียว
@@ -223,9 +225,7 @@ export function getStore(): NovelStore {
   if (typeof window !== 'undefined' &&
       process.env.NEXT_PUBLIC_SUPABASE_URL &&
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) {
-    // Lazy import avoids loading the browser client during server rendering.
-    const cloud = require('@/lib/cloudStorage') as { supabaseStore: NovelStore };
-    return cloud.supabaseStore;
+    return supabaseStore;
   }
   return localStorageStore;
 }
