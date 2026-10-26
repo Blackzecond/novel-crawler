@@ -13,6 +13,7 @@ import {
   detectNamedTerms, hasAiKey, loadAiSettings, saveAiSettings,
   defaultAiSettings, AiDetectSettings,
 } from '@/lib/ai';
+import { loadCloudAiSettings, saveCloudAiSettings } from '@/lib/cloudPreferences';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -84,6 +85,34 @@ export default function ProjectClient({ id }: { id: string }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Sync non-secret AI configuration across devices; API keys stay in this browser.
+  useEffect(() => {
+    void (async () => {
+      const local = loadAiSettings();
+      try {
+        const cloud = await loadCloudAiSettings();
+        if (cloud && (cloud.baseUrl || cloud.model)) {
+          const merged = {
+            ...local,
+            baseUrl: cloud.baseUrl || local.baseUrl,
+            model: cloud.model || local.model,
+          };
+          saveAiSettings(merged);
+          setAiForm(merged);
+          setAiReady(hasAiKey(merged));
+        } else {
+          await saveCloudAiSettings(local);
+          setAiForm(local);
+          setAiReady(hasAiKey(local));
+        }
+      } catch (syncError) {
+        console.warn('Could not sync AI settings:', syncError);
+        setAiForm(local);
+        setAiReady(hasAiKey(local));
+      }
+    })();
+  }, []);
 
   const applyChapter = (updated: NovelChapter) => {
     setProject((prev) =>
@@ -300,6 +329,9 @@ export default function ProjectClient({ id }: { id: string }) {
   const saveAiForm = () => {
     saveAiSettings(aiForm);
     setAiReady(aiForm.apiKey.trim().length > 0);
+    void saveCloudAiSettings(aiForm).catch((syncError) => {
+      setGlossaryNotice(`บันทึกการตั้งค่า AI ลง Cloud ไม่สำเร็จ: ${syncError instanceof Error ? syncError.message : String(syncError)}`);
+    });
     setShowAiSettings(false);
   };
 
