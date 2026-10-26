@@ -211,6 +211,7 @@ export const localStorageStore: NovelStore = {
     chapter.status = maxRank === 2 ? 'translated' : maxRank === 1 ? 'fetched' : 'pending';
     if ('originalText' in patch) chapter.originalText = patch.originalText;
     if ('translatedText' in patch) chapter.translatedText = patch.translatedText;
+    if ('readerContent' in patch) chapter.readerContent = patch.readerContent;
     if ('error' in patch) chapter.error = patch.error;
     target.updatedAt = Date.now();
     saveAll(projects);
