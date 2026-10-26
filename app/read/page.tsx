@@ -159,7 +159,7 @@ export default function ReaderPage() {
             nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : null,
           };
           setArticle(cachedArticle); saveToHistory(targetUrl, cachedArticle.title);
-          void getStore().updateProject(activeProjectId, { lastReadChapterId: chapter.id });
+          void getStore().updateProject(activeProjectId, { lastReadChapterId: chapter.id }).catch((progressError) => console.warn('Could not update last-read progress:', progressError));
           window.scrollTo({ top: 0, behavior: 'smooth' }); return;
         }
       }
@@ -178,7 +178,7 @@ export default function ReaderPage() {
           originalText: data.textContent, readerContent: data.content, status: 'fetched', error: undefined,
         });
         if (savedChapter) {
-          await getStore().updateProject(activeProjectId, { lastReadChapterId: savedChapter.id });
+          void getStore().updateProject(activeProjectId, { lastReadChapterId: savedChapter.id }).catch((progressError) => console.warn('Could not update last-read progress:', progressError));
           const refreshed = await getStore().getProject(activeProjectId); if (refreshed) setReaderProject(refreshed);
         }
         const index = project.chapters.findIndex((item) => item.url === targetUrl);
