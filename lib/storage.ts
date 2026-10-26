@@ -12,6 +12,8 @@ export interface NovelChapter {
   status: 'pending' | 'fetched' | 'translated';
   originalText?: string;
   translatedText?: string;
+  /** Cached reader HTML; separate from plain text used by glossary/AI tools. */
+  readerContent?: string;
   error?: string;
 }
 
