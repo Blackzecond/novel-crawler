@@ -367,7 +367,7 @@ export const supabaseStore: NovelStore = {
     const { error } = await supabase.from('novel_chapters').update(update)
       .eq('id', actualChapterId).eq('project_id', projectId).eq('user_id', userId);
     if (error) throw error;
-    const updated = await this.getChapterContent(projectId, chapterId);
+    const updated = await this.getChapterContent(projectId, actualChapterId);
     if (!updated) return null;
     if (patch.originalText !== undefined) updated.originalText = patch.originalText;
     if (patch.translatedText !== undefined) updated.translatedText = patch.translatedText;
