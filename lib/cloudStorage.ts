@@ -215,7 +215,7 @@ export const supabaseStore: NovelStore = {
     if (patch.title !== undefined) update.title = patch.title;
     if (patch.glossaryMode !== undefined) update.glossary_mode = patch.glossaryMode;
     if (patch.lastReadChapterId !== undefined) update.last_read_chapter_id = patch.lastReadChapterId || null;
-    if (Object.keys(update).length > 1) {
+    if (Object.keys(update).length > 1 || patch.glossary !== undefined) {
       const { error } = await supabase.from('novel_projects').update(update).eq('id', id).eq('user_id', userId);
       if (error) throw error;
     }
