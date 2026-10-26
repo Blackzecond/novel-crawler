@@ -84,6 +84,27 @@ export default function ProjectClient({ id }: { id: string }) {
     );
   };
 
+  // โหลดเนื้อหาเฉพาะบทที่ผู้ใช้เปิด เพื่อลดการดาวน์โหลดนิยายทั้งเรื่องจาก Storage
+  const loadChapterContent = async (chapter: NovelChapter) => {
+    if (chapter.originalText !== undefined || chapter.translatedText !== undefined || chapter.status === 'pending') return chapter;
+    const loadedChapter = await getStore().getChapterContent(id, chapter.id);
+    if (loadedChapter) applyChapter(loadedChapter);
+    return loadedChapter ?? chapter;
+  };
+
+  const toggleExpanded = async (chapter: NovelChapter) => {
+    if (expandedId === chapter.id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(chapter.id);
+    try {
+      await loadChapterContent(chapter);
+    } catch (err) {
+      setGlossaryNotice(`โหลดเนื้อหาบทไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   const fetchChapter = async (chapter: NovelChapter, forceRender = false): Promise<boolean> => {
     setBusyIds((prev) => new Set(prev).add(chapter.id));
     try {
@@ -211,10 +232,11 @@ export default function ProjectClient({ id }: { id: string }) {
   };
 
   const detectChapter = async (c: NovelChapter) => {
-    if (!c.originalText) return;
     setDetecBusyIds((prev) => new Set(prev).add(c.id));
     try {
-      await runDetect(c.title, c.originalText);
+      const chapter = await loadChapterContent(c);
+      if (!chapter.originalText) return;
+      await runDetect(c.title, chapter.originalText);
     } finally {
       setDetecBusyIds((prev) => {
         const next = new Set(prev);
@@ -599,7 +621,7 @@ export default function ProjectClient({ id }: { id: string }) {
                     {c.order + 1}
                   </span>
                   <button
-                    onClick={() => setExpandedId(expanded ? null : c.id)}
+                    onClick={() => void toggleExpanded(c)}
                     className="flex-1 min-w-0 text-left cursor-pointer"
                     aria-expanded={expanded}
                   >
