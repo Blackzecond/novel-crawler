@@ -130,6 +130,7 @@ export default function ProjectClient({ id }: { id: string }) {
         title: chapter.title,
         order: chapter.order,
         originalText: data.textContent,
+        readerContent: data.content,
         status: 'fetched',
         error: undefined,
       });
