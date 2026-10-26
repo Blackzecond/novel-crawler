@@ -114,7 +114,7 @@ async function buildProjects(rows: ProjectRow[]): Promise<NovelProject[]> {
   return rows.map((row) => mapProject(row, byProject.get(row.id) ?? [], glossaries.get(row.id) ?? {}));
 }
 
-function contentPath(userId: string, projectId: string, chapterId: string, kind: 'original' | 'translated') {
+function contentPath(userId: string, projectId: string, chapterId: string, kind: 'original' | 'translated' | 'reader') {
   return `${userId}/${projectId}/${chapterId}/${kind}.txt`;
 }
 
@@ -278,19 +278,26 @@ export const supabaseStore: NovelStore = {
         for (const oldChapter of raw.chapters as NovelChapter[]) {
           const newId = oldToNew.get(oldChapter.id);
           if (!newId) continue;
+          const hasSavedContent = Boolean(oldChapter.originalText || oldChapter.translatedText || oldChapter.readerContent);
+          if ((oldChapter.status ?? 'pending') === 'pending' && !hasSavedContent) continue;
           const patch: Partial<Omit<NovelChapter, 'id'>> = {
+            url: oldChapter.url, title: oldChapter.title, order: oldChapter.order,
             status: oldChapter.status ?? 'pending',
             error: oldChapter.error,
             originalText: oldChapter.originalText,
             translatedText: oldChapter.translatedText,
+            readerContent: oldChapter.readerContent,
           };
           await this.updateChapter(created.id, newId, patch);
         }
         const glossary = raw.glossary && typeof raw.glossary === 'object' ? raw.glossary as Record<string, string> : {};
+        const refreshed = await this.getProject(created.id);
+        const oldLastRead = (raw.chapters as NovelChapter[]).find((chapter) => chapter.id === raw.lastReadChapterId);
+        const newLastRead = oldLastRead ? refreshed?.chapters.find((chapter) => chapter.url === oldLastRead.url && chapter.status !== 'pending') : undefined;
         await this.updateProject(created.id, {
           glossary,
           glossaryMode: raw.glossaryMode === 'auto' ? 'auto' : 'manual',
-          lastReadChapterId: oldToNew.get(raw.lastReadChapterId ?? ''),
+          lastReadChapterId: newLastRead?.id,
         });
         imported++;
       } catch {
@@ -319,7 +326,7 @@ export const supabaseStore: NovelStore = {
 
   async updateChapter(projectId, chapterId, patch) {
     const userId = await currentUserId();
-    let row = await getChapterRow(projectId, chapterId);
+    let row = chapterId.startsWith('catalog:') ? null : await getChapterRow(projectId, chapterId);
     const supabase = getSupabase();
     if (!row) {
       if (!patch.url || patch.title === undefined || patch.order === undefined) {
