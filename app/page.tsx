@@ -198,7 +198,7 @@ export default function ProjectsHomePage() {
     try {
       const completeProjects = await Promise.all(projects.map(async (project) => {
         const chapters = await Promise.all(project.chapters.map(async (chapter) => {
-          const content = await getStore().getChapterContent(project.id, chapter.id);
+          const content = chapter.status === 'pending' ? null : await getStore().getChapterContent(project.id, chapter.id);
           return content ? { ...chapter, originalText: content.originalText, translatedText: content.translatedText } : chapter;
         }));
         return { ...project, chapters };
