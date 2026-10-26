@@ -11,6 +11,10 @@ import {
   loadReaderSettings, saveReaderSettings, applySavedTheme,
   readerDefaults, ReaderFont, ReaderTheme,
 } from '@/lib/readerPrefs';
+import {
+  loadCloudReaderSettings, saveCloudReaderSettings,
+  loadCloudReadingHistory, saveCloudReadingHistory,
+} from '@/lib/cloudPreferences';
 
 interface ArticleData {
   title: string;
@@ -53,25 +57,60 @@ export default function ReaderPage() {
   const settingsRef = useRef<HTMLDivElement | null>(null);
   const settingsBtnRef = useRef<HTMLButtonElement | null>(null);
 
-  // โหลดประวัติการอ่านและค่าตั้งค่า reader จาก localStorage เมื่อเปิดเว็บครั้งแรก
+  // โหลดค่าจากเครื่องก่อน แล้วซิงก์กับ Cloud เมื่อเข้าสู่ระบบ
   useEffect(() => {
-    const savedHistory = localStorage.getItem('novel_history');
-    if (savedHistory) {
-      try { setHistory(JSON.parse(savedHistory)); } catch (e) {}
-    }
-    const saved = loadReaderSettings();
-    setFontSize(saved.fontSize);
-    setFontFamily(saved.fontFamily);
-    setTheme(saved.theme);
-    document.documentElement.dataset.theme = saved.theme;
-    prefsHydratedRef.current = true;
+    const localHistory: HistoryItem[] = (() => {
+      try {
+        const raw = localStorage.getItem('novel_history');
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch { return []; }
+    })();
+    const localSettings = loadReaderSettings();
+    setHistory(localHistory);
+    setFontSize(localSettings.fontSize);
+    setFontFamily(localSettings.fontFamily);
+    setTheme(localSettings.theme);
+    document.documentElement.dataset.theme = localSettings.theme;
+
+    void (async () => {
+      try {
+        const [cloudHistory, cloudSettings] = await Promise.all([
+          loadCloudReadingHistory(),
+          loadCloudReaderSettings(),
+        ]);
+        if (cloudHistory && cloudHistory.length > 0) {
+          setHistory(cloudHistory);
+          localStorage.setItem('novel_history', JSON.stringify(cloudHistory));
+        } else if (localHistory.length > 0) {
+          // First sync: preserve history that already exists on this device.
+          await saveCloudReadingHistory(localHistory);
+        }
+        if (cloudSettings && Object.keys(cloudSettings).length > 0) {
+          const merged = { ...localSettings, ...cloudSettings };
+          setFontSize(merged.fontSize);
+          setFontFamily(merged.fontFamily);
+          setTheme(merged.theme);
+          saveReaderSettings(merged);
+          document.documentElement.dataset.theme = merged.theme;
+        } else {
+          await saveCloudReaderSettings(localSettings);
+        }
+      } catch (syncError) {
+        console.warn('Could not sync reader preferences:', syncError);
+      } finally {
+        prefsHydratedRef.current = true;
+      }
+    })();
   }, []);
 
   // ซิงก์/บันทักธีมและค่าตั้งค่าทุกครั้งที่เปลี่ยน (ข้ามรอบแรกเพื่อไม่ทับค่าจำ)
   useEffect(() => {
     if (!prefsHydratedRef.current) return;
     document.documentElement.dataset.theme = theme;
-    saveReaderSettings({ fontSize, fontFamily, theme });
+    const settings = { fontSize, fontFamily, theme };
+    saveReaderSettings(settings);
+    void saveCloudReaderSettings(settings).catch((syncError) => console.warn('Could not sync reader settings:', syncError));
   }, [fontSize, fontFamily, theme]);
 
   // รับ URL และ projectId จากหน้าโปรเจกต์ เพื่อใช้ cache และสารบัญของเรื่องนั้น
@@ -130,11 +169,13 @@ export default function ReaderPage() {
 
     setHistory(newHistory);
     localStorage.setItem('novel_history', JSON.stringify(newHistory));
+    void saveCloudReadingHistory(newHistory).catch((syncError) => console.warn('Could not sync reading history:', syncError));
   };
 
   const clearHistory = () => {
     setHistory([]);
     localStorage.removeItem('novel_history');
+    void saveCloudReadingHistory([]).catch((syncError) => console.warn('Could not clear cloud reading history:', syncError));
   };
 
   const fetchArticle = async (targetUrl: string, forceRender = false, projectIdOverride?: string | null) => {
