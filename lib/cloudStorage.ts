@@ -6,6 +6,7 @@ const BUCKET = 'novel-content';
 type ProjectRow = {
   id: string; title: string; source_url: string; host: string;
   glossary_mode: 'manual' | 'auto'; last_read_chapter_id: string | null;
+  chapter_catalog: { url: string; title: string; order: number }[] | null;
   created_at: string; updated_at: string;
 };
 type ChapterRow = {
@@ -13,6 +14,7 @@ type ChapterRow = {
   chapter_order: number; status: NovelChapter['status'];
   original_storage_provider: 'supabase' | 'google_drive' | null;
   original_storage_path: string | null;
+  reader_storage_path: string | null;
   translated_storage_provider: 'supabase' | 'google_drive' | null;
   translated_storage_path: string | null;
   error_message: string | null; created_at: string; updated_at: string;
@@ -35,7 +37,18 @@ function mapChapter(row: ChapterRow): NovelChapter {
   };
 }
 
-function mapProject(row: ProjectRow, chapters: NovelChapter[], glossary: Record<string, string>): NovelProject {
+function mapProject(row: ProjectRow, fetchedChapters: NovelChapter[], glossary: Record<string, string>): NovelProject {
+  const fetchedByUrl = new Map(fetchedChapters.map((chapter) => [chapter.url, chapter]));
+  const catalog = Array.isArray(row.chapter_catalog) ? row.chapter_catalog : [];
+  const chapters: NovelChapter[] = catalog.map((item) => fetchedByUrl.get(item.url) ?? ({
+    id: `catalog:${encodeURIComponent(item.url)}`,
+    url: item.url,
+    title: item.title,
+    order: item.order,
+    status: 'pending' as const,
+  }));
+  const catalogUrls = new Set(catalog.map((item) => item.url));
+  for (const chapter of fetchedChapters) if (!catalogUrls.has(chapter.url)) chapters.push(chapter);
   return {
     id: row.id,
     title: row.title,
@@ -125,6 +138,13 @@ async function readText(path: string | null): Promise<string | undefined> {
   return await data.text();
 }
 
+async function getChapterRowByUrl(projectId: string, url: string): Promise<ChapterRow | null> {
+  const { data, error } = await getSupabase().from('novel_chapters')
+    .select('*').eq('project_id', projectId).eq('source_url', url).maybeSingle();
+  if (error) throw error;
+  return (data as ChapterRow | null) ?? null;
+}
+
 async function getChapterRow(projectId: string, chapterId: string): Promise<ChapterRow | null> {
   const { data, error } = await getSupabase().from('novel_chapters')
     .select('*').eq('project_id', projectId).eq('id', chapterId).maybeSingle();
@@ -158,6 +178,7 @@ export const supabaseStore: NovelStore = {
     if (row.original_storage_provider === 'supabase') {
       chapter.originalText = await readText(row.original_storage_path);
     }
+    if (row.reader_storage_path) chapter.readerContent = await readText(row.reader_storage_path);
     if (row.translated_storage_provider === 'supabase') {
       chapter.translatedText = await readText(row.translated_storage_path);
     }
@@ -173,25 +194,11 @@ export const supabaseStore: NovelStore = {
       source_url: data.sourceUrl,
       host: data.host,
       glossary_mode: 'manual',
+      chapter_catalog: data.chapters,
     }).select('*').single();
     if (error) throw error;
     const projectRow = row as ProjectRow;
 
-    if (data.chapters.length) {
-      const chapterRows = data.chapters.map((chapter) => ({
-        user_id: userId,
-        project_id: projectRow.id,
-        source_url: chapter.url,
-        title: chapter.title,
-        chapter_order: chapter.order,
-        status: 'pending',
-      }));
-      const { error: chaptersError } = await supabase.from('novel_chapters').insert(chapterRows);
-      if (chaptersError) {
-        await supabase.from('novel_projects').delete().eq('id', projectRow.id);
-        throw chaptersError;
-      }
-    }
     if (data.glossary && Object.keys(data.glossary).length) {
       const entries = Object.entries(data.glossary).map(([source_term, translated_term]) => ({
         user_id: userId, project_id: projectRow.id, source_term, translated_term,
@@ -299,6 +306,7 @@ export const supabaseStore: NovelStore = {
     const rows = await loadChapters([id]);
     const paths = rows.flatMap((row) => [
       row.original_storage_provider === 'supabase' ? row.original_storage_path : null,
+      row.reader_storage_path,
       row.translated_storage_provider === 'supabase' ? row.translated_storage_path : null,
     ]).filter((path): path is string => Boolean(path));
     if (paths.length) {
@@ -311,19 +319,39 @@ export const supabaseStore: NovelStore = {
 
   async updateChapter(projectId, chapterId, patch) {
     const userId = await currentUserId();
-    const row = await getChapterRow(projectId, chapterId);
-    if (!row) return null;
+    let row = await getChapterRow(projectId, chapterId);
     const supabase = getSupabase();
+    if (!row) {
+      if (!patch.url || patch.title === undefined || patch.order === undefined) {
+        throw new Error('ไม่พบข้อมูลบทในฐานข้อมูล และข้อมูลสารบัญไม่ครบสำหรับสร้างแถวบท');
+      }
+      const { data: inserted, error: insertError } = await supabase.from('novel_chapters').insert({
+        user_id: userId, project_id: projectId, source_url: patch.url,
+        title: patch.title, chapter_order: patch.order, status: 'pending',
+      }).select('*').single();
+      if (insertError) {
+        row = await getChapterRowByUrl(projectId, patch.url);
+        if (!row) throw insertError;
+      } else {
+        row = inserted as ChapterRow;
+      }
+    }
+    const actualChapterId = row.id;
     const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
     if (patch.originalText !== undefined) {
-      const path = contentPath(userId, projectId, chapterId, 'original');
+      const path = contentPath(userId, projectId, actualChapterId, 'original');
       await putText(path, patch.originalText);
       update.original_storage_provider = 'supabase';
       update.original_storage_path = path;
     }
+    if (patch.readerContent !== undefined) {
+      const path = contentPath(userId, projectId, actualChapterId, 'reader');
+      await putText(path, patch.readerContent);
+      update.reader_storage_path = path;
+    }
     if (patch.translatedText !== undefined) {
-      const path = contentPath(userId, projectId, chapterId, 'translated');
+      const path = contentPath(userId, projectId, actualChapterId, 'translated');
       await putText(path, patch.translatedText);
       update.translated_storage_provider = 'supabase';
       update.translated_storage_path = path;
@@ -337,12 +365,13 @@ export const supabaseStore: NovelStore = {
     if ('error' in patch) update.error_message = patch.error ?? null;
 
     const { error } = await supabase.from('novel_chapters').update(update)
-      .eq('id', chapterId).eq('project_id', projectId).eq('user_id', userId);
+      .eq('id', actualChapterId).eq('project_id', projectId).eq('user_id', userId);
     if (error) throw error;
     const updated = await this.getChapterContent(projectId, chapterId);
     if (!updated) return null;
     if (patch.originalText !== undefined) updated.originalText = patch.originalText;
     if (patch.translatedText !== undefined) updated.translatedText = patch.translatedText;
+    if (patch.readerContent !== undefined) updated.readerContent = patch.readerContent;
     return updated;
   },
 };
