@@ -252,6 +252,13 @@ export default function ProjectsHomePage() {
             <BookOpen className="w-3.5 h-3.5" />
             อ่านด่วน (URL ใดก็ได้)
           </a>
+          <a
+            href="/glossary-sets"
+            className="inline-flex items-center gap-1.5 h-8 px-3 border border-line rounded-lg text-xs bg-card hover:bg-surface hover:border-accent-line transition-colors shrink-0 cursor-pointer"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            คลังศัพท์
+          </a>
           {isSupabaseConfigured() && (
             <button onClick={() => void signOut()} title="ออกจากระบบ"
               className="h-8 w-8 inline-flex items-center justify-center border border-line rounded-lg text-muted hover:text-fg bg-card shrink-0">
