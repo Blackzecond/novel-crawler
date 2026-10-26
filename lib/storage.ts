@@ -39,6 +39,7 @@ export interface NewProjectData {
 export interface NovelStore {
   listProjects(): Promise<NovelProject[]>;
   getProject(id: string): Promise<NovelProject | null>;
+  getChapterContent(projectId: string, chapterId: string): Promise<NovelChapter | null>;
   createProject(data: NewProjectData): Promise<NovelProject>;
   renameProject(id: string, title: string): Promise<NovelProject | null>;
   updateProject(
@@ -51,7 +52,7 @@ export interface NovelStore {
   updateChapter(
     projectId: string,
     chapterId: string,
-    patch: Partial<Omit<NovelChapter, 'id' | 'translatedText'>>
+    patch: Partial<Omit<NovelChapter, 'id'>>
   ): Promise<NovelChapter | null>;
 }
 
@@ -114,6 +115,11 @@ export const localStorageStore: NovelStore = {
 
   async getProject(id) {
     return loadAllValid().find((p) => p.id === id) ?? null;
+  },
+
+  async getChapterContent(projectId, chapterId) {
+    const project = loadAllValid().find((p) => p.id === projectId);
+    return project?.chapters.find((chapter) => chapter.id === chapterId) ?? null;
   },
 
   async createProject(data) {
@@ -200,6 +206,7 @@ export const localStorageStore: NovelStore = {
     );
     chapter.status = maxRank === 2 ? 'translated' : maxRank === 1 ? 'fetched' : 'pending';
     if ('originalText' in patch) chapter.originalText = patch.originalText;
+    if ('translatedText' in patch) chapter.translatedText = patch.translatedText;
     if ('error' in patch) chapter.error = patch.error;
     target.updatedAt = Date.now();
     saveAll(projects);
@@ -208,6 +215,17 @@ export const localStorageStore: NovelStore = {
 };
 
 // จุดเปลี่ยน adapter เพียงจุดเดียว — UI ทุกหน้าเรียกผ่าน getStore()
+export function getLocalProjectsForMigration(): NovelProject[] {
+  return loadAllValid();
+}
+
 export function getStore(): NovelStore {
+  if (typeof window !== 'undefined' &&
+      process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) {
+    // Lazy import avoids loading the browser client during server rendering.
+    const cloud = require('@/lib/cloudStorage') as { supabaseStore: NovelStore };
+    return cloud.supabaseStore;
+  }
   return localStorageStore;
 }
