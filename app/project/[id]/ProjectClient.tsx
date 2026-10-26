@@ -66,10 +66,19 @@ export default function ProjectClient({ id }: { id: string }) {
   const [aiForm, setAiForm] = useState<AiDetectSettings>(defaultAiSettings);
 
   const refresh = useCallback(async () => {
-    const p = await getStore().getProject(id);
-    if (!p) setNotFound(true);
-    setProject(p);
-    setLoaded(true);
+    try {
+      const p = await getStore().getProject(id);
+      if (!p) setNotFound(true);
+      setProject(p);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('กรุณาเข้าสู่ระบบ')) {
+        window.location.href = '/login';
+        return;
+      }
+      setNotFound(true);
+    } finally {
+      setLoaded(true);
+    }
   }, [id]);
 
   useEffect(() => {
@@ -86,7 +95,7 @@ export default function ProjectClient({ id }: { id: string }) {
 
   // โหลดเนื้อหาเฉพาะบทที่ผู้ใช้เปิด เพื่อลดการดาวน์โหลดนิยายทั้งเรื่องจาก Storage
   const loadChapterContent = async (chapter: NovelChapter) => {
-    if (chapter.originalText !== undefined || chapter.translatedText !== undefined || chapter.status === 'pending') return chapter;
+    if (chapter.originalText !== undefined || chapter.status === 'pending') return chapter;
     const loadedChapter = await getStore().getChapterContent(id, chapter.id);
     if (loadedChapter) applyChapter(loadedChapter);
     return loadedChapter ?? chapter;
