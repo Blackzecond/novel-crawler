@@ -137,10 +137,13 @@ export default function ProjectClient({ id }: { id: string }) {
       if (updated) applyChapter(updated);
 
       // โหมดอัตโนมัติ: ตรวจชื่อ/ศัพท์เฉพาะทันทีหลังดึงบทสำเร็จ (dedupe ที่ระดับโปรเจกต์)
-      if (data.textContent && updated) {
+      if (updated) {
         const latest = await getStore().getProject(id);
         if (latest?.glossaryMode === 'auto' && hasAiKey()) {
-          await runDetect(chapter.title, data.textContent);
+          // Read the persisted chapter text from Storage for automatic glossary detection.
+          const storedChapter = await getStore().getChapterContent(id, updated.id);
+          const storedText = storedChapter?.originalText ?? updated.originalText;
+          if (storedText) await runDetect(chapter.title, storedText);
         }
       }
       return true;
