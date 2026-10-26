@@ -158,10 +158,15 @@ export default function ReaderPage() {
       saveToHistory(targetUrl, data.title);
       // บันทึกว่าบทนี้เป็น “ที่อ่านล่าสุด” ของโปรเจกต์ที่มีบท URL นี้ (ทำปุ่มอ่านต่อบนหน้าโปรเจกต์)
       void (async () => {
-        const projects = await getStore().listProjects();
-        const owner = projects.find((p) => p.chapters.some((c) => c.url === targetUrl));
-        const chapter = owner?.chapters.find((c) => c.url === targetUrl);
-        if (owner && chapter) await getStore().updateProject(owner.id, { lastReadChapterId: chapter.id });
+        try {
+          const projects = await getStore().listProjects();
+          const owner = projects.find((p) => p.chapters.some((c) => c.url === targetUrl));
+          const chapter = owner?.chapters.find((c) => c.url === targetUrl);
+          if (owner && chapter) await getStore().updateProject(owner.id, { lastReadChapterId: chapter.id });
+        } catch (progressError) {
+          // Reading the article should still succeed if saving cross-device progress fails.
+          console.warn('Could not update last-read progress:', progressError);
+        }
       })();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
