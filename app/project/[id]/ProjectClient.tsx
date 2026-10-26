@@ -88,7 +88,7 @@ export default function ProjectClient({ id }: { id: string }) {
   const applyChapter = (updated: NovelChapter) => {
     setProject((prev) =>
       prev
-        ? { ...prev, chapters: prev.chapters.map((c) => (c.id === updated.id ? updated : c)) }
+        ? { ...prev, chapters: prev.chapters.map((c) => (c.id === updated.id || c.url === updated.url ? updated : c)) }
         : prev
     );
   };
@@ -126,6 +126,9 @@ export default function ProjectClient({ id }: { id: string }) {
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
 
       const updated = await getStore().updateChapter(id, chapter.id, {
+        url: chapter.url,
+        title: chapter.title,
+        order: chapter.order,
         originalText: data.textContent,
         status: 'fetched',
         error: undefined,
@@ -142,6 +145,9 @@ export default function ProjectClient({ id }: { id: string }) {
       return true;
     } catch (err: any) {
       const updated = await getStore().updateChapter(id, chapter.id, {
+        url: chapter.url,
+        title: chapter.title,
+        order: chapter.order,
         status: chapter.status === 'fetched' ? 'fetched' : 'pending',
         error: err.message,
       });
