@@ -677,7 +677,7 @@ export default function ReaderPage() {
                         className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-accent-line bg-accent-soft px-2.5 text-xs font-medium text-accent-soft-fg transition-colors hover:brightness-105 disabled:opacity-50"
                       >
                         {editorBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
-                        <span className="hidden sm:inline">AI บ.ก.</span>
+                        <span>AI บ.ก.</span>
                       </button>
                     </>
                   )}
