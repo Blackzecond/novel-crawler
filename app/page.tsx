@@ -261,10 +261,10 @@ export default function ProjectsHomePage() {
           </a>
           <nav aria-label="เมนูหลัก" className="flex items-center gap-1 sm:gap-2 shrink-0">
             <a href="/read" className="inline-flex items-center justify-center gap-2 h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-sm text-muted hover:text-fg hover:bg-surface transition-colors">
-              <BookOpen className="w-4 h-4" /><span>อ่านด่วน</span>
+              <BookOpen className="w-4 h-4" /><span className="hidden sm:inline">อ่านด่วน</span>
             </a>
             <a href="/glossary-sets" className="inline-flex items-center justify-center gap-2 h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-sm text-muted hover:text-fg hover:bg-surface transition-colors">
-              <Library className="w-4 h-4" /><span>คลังศัพท์</span>
+              <Library className="w-4 h-4" /><span className="hidden sm:inline">คลังศัพท์</span>
             </a>
             {isSupabaseConfigured() && (
               <button onClick={() => void signOut()} title="ออกจากระบบ" aria-label="ออกจากระบบ"
