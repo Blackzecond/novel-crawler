@@ -270,7 +270,7 @@ export default function ProjectClient({ id }: { id: string }) {
       await mergeDetected(pairs, chapterTitle);
     } catch (err: any) {
       if (err.message === 'AI_NOT_CONFIGURED') {
-        setGlossaryNotice('ยังไม่ได้ตั้ง AI API key — กด “ตั้งค่า AI” ที่แถบด้านบนเพื่อใส่คีย์/โมเดลที่ใช้');
+        setGlossaryNotice('ยังไม่ได้ตั้ง AI API key — กลับไปหน้าหลักแล้วเลือก “ตั้งค่า AI” เพื่อใส่คีย์/โมเดลที่ใช้');
       } else {
         setGlossaryNotice(`ตรวจศัพท์ล้มเหลว: ${err.message}`);
       }
@@ -421,14 +421,6 @@ export default function ProjectClient({ id }: { id: string }) {
             )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <Link
-              href={`/settings/ai?returnTo=${encodeURIComponent(`/project/${id}`)}`}
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-line px-2.5 text-xs font-medium text-muted hover:border-accent-line hover:bg-accent-soft hover:text-accent-soft-fg transition-colors"
-              title="ตั้งค่า AI สำหรับการแปลและตรวจจับศัพท์"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">ตั้งค่า AI</span>
-            </Link>
             <a
               href={project.sourceUrl}
               target="_blank"
@@ -724,7 +716,7 @@ export default function ProjectClient({ id }: { id: string }) {
                           !c.originalText
                             ? 'ต้องดึงเนื้อหาบทนี้ก่อน'
                             : !aiReady
-                              ? 'ยังไม่ได้ตั้ง AI API key — กด “ตั้งค่า AI” ที่แถบด้านบน'
+                              ? 'ยังไม่ได้ตั้ง AI API key — กลับไปหน้าหลักแล้วเลือก “ตั้งค่า AI”'
                               : 'จับชื่อตัวละคร/ศัพท์เฉพาะจากบทนี้ด้วย AI (ไม่เพิ่มคำที่มีอยู่แล้ว)'
                         }
                         className={`inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs border transition-colors ${
