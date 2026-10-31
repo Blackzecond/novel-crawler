@@ -120,33 +120,13 @@ export async function detectNamedTerms(text: string, settings?: AiDetectSettings
  * API key อ่านจาก localStorage และส่งตรงไปยัง Base URL ที่ผู้ใช้กำหนด
  * ผลลัพธ์เป็นข้อความล้วนเพื่อให้ Reader แสดงผลอย่างปลอดภัยโดยไม่ใช้ dangerouslySetInnerHTML.
  */
-function splitTranslationText(text: string, maxChars = 700): string[] {
-  const chunks: string[] = [];
-  let start = 0;
-  while (start < text.length) {
-    let end = Math.min(start + maxChars, text.length);
-    if (end < text.length) {
-      const boundary = Math.max(
-        text.lastIndexOf('。', end), text.lastIndexOf('！', end), text.lastIndexOf('？', end),
-        text.lastIndexOf('；', end), text.lastIndexOf('，', end), text.lastIndexOf('.', end),
-        text.lastIndexOf('!', end), text.lastIndexOf('?', end), text.lastIndexOf(';', end),
-        text.lastIndexOf(',', end), text.lastIndexOf('\n', end),
-      );
-      if (boundary >= start + Math.floor(maxChars * 0.55)) end = boundary + 1;
-    }
-    chunks.push(text.slice(start, end));
-    start = end;
-  }
-  return chunks.filter((chunk) => chunk.length > 0);
-}
-
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
- * แปลข้อความนิยายเป็นภาษาไทยผ่าน OpenAI-compatible Chat Completions API.
- * แบ่งคำขอเป็นช่วง ตรวจการตัดผลลัพธ์ และรอเมื่อ Provider ปฏิเสธเพราะ OTPM.
+ * แปลนิยายหนึ่งตอนด้วยคำขอเดียว เพื่อรักษาบริบทและความต่อเนื่องตลอดทั้งตอน.
+ * ไม่แบ่งข้อความหรือ retry ด้วยการตัดข้อความเป็นส่วนย่อย หากชนเพดานจะแจ้งข้อผิดพลาด.
  */
 export async function translateNovelText(
   text: string,
@@ -157,79 +137,80 @@ export async function translateNovelText(
   if (!cfg.apiKey.trim()) throw new Error('AI_NOT_CONFIGURED');
   if (!text.trim()) throw new Error('ไม่มีเนื้อหาสำหรับแปล');
 
-  const glossaryEntries = Object.entries(glossary).filter(([source, target]) => source.trim() && target.trim());
-  const baseSystemPrompt = [
+  const relevantGlossary = Object.fromEntries(
+    Object.entries(glossary).filter(([source, target]) => source.trim() && target.trim() && text.includes(source)),
+  );
+  const systemPrompt = [
     'You are a professional Chinese-to-Thai web novel translator.',
-    'Translate the supplied Chinese novel text into natural, faithful Thai.',
+    'Translate the entire supplied chapter as one continuous literary work.',
+    'Read and consider the whole chapter before translating so names, terminology, tone, style, references, and dialogue remain consistent from beginning to end.',
     'Preserve the original meaning, paragraph order, dialogue, names, titles, and formatting.',
     'Do not summarize, omit, explain, add plot details, or include the original Chinese.',
-    'Use consistent Thai transliteration for proper nouns within this passage.',
-    'Return only the Thai translation.',
+    'Use consistent Thai transliteration for proper nouns throughout the entire chapter.',
+    'Return the complete Thai translation only. Never stop early or intentionally shorten the chapter.',
+    ...(Object.keys(relevantGlossary).length
+      ? ['Follow this glossary exactly for the listed terms. Do not change their Thai spellings:', JSON.stringify(relevantGlossary)]
+      : []),
   ].join('\n');
 
-  const chunks = splitTranslationText(text);
-  const translatedChunks: string[] = [];
+  // Estimate a sufficient completion budget for the whole chapter, within Qwen 3.8 27B's 16K output ceiling.
+  const maxTokens = Math.min(16_384, Math.max(2_048, Math.ceil(text.length * 2)));
 
-  for (let index = 0; index < chunks.length; index++) {
-    const chunk = chunks[index];
-    const relevantGlossary = glossaryEntries.filter(([source]) => chunk.includes(source));
-    const systemPrompt = relevantGlossary.length
-      ? baseSystemPrompt + '\nFollow this glossary exactly for the listed terms. Do not change their Thai spellings:\n' + JSON.stringify(Object.fromEntries(relevantGlossary))
-      : baseSystemPrompt;
-    const leadingWhitespace = chunk.slice(0, chunk.length - chunk.trimStart().length);
-    const trailingWhitespace = chunk.slice(chunk.trimEnd().length);
-    const leadingBreaks = leadingWhitespace.split('').filter((char) => char === String.fromCharCode(10)).join('');
-    const trailingBreaks = trailingWhitespace.split('').filter((char) => char === String.fromCharCode(10)).join('');
-    let response: Response | null = null;
-    let detail = '';
+  let response: Response | null = null;
+  let detail = '';
+  for (let attempt = 0; attempt < 5; attempt++) {
+    response = await fetch(cfg.baseUrl.replace(/\/$/, '') + '/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + cfg.apiKey.trim(),
+      },
+      body: JSON.stringify({
+        model: cfg.model,
+        temperature: 0.2,
+        max_tokens: maxTokens,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: text },
+        ],
+      }),
+    });
 
-    for (let attempt = 0; attempt < 5; attempt++) {
-      response = await fetch(cfg.baseUrl.replace(/\/$/, '') + '/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + cfg.apiKey.trim(),
-        },
-        body: JSON.stringify({
-          model: cfg.model,
-          temperature: 0.2,
-          max_tokens: 900,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: chunk },
-          ],
-        }),
-      });
-
-      if (response.ok) break;
-      detail = await response.text().catch(() => '');
-      const isOutputRateLimit = response.status === 429 && /output tokens per minute|OTPM|requested\s+\d+/i.test(detail);
-      if (!isOutputRateLimit || attempt === 4) {
-        throw new Error('AI_API_ERROR:' + response.status + ' ' + detail.slice(0, 300));
-      }
-
-      const retryAfter = Number(response.headers.get('retry-after'));
-      const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
-        ? Math.max(1000, retryAfter * 1000)
-        : 60_000;
-      await wait(waitMs);
+    if (response.ok) break;
+    detail = await response.text().catch(() => '');
+    const isOutputRateLimit = response.status === 429 && /output tokens per minute|OTPM|requested\s+\d+/i.test(detail);
+    if (!isOutputRateLimit || attempt === 4) {
+      throw new Error('AI_API_ERROR:' + response.status + ' ' + detail.slice(0, 500));
     }
 
-    if (!response?.ok) {
-      throw new Error('AI_API_ERROR:429 ' + detail.slice(0, 300));
-    }
-
-    const data = await response.json();
-    const choice = data?.choices?.[0];
-    const translated = choice?.message?.content;
-    if (choice?.finish_reason === 'length') {
-      throw new Error('AI_TRANSLATION_TRUNCATED:คำแปลส่วนที่ ' + (index + 1) + '/' + chunks.length + ' ถูกตัดเพราะชนเพดาน output tokens กรุณาลองใหม่หรือลดขนาดช่วงแปล');
-    }
-    if (typeof translated !== 'string' || !translated.trim()) {
-      throw new Error('AI ไม่ส่งคำแปลกลับมาในส่วนที่ ' + (index + 1) + '/' + chunks.length);
-    }
-    translatedChunks.push(leadingBreaks + translated.trim() + trailingBreaks);
+    const retryAfterHeader = Number(response.headers.get('retry-after'));
+    const retryAfterMessage = detail.match(/try again in\s+([\d.]+)\s*(ms|milliseconds|s|seconds?)/i);
+    const messageDelay = retryAfterMessage
+      ? Number(retryAfterMessage[1]) * (/^(ms|milliseconds)$/i.test(retryAfterMessage[2]) ? 1 : 1000)
+      : 0;
+    const waitMs = retryAfterHeader > 0
+      ? Math.max(250, retryAfterHeader * 1000)
+      : messageDelay > 0
+        ? Math.max(250, messageDelay + 250)
+        : 5000;
+    await wait(waitMs);
   }
 
-  return translatedChunks.join('').trim();
+  if (!response?.ok) {
+    throw new Error('AI_API_ERROR:429 ' + detail.slice(0, 500));
+  }
+
+  const data = await response.json();
+  const choice = data?.choices?.[0];
+  const translated = choice?.message?.content;
+  if (choice?.finish_reason === 'length') {
+    throw new Error(
+      'AI_TRANSLATION_TRUNCATED:โมเดลส่งคำแปลมาไม่ครบทั้งตอน แม้ส่งต้นฉบับเป็นคำขอเดียวแล้ว เพดาน output ของโมเดลหรือโควตาอาจไม่เพียงพอ กรุณาใช้โมเดลหรือแพ็กเกจที่รองรับ output tokens สูงขึ้น',
+    );
+  }
+  if (typeof translated !== 'string' || !translated.trim()) {
+    throw new Error('AI ไม่ส่งคำแปลกลับมา');
+  }
+
+  return translated.trim();
 }
