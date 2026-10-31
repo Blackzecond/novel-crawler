@@ -26,61 +26,78 @@ function ProjectCard({
   project: NovelProject;
   onDelete: (p: NovelProject) => void;
 }) {
+  const total = project.chapters.length;
   const fetched = project.chapters.filter((c) => c.status !== 'pending').length;
   const translated = project.chapters.filter((c) => c.status === 'translated').length;
-  const pct = project.chapters.length ? (fetched / project.chapters.length) * 100 : 0;
+  const pct = total ? Math.round((fetched / total) * 100) : 0;
+  const translatedPct = total ? Math.round((translated / total) * 100) : 0;
 
   return (
-    <article className="group relative rounded-xl border border-line bg-card shadow-sm hover:shadow-md hover:border-accent-line transition-all">
-      <div className="flex items-center gap-3 p-4">
-        <a href={`/project/${project.id}`} className="flex-1 min-w-0 block cursor-pointer">
-          <div className="flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-accent shrink-0" />
-            <span className="font-semibold text-sm truncate">{project.title}</span>
-          </div>
-          <div className="text-xs text-muted mt-1.5 flex items-center gap-2 flex-wrap">
-            <span className="inline-flex items-center gap-1 max-w-full">
+    <article className="group rounded-2xl border border-line bg-card shadow-sm hover:-translate-y-0.5 hover:shadow-lg hover:border-accent-line transition-all duration-200">
+      <div className="p-4 sm:p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <span className="h-10 w-10 rounded-xl bg-accent-soft text-accent-soft-fg inline-flex items-center justify-center shrink-0">
+            <BookOpen className="w-4.5 h-4.5" />
+          </span>
+          <a href={`/project/${project.id}`} className="flex-1 min-w-0 block cursor-pointer">
+            <span className="block font-semibold text-sm leading-snug truncate group-hover:text-accent-soft-fg transition-colors">{project.title}</span>
+            <span className="text-xs text-muted mt-1 inline-flex items-center gap-1 max-w-full">
               <Globe className="w-3 h-3 shrink-0" />
               <span className="truncate">{project.host}</span>
             </span>
-            <span aria-hidden className="text-line">·</span>
-            <span className="shrink-0">{project.chapters.length} บท</span>
-            <span aria-hidden className="text-line">·</span>
-            <span className="inline-flex items-center gap-1 shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-accent/60" />
-              ดึงแล้ว {fetched}
-            </span>
-            {translated > 0 && (
-              <span className="inline-flex items-center gap-1 shrink-0">
-                <Sparkles className="w-3 h-3 text-green-600" />
-                แปลแล้ว {translated}
-              </span>
-            )}
-          </div>
-        </a>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <a
-            href={`/project/${project.id}`}
-            aria-label={`เปิดโปรเจกต์ ${project.title}`}
-            className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted hover:text-accent-soft-fg hover:bg-accent-soft transition-colors cursor-pointer"
-          >
-            <ChevronRight className="w-4 h-4" />
           </a>
           <button
             onClick={() => onDelete(project)}
-            className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted hover:text-danger-fg hover:border-danger-line transition-colors cursor-pointer"
+            className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted hover:text-danger-fg hover:bg-danger-bg transition-colors cursor-pointer shrink-0"
             aria-label={`ลบโปรเจกต์ ${project.title}`}
+            title="ลบโปรเจกต์"
           >
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
-      </div>
-      {/* แถบความคืบหน้าการดึงข้อมูล */}
-      <div className="h-1 rounded-b-xl bg-surface overflow-hidden">
-        <div
-          className="h-full bg-accent transition-all group-hover:brightness-110"
-          style={{ width: `${pct}%` }}
-        />
+
+        <div className="grid grid-cols-3 gap-2 rounded-xl bg-surface/80 p-3">
+          <div>
+            <p className="text-[10px] text-muted">ทั้งหมด</p>
+            <p className="text-sm font-semibold mt-0.5">{total.toLocaleString('th-TH')} <span className="text-[10px] font-normal text-muted">บท</span></p>
+          </div>
+          <div>
+            <p className="text-[10px] text-muted">ดึงเนื้อหาแล้ว</p>
+            <p className="text-sm font-semibold mt-0.5">{fetched.toLocaleString('th-TH')}</p>
+          </div>
+          <div>
+            <p className="text-[10px] text-muted">แปลแล้ว</p>
+            <p className="text-sm font-semibold mt-0.5 inline-flex items-center gap-1"><Sparkles className="w-3 h-3 text-green-600" />{translated.toLocaleString('th-TH')}</p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-muted">ความคืบหน้าการดึงเนื้อหา</span>
+            <span className="font-semibold tabular-nums">{pct}%</span>
+          </div>
+          <div
+            className="h-1.5 rounded-full bg-surface overflow-hidden"
+            role="progressbar"
+            aria-label={`ดึงเนื้อหา ${project.title}`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={pct}
+          >
+            <div className="h-full rounded-full bg-accent transition-all duration-300" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="flex items-center justify-between text-[10px] text-muted">
+            <span>{fetched.toLocaleString('th-TH')} / {total.toLocaleString('th-TH')} บท</span>
+            <span>แปลแล้ว {translatedPct}%</span>
+          </div>
+        </div>
+
+        <a
+          href={`/project/${project.id}`}
+          className="w-full inline-flex items-center justify-center gap-2 h-9 rounded-xl border border-line text-xs font-semibold hover:border-accent-line hover:bg-accent-soft hover:text-accent-soft-fg transition-colors cursor-pointer"
+        >
+          เปิดโปรเจกต์ <ChevronRight className="w-3.5 h-3.5" />
+        </a>
       </div>
     </article>
   );
@@ -293,7 +310,7 @@ export default function ProjectsHomePage() {
           </section>
         )}
         {/* สร้างโปรเจกต์ใหม่ — Hero */}
-        <section className="relative isolate overflow-hidden rounded-3xl border border-accent-line/70 bg-card shadow-sm">
+        <section id="new-project" className="relative isolate overflow-hidden rounded-3xl border border-accent-line/70 bg-card shadow-sm">
           <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-br from-accent-soft via-card to-card" />
           <div aria-hidden="true" className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-accent/10 blur-3xl" />
           <div className="p-5 sm:p-8 space-y-5 sm:space-y-6">
@@ -311,7 +328,9 @@ export default function ProjectsHomePage() {
           </div>
 
           <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-2.5">
+            <label htmlFor="novel-toc-url" className="sr-only">ลิงก์หน้าสารบัญนิยาย</label>
             <input
+              id="novel-toc-url"
               type="url"
               required
               value={url}
@@ -415,12 +434,17 @@ export default function ProjectsHomePage() {
           </div>
 
           {mounted && projects.length === 0 && (
-            <div className="rounded-xl border border-dashed border-line bg-card/50 py-12 px-6 text-center">
-              <FolderOpen className="w-10 h-10 mx-auto mb-3 text-line" />
-              <p className="text-sm text-muted font-medium">ยังไม่มีโปรเจกต์</p>
-              <p className="text-xs text-muted mt-1">
-                วางลิงก์หน้าสารบัญด้านบนเพื่อเริ่มเรื่องแรกของคุณ
+            <div className="rounded-2xl border border-dashed border-accent-line bg-accent-soft/40 py-10 px-6 text-center">
+              <span className="h-14 w-14 rounded-2xl bg-card border border-line inline-flex items-center justify-center mb-4 text-accent-soft-fg">
+                <FolderOpen className="w-7 h-7" />
+              </span>
+              <p className="text-base font-semibold">ชั้นหนังสือของคุณยังว่างอยู่</p>
+              <p className="text-xs text-muted mt-1.5 max-w-sm mx-auto leading-relaxed">
+                เริ่มจากเพิ่มนิยายเรื่องแรก ระบบจะสร้างพื้นที่เก็บสารบัญ เนื้อหาบท และงานแปลไว้ให้
               </p>
+              <a href="#new-project" className="mt-5 inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-accent text-accent-fg text-xs font-semibold shadow-sm hover:brightness-110 transition-all">
+                <FolderOpen className="w-4 h-4" /> เพิ่มนิยายเรื่องแรก
+              </a>
             </div>
           )}
 
