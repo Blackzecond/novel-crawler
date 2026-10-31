@@ -203,11 +203,6 @@ export async function translateNovelText(
   const data = await response.json();
   const choice = data?.choices?.[0];
   const translated = choice?.message?.content;
-  if (choice?.finish_reason === 'length') {
-    throw new Error(
-      'AI_TRANSLATION_TRUNCATED:โมเดลส่งคำแปลมาไม่ครบทั้งตอน แม้ส่งต้นฉบับเป็นคำขอเดียวแล้ว เพดาน output ของโมเดลหรือโควตาอาจไม่เพียงพอ กรุณาใช้โมเดลหรือแพ็กเกจที่รองรับ output tokens สูงขึ้น',
-    );
-  }
   if (typeof translated !== 'string' || !translated.trim()) {
     throw new Error('AI ไม่ส่งคำแปลกลับมา');
   }
