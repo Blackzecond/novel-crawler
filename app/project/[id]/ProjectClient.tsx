@@ -45,6 +45,7 @@ export default function ProjectClient({ id }: { id: string }) {
   const [project, setProject] = useState<NovelProject | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [sortDesc, setSortDesc] = useState(false);
   const [filter, setFilter] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -67,16 +68,19 @@ export default function ProjectClient({ id }: { id: string }) {
   const [aiForm, setAiForm] = useState<AiDetectSettings>(defaultAiSettings);
 
   const refresh = useCallback(async () => {
+    setLoaded(false);
+    setLoadError('');
+    setNotFound(false);
     try {
       const p = await getStore().getProject(id);
-      if (!p) setNotFound(true);
       setProject(p);
+      setNotFound(!p);
     } catch (err) {
       if (err instanceof Error && err.message.includes('กรุณาเข้าสู่ระบบ')) {
         window.location.href = '/login';
         return;
       }
-      setNotFound(true);
+      setLoadError(err instanceof Error ? err.message : 'โหลดโปรเจกต์ไม่สำเร็จ');
     } finally {
       setLoaded(true);
     }
@@ -334,6 +338,17 @@ export default function ProjectClient({ id }: { id: string }) {
     });
     setShowAiSettings(false);
   };
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-bg text-fg flex flex-col items-center justify-center gap-3 px-6 text-center">
+        <AlertTriangle className="w-10 h-10 text-danger-fg" />
+        <p role="alert" className="text-sm text-muted max-w-sm leading-relaxed">โหลดโปรเจกต์ไม่สำเร็จ: {loadError}</p>
+        <button onClick={() => void refresh()} className="h-9 px-4 rounded-lg bg-accent text-accent-fg text-sm font-medium">ลองอีกครั้ง</button>
+        <Link href="/" className="text-sm text-muted hover:text-fg">กลับหน้าโปรเจกต์</Link>
+      </div>
+    );
+  }
 
   if (notFound) {
     return (
@@ -786,11 +801,14 @@ export default function ProjectClient({ id }: { id: string }) {
             onClick={() => setShowAiSettings(false)}
           >
             <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="ai-settings-title"
               className="w-full sm:max-w-md bg-card border border-line rounded-t-2xl sm:rounded-2xl p-4 space-y-3 shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold flex items-center gap-2">
+                <h3 id="ai-settings-title" className="text-sm font-bold flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-accent" /> ตั้งค่า AI (จับศัพท์เฉพาะ)
                 </h3>
                 <button onClick={() => setShowAiSettings(false)} className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted hover:text-fg cursor-pointer" aria-label="ปิด">
