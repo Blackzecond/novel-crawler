@@ -146,7 +146,7 @@ function wait(ms: number): Promise<void> {
 
 /**
  * แปลข้อความนิยายเป็นภาษาไทยผ่าน OpenAI-compatible Chat Completions API.
- * แบ่งคำขอเป็นช่วง ตรวจการตัดผลลัพธ์ และรอเมื่อ Provider ปฏิเสธเพราะ OTPM.
+ * หากผลลัพธ์ชนเพดาน จะลดขนาดเฉพาะช่วงนั้นแล้วลองแปลใหม่โดยอัตโนมัติ.
  */
 export async function translateNovelText(
   text: string,
@@ -167,22 +167,18 @@ export async function translateNovelText(
     'Return only the Thai translation.',
   ].join('\n');
 
-  const chunks = splitTranslationText(text);
-  const translatedChunks: string[] = [];
-
-  for (let index = 0; index < chunks.length; index++) {
-    const chunk = chunks[index];
+  const requestChunk = async (chunk: string, depth = 0): Promise<string> => {
     const relevantGlossary = glossaryEntries.filter(([source]) => chunk.includes(source));
     const systemPrompt = relevantGlossary.length
       ? baseSystemPrompt + '\nFollow this glossary exactly for the listed terms. Do not change their Thai spellings:\n' + JSON.stringify(Object.fromEntries(relevantGlossary))
       : baseSystemPrompt;
     const leadingWhitespace = chunk.slice(0, chunk.length - chunk.trimStart().length);
     const trailingWhitespace = chunk.slice(chunk.trimEnd().length);
-    const leadingBreaks = leadingWhitespace.split('').filter((char) => char === String.fromCharCode(10)).join('');
-    const trailingBreaks = trailingWhitespace.split('').filter((char) => char === String.fromCharCode(10)).join('');
+    const leadingBreaks = leadingWhitespace.split('').filter((char) => char === '\n').join('');
+    const trailingBreaks = trailingWhitespace.split('').filter((char) => char === '\n').join('');
+
     let response: Response | null = null;
     let detail = '';
-
     for (let attempt = 0; attempt < 5; attempt++) {
       response = await fetch(cfg.baseUrl.replace(/\/$/, '') + '/chat/completions', {
         method: 'POST',
@@ -208,10 +204,16 @@ export async function translateNovelText(
         throw new Error('AI_API_ERROR:' + response.status + ' ' + detail.slice(0, 300));
       }
 
-      const retryAfter = Number(response.headers.get('retry-after'));
-      const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
-        ? Math.max(1000, retryAfter * 1000)
-        : 60_000;
+      const retryAfterHeader = Number(response.headers.get('retry-after'));
+      const retryAfterMessage = detail.match(/try again in\s+([\d.]+)\s*(ms|milliseconds|s|seconds?)/i);
+      const messageDelay = retryAfterMessage
+        ? Number(retryAfterMessage[1]) * (/^(ms|milliseconds)$/i.test(retryAfterMessage[2]) ? 1 : 1000)
+        : 0;
+      const waitMs = retryAfterHeader > 0
+        ? Math.max(250, retryAfterHeader * 1000)
+        : messageDelay > 0
+          ? Math.max(250, messageDelay + 250)
+          : 5000;
       await wait(waitMs);
     }
 
@@ -223,12 +225,45 @@ export async function translateNovelText(
     const choice = data?.choices?.[0];
     const translated = choice?.message?.content;
     if (choice?.finish_reason === 'length') {
-      throw new Error('AI_TRANSLATION_TRUNCATED:คำแปลส่วนที่ ' + (index + 1) + '/' + chunks.length + ' ถูกตัดเพราะชนเพดาน output tokens กรุณาลองใหม่หรือลดขนาดช่วงแปล');
+      const maxDepth = 5;
+      const minChunkLength = 80;
+      if (depth >= maxDepth || chunk.length < minChunkLength * 2) {
+        throw new Error('AI_TRANSLATION_TRUNCATED:ผลลัพธ์ยังถูกตัดแม้แบ่งข้อความย่อยแล้ว กรุณาลองลดขนาดช่วงแปลหรือเปลี่ยนโมเดล');
+      }
+
+      // Split near the midpoint, preferring a sentence/paragraph boundary.
+      const midpoint = Math.floor(chunk.length / 2);
+      const boundary = Math.max(
+        chunk.lastIndexOf('。', midpoint), chunk.lastIndexOf('！', midpoint), chunk.lastIndexOf('？', midpoint),
+        chunk.lastIndexOf('；', midpoint), chunk.lastIndexOf('，', midpoint), chunk.lastIndexOf('.', midpoint),
+        chunk.lastIndexOf('!', midpoint), chunk.lastIndexOf('?', midpoint), chunk.lastIndexOf(';', midpoint),
+        chunk.lastIndexOf(',', midpoint), chunk.lastIndexOf('\n', midpoint),
+      );
+      const splitAt = boundary >= Math.floor(chunk.length * 0.3) && boundary <= Math.floor(chunk.length * 0.7)
+        ? boundary + 1
+        : midpoint;
+      const left = chunk.slice(0, splitAt);
+      const right = chunk.slice(splitAt);
+      if (!left.trim() || !right.trim()) {
+        throw new Error('AI_TRANSLATION_TRUNCATED:ไม่สามารถแบ่งช่วงข้อความที่ถูกตัดได้');
+      }
+      const [leftTranslation, rightTranslation] = await Promise.all([
+        requestChunk(left, depth + 1),
+        requestChunk(right, depth + 1),
+      ]);
+      return leftTranslation + rightTranslation;
     }
+
     if (typeof translated !== 'string' || !translated.trim()) {
-      throw new Error('AI ไม่ส่งคำแปลกลับมาในส่วนที่ ' + (index + 1) + '/' + chunks.length);
+      throw new Error('AI ไม่ส่งคำแปลกลับมา');
     }
-    translatedChunks.push(leadingBreaks + translated.trim() + trailingBreaks);
+    return leadingBreaks + translated.trim() + trailingBreaks;
+  };
+
+  const chunks = splitTranslationText(text);
+  const translatedChunks: string[] = [];
+  for (const chunk of chunks) {
+    translatedChunks.push(await requestChunk(chunk));
   }
 
   return translatedChunks.join('').trim();
