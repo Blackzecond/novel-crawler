@@ -34,6 +34,7 @@ export default function ReaderPage() {
   const [url, setUrl] = useState('');
   const [projectId, setProjectId] = useState<string | null>(null);
   const [readerProject, setReaderProject] = useState<NovelProject | null>(null);
+  const chapterCacheRef = useRef<Map<string, ArticleData>>(new Map());
   const [showToc, setShowToc] = useState(false);
   const [tocFilter, setTocFilter] = useState('');
   const [loading, setLoading] = useState(false);
@@ -198,15 +199,35 @@ export default function ReaderPage() {
     if (!targetUrl) return;
     const activeProjectId = projectIdOverride === undefined ? projectId : projectIdOverride;
     setLoading(true); setError(''); setUrl(targetUrl); setAutoScroll(false);
+    const cacheKey = `${activeProjectId ?? 'standalone'}:${targetUrl}`;
     try {
+      if (!forceRender) {
+        const inMemoryArticle = chapterCacheRef.current.get(cacheKey);
+        if (inMemoryArticle) {
+          setArticle(inMemoryArticle);
+          syncReaderUrl(targetUrl, activeProjectId);
+          saveToHistory(targetUrl, inMemoryArticle.title);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        }
+      }
+
       let project: NovelProject | null = null;
       let chapter: NovelChapter | null = null;
       if (activeProjectId) {
-        project = await getStore().getProject(activeProjectId);
-        if (project) { setReaderProject(project); chapter = project.chapters.find((item) => item.url === targetUrl) ?? null; }
+        project = readerProject?.id === activeProjectId
+          ? readerProject
+          : await getStore().getProject(activeProjectId);
+        if (project) {
+          setReaderProject(project);
+          chapter = project.chapters.find((item) => item.url === targetUrl) ?? null;
+        }
       }
       if (!forceRender && activeProjectId && project && chapter && chapter.status !== 'pending') {
-        const cached = await getStore().getChapterContent(activeProjectId, chapter.id);
+        const cached = await getStore().getChapterContent(activeProjectId, chapter.id, {
+          includeOriginalText: false,
+          includeTranslatedText: false,
+        });
         if (cached?.readerContent !== undefined) {
           const index = project.chapters.findIndex((item) => item.url === targetUrl);
           const cachedArticle: ArticleData = {
@@ -215,6 +236,7 @@ export default function ReaderPage() {
             prevUrl: index > 0 ? project.chapters[index - 1].url : null,
             nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : null,
           };
+          chapterCacheRef.current.set(cacheKey, cachedArticle);
           setArticle(cachedArticle);
           syncReaderUrl(targetUrl, activeProjectId);
           saveToHistory(targetUrl, cachedArticle.title);
@@ -232,21 +254,40 @@ export default function ReaderPage() {
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
       let articleData: ArticleData = data;
       if (activeProjectId && project && chapter) {
-        const savedChapter = await getStore().updateChapter(activeProjectId, chapter.id, {
-          url: chapter.url, title: chapter.title || data.title, order: chapter.order,
-          originalText: data.textContent, readerContent: data.content, status: 'fetched', error: undefined,
-        });
-        if (savedChapter) {
-          void getStore().updateProject(activeProjectId, { lastReadChapterId: savedChapter.id }).catch((progressError) => console.warn('Could not update last-read progress:', progressError));
-          const refreshed = await getStore().getProject(activeProjectId); if (refreshed) setReaderProject(refreshed);
-        }
         const index = project.chapters.findIndex((item) => item.url === targetUrl);
         articleData = { ...data, title: chapter.title || data.title,
           prevUrl: index > 0 ? project.chapters[index - 1].url : null,
           nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : null };
       }
+
+      // Render first. Saving to Storage/DB runs in the background so network persistence
+      // cannot hold the reader on its loading screen after parsing has succeeded.
+      chapterCacheRef.current.set(cacheKey, articleData);
       setArticle(articleData);
       syncReaderUrl(targetUrl, activeProjectId);
+
+      if (activeProjectId && project && chapter) {
+        void (async () => {
+          try {
+            const savedChapter = await getStore().updateChapter(activeProjectId, chapter.id, {
+              url: chapter.url, title: chapter.title || data.title, order: chapter.order,
+              originalText: data.textContent, readerContent: data.content, status: 'fetched', error: undefined,
+            });
+            if (savedChapter) {
+              setReaderProject((current) => current?.id === activeProjectId ? {
+                ...current,
+                lastReadChapterId: savedChapter.id,
+                chapters: current.chapters.map((item) => item.url === targetUrl
+                  ? { ...item, id: savedChapter.id, status: savedChapter.status }
+                  : item),
+              } : current);
+              await getStore().updateProject(activeProjectId, { lastReadChapterId: savedChapter.id });
+            }
+          } catch (saveError) {
+            console.warn('Could not save fetched chapter cache:', saveError);
+          }
+        })();
+      }
       saveToHistory(targetUrl, articleData.title);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) { setError(err.message); } finally { setLoading(false); }
