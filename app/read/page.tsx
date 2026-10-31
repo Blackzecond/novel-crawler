@@ -528,7 +528,7 @@ export default function ReaderPage() {
       {/* Main Reader View */}
       <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {error && (
-          <div className="p-4 bg-danger-bg border border-danger-line text-danger-fg rounded-xl mb-6 space-y-3">
+          <div role="alert" className="p-4 bg-danger-bg border border-danger-line text-danger-fg rounded-xl mb-6 space-y-3">
             <p className="text-sm font-semibold">{error}</p>
             <button
               onClick={() => fetchArticle(url, true)}
