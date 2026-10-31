@@ -313,7 +313,7 @@ export default function ReaderPage() {
     if (!article || translationBusy) return;
     const settings = loadAiSettings();
     if (!hasAiKey(settings)) {
-      setTranslationError('กรุณาตั้งค่า AI Base URL, Model และ API Key ในหน้าโปรเจกต์ก่อน');
+      setTranslationError('ยังไม่ได้ตั้งค่า API สำหรับการแปล กรุณากรอก Base URL, Model และ API Key ก่อน');
       return;
     }
     setTranslationBusy(true);
@@ -323,20 +323,29 @@ export default function ReaderPage() {
       const updatedArticle = { ...article, translatedText: translated };
       setArticle(updatedArticle);
       chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
+      setShowTranslation(true);
+
+      // The translation is usable immediately; persistence failure must not hide it.
       if (projectId && currentChapterId) {
-        const saved = await getStore().updateChapter(projectId, currentChapterId, {
-          translatedText: translated,
-          status: 'translated',
-          error: undefined,
-        });
-        if (saved) {
-          setReaderProject((current) => current?.id === projectId ? {
-            ...current,
-            chapters: current.chapters.map((item) => item.id === currentChapterId ? { ...item, status: 'translated' } : item),
-          } : current);
+        try {
+          const saved = await getStore().updateChapter(projectId, currentChapterId, {
+            translatedText: translated,
+            status: 'translated',
+            error: undefined,
+          });
+          if (saved) {
+            setReaderProject((current) => current?.id === projectId ? {
+              ...current,
+              chapters: current.chapters.map((item) => item.id === currentChapterId ? { ...item, status: 'translated' } : item),
+            } : current);
+          } else {
+            setTranslationError('แปลสำเร็จแล้ว แต่ยังบันทึกคำแปลลงคลังไม่ได้ คำแปลนี้ยังแสดงอยู่ใน Reader');
+          }
+        } catch (saveError) {
+          console.warn('Could not save translated chapter:', saveError);
+          setTranslationError('แปลสำเร็จแล้ว แต่บันทึกคำแปลไม่สำเร็จ คำแปลนี้ยังแสดงอยู่ใน Reader');
         }
       }
-      setShowTranslation(true);
     } catch (err) {
       setTranslationError(err instanceof Error ? err.message : 'แปลไม่สำเร็จ');
     } finally {
@@ -411,6 +420,14 @@ export default function ReaderPage() {
 
           {/* History + Settings toggles */}
           <div className="flex items-center gap-1 shrink-0">
+            <a
+              href="/settings/ai"
+              title="ตั้งค่า AI สำหรับการแปล"
+              aria-label="ตั้งค่า AI สำหรับการแปล"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-card hover:text-fg"
+            >
+              <Sparkles className="w-4 h-4" />
+            </a>
             <button
               onClick={() => setShowHistory(!showHistory)}
               className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors cursor-pointer shrink-0 ${showHistory ? 'bg-accent-soft border-accent-line text-accent-soft-fg' : 'border-line text-muted hover:bg-card hover:text-fg'}`}
@@ -625,7 +642,14 @@ export default function ReaderPage() {
               </div>
             </div>
 
-            {translationError && <div role="alert" className="rounded-lg border border-danger-line bg-danger-bg p-3 text-sm text-danger-fg">{translationError}</div>}
+            {translationError && (
+              <div role="alert" className="rounded-lg border border-danger-line bg-danger-bg p-3 text-sm text-danger-fg">
+                <p>{translationError}</p>
+                <a href="/settings/ai" className="mt-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:opacity-80">
+                  เปิดหน้าตั้งค่า AI
+                </a>
+              </div>
+            )}
 
             {/* Article Content Render */}
             {showTranslation && article.translatedText ? (

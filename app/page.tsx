@@ -329,6 +329,9 @@ export default function ProjectsHomePage() {
             <a href="/glossary-sets" className="inline-flex items-center justify-center gap-2 h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-sm text-muted hover:text-fg hover:bg-surface transition-colors">
               <Library className="w-4 h-4" /><span className="hidden sm:inline">คลังศัพท์</span>
             </a>
+            <a href="/settings/ai" className="inline-flex items-center justify-center gap-2 h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-sm text-muted hover:text-fg hover:bg-surface transition-colors" title="ตั้งค่า API สำหรับการแปลและจับศัพท์">
+              <Sparkles className="w-4 h-4" /><span className="hidden sm:inline">ตั้งค่า AI</span>
+            </a>
             {isSupabaseConfigured() && (
               <button onClick={() => void signOut()} title="ออกจากระบบ" aria-label="ออกจากระบบ"
                 className="h-9 w-9 inline-flex items-center justify-center rounded-xl text-muted hover:text-danger-fg hover:bg-danger-bg transition-colors">
