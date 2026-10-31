@@ -23,7 +23,7 @@ const FETCH_DELAY_MS = 700;
 function htmlToPlainText(html: string): string {
   if (typeof DOMParser === 'undefined') return html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim();
   const parsed = new DOMParser().parseFromString(html, 'text/html');
-  return (parsed.body.textContent ?? '').replace(/\\u00a0/g, ' ').trim();
+  return (parsed.body.textContent ?? '').replaceAll(String.fromCharCode(160), ' ').trim();
 }
 
 function StatusBadge({ status }: { status: NovelChapter['status'] }) {
