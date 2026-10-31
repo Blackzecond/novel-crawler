@@ -36,7 +36,8 @@ export default function ReaderPage() {
   const [url, setUrl] = useState('');
   const [projectId, setProjectId] = useState<string | null>(null);
   const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
-  const [translationBusy, setTranslationBusy] = useState(false);\n  const [editorBusy, setEditorBusy] = useState(false);
+  const [translationBusy, setTranslationBusy] = useState(false);
+  const [editorBusy, setEditorBusy] = useState(false);
   const [translationError, setTranslationError] = useState('');
   const [showTranslation, setShowTranslation] = useState(false);
   const [readerProject, setReaderProject] = useState<NovelProject | null>(null);
@@ -319,7 +320,9 @@ export default function ReaderPage() {
     setTranslationBusy(true);
     setTranslationError('');
     try {
-      const latestProject = projectId ? await getStore().getProject(projectId) : null;\n      const glossary = latestProject?.glossary ?? readerProject?.glossary ?? {};\n      const translated = await translateNovelText(article.textContent, settings, glossary);
+      const latestProject = projectId ? await getStore().getProject(projectId) : null;
+      const glossary = latestProject?.glossary ?? readerProject?.glossary ?? {};
+      const translated = await translateNovelText(article.textContent, settings, glossary);
       const updatedArticle = { ...article, translatedText: translated };
       setArticle(updatedArticle);
       chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
