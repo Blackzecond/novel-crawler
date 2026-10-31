@@ -113,3 +113,55 @@ export async function detectNamedTerms(text: string, settings?: AiDetectSettings
   }
   return pairs;
 }
+
+
+/**
+ * แปลข้อความนิยายเป็นภาษาไทยผ่าน OpenAI-compatible Chat Completions API.
+ * API key อ่านจาก localStorage และส่งตรงไปยัง Base URL ที่ผู้ใช้กำหนด
+ * ผลลัพธ์เป็นข้อความล้วนเพื่อให้ Reader แสดงผลอย่างปลอดภัยโดยไม่ใช้ dangerouslySetInnerHTML.
+ */
+export async function translateNovelText(
+  text: string,
+  settings?: AiDetectSettings,
+): Promise<string> {
+  const cfg = settings ?? loadAiSettings();
+  if (!cfg.apiKey.trim()) throw new Error('AI_NOT_CONFIGURED');
+  if (!text.trim()) throw new Error('ไม่มีเนื้อหาสำหรับแปล');
+
+  const systemPrompt = [
+    'You are a professional Chinese-to-Thai web novel translator.',
+    'Translate the supplied Chinese novel text into natural, faithful Thai.',
+    'Preserve the original meaning, paragraph order, dialogue, names, titles, and formatting.',
+    'Do not summarize, omit, explain, add plot details, or include the original Chinese.',
+    'Use consistent Thai transliteration for proper nouns within this passage.',
+    'Return only the Thai translation.',
+  ].join(' ');
+
+  const response = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${cfg.apiKey.trim()}`,
+    },
+    body: JSON.stringify({
+      model: cfg.model,
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: text },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(`AI_API_ERROR:${response.status} ${detail.slice(0, 240)}`);
+  }
+
+  const data = await response.json();
+  const translated = data?.choices?.[0]?.message?.content;
+  if (typeof translated !== 'string' || !translated.trim()) {
+    throw new Error('AI ไม่ส่งข้อความคำแปลกลับมา');
+  }
+  return translated.trim();
+}
