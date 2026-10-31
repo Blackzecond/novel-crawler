@@ -806,12 +806,28 @@ export default function ProjectClient({ id }: { id: string }) {
               aria-labelledby="ai-settings-title"
               className="w-full sm:max-w-md bg-card border border-line rounded-t-2xl sm:rounded-2xl p-4 space-y-3 shadow-xl"
               onClick={(e) => e.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') setShowAiSettings(false);
+                if (event.key === 'Tab') {
+                  const focusable = event.currentTarget.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])');
+                  if (!focusable.length) return;
+                  const first = focusable[0];
+                  const last = focusable[focusable.length - 1];
+                  if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last.focus();
+                  } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first.focus();
+                  }
+                }
+              }}
             >
               <div className="flex items-center justify-between">
                 <h3 id="ai-settings-title" className="text-sm font-bold flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-accent" /> ตั้งค่า AI (จับศัพท์เฉพาะ)
                 </h3>
-                <button onClick={() => setShowAiSettings(false)} className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted hover:text-fg cursor-pointer" aria-label="ปิด">
+                <button autoFocus onClick={() => setShowAiSettings(false)} className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted hover:text-fg cursor-pointer" aria-label="ปิด">
                   <X className="w-4 h-4" />
                 </button>
               </div>
