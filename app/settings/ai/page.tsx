@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { ArrowLeft, CheckCircle2, CircleAlert, Loader2, Save, Sparkles, Wifi } from 'lucide-react';
 import {
   AiDetectSettings,
+  AiProvider,
+  AI_PROVIDER_PRESETS,
+  inferAiProvider,
   defaultAiSettings,
   hasAiKey,
   loadAiSettings,
@@ -14,6 +17,7 @@ import { loadCloudAiSettings, saveCloudAiSettings } from '@/lib/cloudPreferences
 
 export default function AiSettingsPage() {
   const [settings, setSettings] = useState<AiDetectSettings>(defaultAiSettings);
+  const [provider, setProvider] = useState<AiProvider>(inferAiProvider(defaultAiSettings.baseUrl));
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -43,10 +47,12 @@ export default function AiSettingsPage() {
           model: cloud?.model || local.model,
         };
         setSettings(merged);
+        setProvider(inferAiProvider(merged.baseUrl));
         setSaved(hasAiKey(merged));
       } catch (err) {
         if (!active) return;
         setSettings(local);
+        setProvider(inferAiProvider(local.baseUrl));
         setSaved(hasAiKey(local));
         setNotice('โหลดค่าจาก Cloud ไม่สำเร็จ ใช้ค่าที่บันทึกในเบราว์เซอร์นี้แทน');
       } finally {
@@ -178,16 +184,43 @@ export default function AiSettingsPage() {
           ) : (
             <>
               <label className="block space-y-1.5">
+                <span className="text-sm font-medium">ผู้ให้บริการ AI</span>
+                <select
+                  value={provider}
+                  onChange={(event) => {
+                    const next = event.target.value as AiProvider;
+                    setProvider(next);
+                    if (next !== 'custom') {
+                      const preset = AI_PROVIDER_PRESETS[next];
+                      update({ baseUrl: preset.baseUrl, model: preset.model, apiKey: '' });
+                    } else {
+                      setSaved(false);
+                    }
+                  }}
+                  className="h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:ring-2 focus:ring-accent/50"
+                >
+                  <option value="gemini">Google Gemini — แนะนำให้เริ่มทดสอบ</option>
+                  <option value="qwen">Alibaba Qwen — โมเดลจีน</option>
+                  <option value="custom">Custom OpenAI-compatible</option>
+                </select>
+                <span className="block text-xs text-muted">
+                  เปลี่ยนผู้ให้บริการได้โดยไม่ต้องแก้ Reader; เมื่อเปลี่ยนค่ายให้ใช้ API Key ของค่ายนั้นด้วย
+                </span>
+              </label>
+
+              <label className="block space-y-1.5">
                 <span className="text-sm font-medium">API Base URL</span>
                 <input
                   type="url"
                   value={settings.baseUrl}
                   onChange={(event) => update({ baseUrl: event.target.value })}
-                  placeholder={defaultAiSettings.baseUrl}
+                  placeholder={provider === 'gemini' ? AI_PROVIDER_PRESETS.gemini.baseUrl : provider === 'qwen' ? AI_PROVIDER_PRESETS.qwen.baseUrl : defaultAiSettings.baseUrl}
                   autoComplete="url"
                   className="h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:ring-2 focus:ring-accent/50"
                 />
-                <span className="block text-xs text-muted">ใส่ URL หลักของผู้ให้บริการ เช่น https://api.openai.com/v1 ไม่ต้องเติม /chat/completions</span>
+                <span className="block text-xs text-muted">
+                  Gemini ใช้ https://generativelanguage.googleapis.com/v1beta/openai; Qwen ใช้ https://trial.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1 หรือ URL เฉพาะ Workspace จาก Alibaba Cloud
+                </span>
               </label>
 
               <label className="block space-y-1.5">
@@ -196,7 +229,7 @@ export default function AiSettingsPage() {
                   type="text"
                   value={settings.model}
                   onChange={(event) => update({ model: event.target.value })}
-                  placeholder="gpt-4o-mini"
+                  placeholder={provider === 'gemini' ? AI_PROVIDER_PRESETS.gemini.model : provider === 'qwen' ? AI_PROVIDER_PRESETS.qwen.model : 'model-id'}
                   autoComplete="off"
                   className="h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:ring-2 focus:ring-accent/50"
                 />
@@ -219,6 +252,7 @@ export default function AiSettingsPage() {
               <div className="rounded-xl border border-line bg-surface p-3 text-xs leading-relaxed text-muted">
                 <p className="font-semibold text-fg">การจัดเก็บและความเป็นส่วนตัว</p>
                 <p className="mt-1">Base URL และชื่อโมเดลซิงก์ข้ามอุปกรณ์ผ่านบัญชีของคุณได้ ส่วน API Key จะอยู่ในเบราว์เซอร์นี้และส่งตรงไปยังผู้ให้บริการ API ที่ระบุเท่านั้น</p>
+                <p className="mt-1">Gemini Free tier อาจนำข้อมูลที่ส่งไปใช้ปรับปรุงบริการของ Google; หากต้นฉบับมีเนื้อหาส่วนตัวหรือไม่ต้องการให้ใช้ฝึกโมเดล ควรพิจารณาเงื่อนไข Paid tier ก่อนใช้งาน</p>
               </div>
 
               {error && (
