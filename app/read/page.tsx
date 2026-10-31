@@ -152,7 +152,7 @@ export default function ReaderPage() {
   useEffect(() => {
     if (autoScroll) {
       scrollIntervalRef.current = setInterval(() => {
-        window.scrollBy({ top: scrollSpeed, behavior: 'smooth' });
+        window.scrollBy({ top: scrollSpeed, behavior: 'auto' });
       }, 50);
     } else if (scrollIntervalRef.current) {
       clearInterval(scrollIntervalRef.current);
@@ -340,6 +340,7 @@ export default function ReaderPage() {
           <form onSubmit={handleFormSubmit} className="flex gap-2 flex-1 min-w-0">
             <input
               type="url"
+              aria-label="URL นิยายที่ต้องการอ่าน"
               placeholder="วาง URL นิยายที่ต้องการอ่าน..."
               value={url}
               onChange={(e) => setUrl(e.target.value)}
@@ -372,8 +373,8 @@ export default function ReaderPage() {
                 type="button"
                 ref={settingsBtnRef}
                 onClick={() => setShowSettings(!showSettings)}
-                aria-haspopup="dialog"
                 aria-expanded={showSettings}
+                aria-controls="reader-settings-panel"
                 aria-label="การตั้งค่าการอ่าน"
                 className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors cursor-pointer shrink-0 ${showSettings ? 'bg-accent-soft border-accent-line text-accent-soft-fg' : 'border-line text-muted hover:bg-card hover:text-fg'}`}
               >
@@ -395,7 +396,7 @@ export default function ReaderPage() {
           {showToc && readerProject && (
             <div className="mt-2 rounded-xl border border-line bg-card shadow-sm overflow-hidden">
               <div className="p-2 border-b border-line bg-surface">
-                <input value={tocFilter} onChange={(event) => setTocFilter(event.target.value)} placeholder="ค้นหาตอนในสารบัญ..." className="w-full h-9 px-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:ring-2 focus:ring-accent/60" />
+                <input aria-label="ค้นหาตอนในสารบัญ" value={tocFilter} onChange={(event) => setTocFilter(event.target.value)} placeholder="ค้นหาตอนในสารบัญ..." className="w-full h-9 px-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:ring-2 focus:ring-accent/60" />
               </div>
               <div className="max-h-[50vh] overflow-y-auto divide-y divide-line">
               {readerProject.chapters.filter((chapter) => !tocFilter.trim() || chapter.title.toLowerCase().includes(tocFilter.trim().toLowerCase())).map((chapter) => (
@@ -415,7 +416,8 @@ export default function ReaderPage() {
       {showSettings && (
         <div
           ref={settingsRef}
-          role="dialog"
+          id="reader-settings-panel"
+          role="region"
           aria-label="การตั้งค่าการอ่าน"
           className={`fixed z-30 inset-x-0 bottom-0 sm:inset-x-auto sm:bottom-auto sm:top-[4.25rem] sm:right-6 sm:w-72 p-4 sm:p-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-3 rounded-t-2xl sm:rounded-xl border border-line bg-card shadow-xl space-y-4 sm:space-y-3`}
         >
