@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Library, BookOpen, Loader2, Trash2, Download, Upload,
-  ChevronRight, AlertTriangle, ExternalLink, Globe, Sparkles, FolderOpen, LogOut, CloudUpload, Search, ArrowUpDown,
+  ChevronRight, AlertTriangle, ExternalLink, Globe, Sparkles, FolderOpen, LogOut, CloudUpload, Search, ArrowUpDown, RefreshCw,
 } from 'lucide-react';
 import { getLocalProjectsForMigration, getStore, NovelProject } from '@/lib/storage';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -487,7 +487,7 @@ export default function ProjectsHomePage() {
               </div>
               <button type="button" onClick={() => void retryLoadProjects()} disabled={retryingProjects}
                 className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-danger-line bg-card px-3 text-xs font-semibold text-danger-fg disabled:opacity-50">
-                {retryingProjects ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpDown className="h-4 w-4" />}
+                {retryingProjects ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 {retryingProjects ? 'กำลังลองใหม่…' : 'ลองโหลดอีกครั้ง'}
               </button>
             </div>
