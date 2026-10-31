@@ -83,6 +83,7 @@ async function requestChatCompletion(
       model: settings.model,
       temperature,
       ...(maxTokens ? { max_tokens: maxTokens } : {}),
+      ...(inferAiProvider(settings.baseUrl) !== 'custom' ? { reasoning_effort: 'low' } : {}),
       messages,
     }),
   });
