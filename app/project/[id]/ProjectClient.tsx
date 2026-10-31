@@ -532,6 +532,7 @@ export default function ProjectClient({ id }: { id: string }) {
             <div className="relative flex-1 min-w-[10rem] basis-full sm:basis-auto">
               <Search className="w-3.5 h-3.5 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
               <input
+                aria-label="ค้นหาชื่อบท"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder="ค้นหาชื่อบท..."
