@@ -20,6 +20,15 @@ export default function AiSettingsPage() {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [returnTo, setReturnTo] = useState('/');
+
+  useEffect(() => {
+    const requestedPath = new URLSearchParams(window.location.search).get('returnTo');
+    // Only accept a local project path; never allow an external redirect.
+    if (requestedPath?.startsWith('/project/') && !requestedPath.startsWith('//') && !requestedPath.includes('\\')) {
+      setReturnTo(requestedPath);
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -144,7 +153,7 @@ export default function AiSettingsPage() {
     <main className="min-h-screen bg-bg text-fg">
       <header className="border-b border-line bg-card">
         <div className="mx-auto flex h-14 max-w-3xl items-center px-4 sm:px-6">
-          <Link href="/" className="inline-flex items-center gap-2 text-sm text-muted hover:text-fg">
+          <Link href={returnTo} className="inline-flex items-center gap-2 text-sm text-muted hover:text-fg">
             <ArrowLeft className="h-4 w-4" /> กลับหน้าโปรเจกต์
           </Link>
         </div>
