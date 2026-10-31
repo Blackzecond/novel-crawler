@@ -229,5 +229,5 @@ export async function translateNovelText(
     translatedChunks.push(translated.trim());
   }
 
-  return translatedChunks.join('\n\n');
+  return translatedChunks.join('').trim();
 }
