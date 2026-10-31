@@ -5,13 +5,12 @@ import Link from 'next/link';
 import {
   ChevronLeft, ChevronRight, ChevronDown, Loader2, Play, Square, Trash2,
   ExternalLink, Search, ArrowUpDown, AlertTriangle, CheckCircle2, Circle,
-  Sparkles, Globe, BookOpen, Download, FolderOpen, Pencil, Check, X,
+  Sparkles, Globe, BookOpen, Download, FolderOpen, Pencil, Check,
   BookMarked, Settings, Plus, History,
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 import {
-  detectNamedTerms, hasAiKey, loadAiSettings, saveAiSettings,
-  defaultAiSettings, AiDetectSettings,
+  detectNamedTerms, hasAiKey, loadAiSettings,
 } from '@/lib/ai';
 import { loadCloudAiSettings, saveCloudAiSettings } from '@/lib/cloudPreferences';
 
@@ -63,9 +62,7 @@ export default function ProjectClient({ id }: { id: string }) {
   const [detecBusyIds, setDetecBusyIds] = useState<Set<string>>(new Set());
   const [addZh, setAddZh] = useState('');
   const [addTh, setAddTh] = useState('');
-  const [showAiSettings, setShowAiSettings] = useState(false);
   const [aiReady, setAiReady] = useState(false);
-  const [aiForm, setAiForm] = useState<AiDetectSettings>(defaultAiSettings);
 
   const refresh = useCallback(async () => {
     setLoaded(false);
@@ -103,16 +100,13 @@ export default function ProjectClient({ id }: { id: string }) {
             model: cloud.model || local.model,
           };
           saveAiSettings(merged);
-          setAiForm(merged);
           setAiReady(hasAiKey(merged));
         } else {
           await saveCloudAiSettings(local);
-          setAiForm(local);
           setAiReady(hasAiKey(local));
         }
       } catch (syncError) {
         console.warn('Could not sync AI settings:', syncError);
-        setAiForm(local);
         setAiReady(hasAiKey(local));
       }
     })();
@@ -323,20 +317,6 @@ export default function ProjectClient({ id }: { id: string }) {
   const setGlossaryMode = async (mode: 'manual' | 'auto') => {
     const updated = await getStore().updateProject(id, { glossaryMode: mode });
     if (updated) setProject(updated);
-  };
-
-  const openAiSettings = () => {
-    setAiForm(loadAiSettings());
-    setShowAiSettings(true);
-  };
-
-  const saveAiForm = () => {
-    saveAiSettings(aiForm);
-    setAiReady(aiForm.apiKey.trim().length > 0);
-    void saveCloudAiSettings(aiForm).catch((syncError) => {
-      setGlossaryNotice(`บันทึกการตั้งค่า AI ลง Cloud ไม่สำเร็จ: ${syncError instanceof Error ? syncError.message : String(syncError)}`);
-    });
-    setShowAiSettings(false);
   };
 
   if (loadError) {
@@ -585,16 +565,16 @@ export default function ProjectClient({ id }: { id: string }) {
                     อัตโนมัติหลังดึง
                   </button>
                 </div>
-                <button
-                  onClick={openAiSettings}
-                  className={`inline-flex items-center gap-1.5 px-2.5 h-7 rounded-lg border text-[11px] transition-colors cursor-pointer ${
+                <Link
+                  href="/settings/ai"
+                  className={`inline-flex items-center gap-1.5 px-2.5 h-7 rounded-lg border text-[11px] transition-colors ${
                     aiReady ? 'border-line text-muted hover:text-fg' : 'border-amber-400/60 text-amber-600 hover:bg-amber-50'
                   }`}
-                  title="ตั้งค่า API ตรวจศัพท์เฉพาะ (base URL / โมเดล / API key)"
+                  title="ตั้งค่า API สำหรับการแปลและจับศัพท์เฉพาะ"
                 >
                   <span className={`w-1.5 h-1.5 rounded-full ${aiReady ? 'bg-green-500' : 'bg-amber-500'}`} />
-                  ตั้งค่า AI (ยังไม่มี key → ตั้งที่นี่)
-                </button>
+                  ตั้งค่า AI
+                </Link>
               </div>
 
               <p className="text-[11px] text-muted leading-relaxed">
@@ -795,94 +775,7 @@ export default function ProjectClient({ id }: { id: string }) {
           </p>
         )}
 
-        {/* โมดัลตั้งค่า AI (จับศัพท์เฉพาะ) */}
-        {showAiSettings && (
-          <div
-            className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/40"
-            onClick={() => setShowAiSettings(false)}
-          >
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="ai-settings-title"
-              className="w-full sm:max-w-md bg-card border border-line rounded-t-2xl sm:rounded-2xl p-4 space-y-3 shadow-xl"
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') setShowAiSettings(false);
-                if (event.key === 'Tab') {
-                  const focusable = event.currentTarget.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])');
-                  if (!focusable.length) return;
-                  const first = focusable[0];
-                  const last = focusable[focusable.length - 1];
-                  if (event.shiftKey && document.activeElement === first) {
-                    event.preventDefault();
-                    last.focus();
-                  } else if (!event.shiftKey && document.activeElement === last) {
-                    event.preventDefault();
-                    first.focus();
-                  }
-                }
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <h3 id="ai-settings-title" className="text-sm font-bold flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-accent" /> ตั้งค่า AI (จับศัพท์เฉพาะ)
-                </h3>
-                <button autoFocus onClick={() => setShowAiSettings(false)} className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted hover:text-fg cursor-pointer" aria-label="ปิด">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
 
-              <p className={`text-[11px] flex items-center gap-1.5 rounded-lg px-2.5 py-2 border ${aiReady ? 'bg-accent-soft border-accent-line text-accent-soft-fg' : 'bg-amber-50 border-amber-300 text-amber-700'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${aiReady ? 'bg-green-500' : 'bg-amber-500'}`} />
-                {aiReady ? 'ตั้งค่าแล้ว — พร้อมใช้จับศัพท์เฉพาะ' : 'ยังไม่มี API key — ใส่คีย์เพื่อเริ่มตรวจชื่อตัวละคร/ศัพท์เฉพาะได้'}
-              </p>
-
-              <div className="space-y-2">
-                <label className="block">
-                  <span className="text-[11px] font-medium text-muted">API Base URL (OpenAI-compatible)</span>
-                  <input
-                    value={aiForm.baseUrl}
-                    onChange={(e) => setAiForm({ ...aiForm, baseUrl: e.target.value })}
-                    placeholder={defaultAiSettings.baseUrl}
-                    className="w-full h-9 px-3 mt-1 text-sm bg-bg border border-line rounded-lg text-fg focus:outline-none focus:ring-2 focus:ring-accent/60"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[11px] font-medium text-muted">โมเดล</span>
-                  <input
-                    value={aiForm.model}
-                    onChange={(e) => setAiForm({ ...aiForm, model: e.target.value })}
-                    placeholder={defaultAiSettings.model}
-                    className="w-full h-9 px-3 mt-1 text-sm bg-bg border border-line rounded-lg text-fg focus:outline-none focus:ring-2 focus:ring-accent/60"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[11px] font-medium text-muted">API Key</span>
-                  <input
-                    type="password"
-                    value={aiForm.apiKey}
-                    onChange={(e) => setAiForm({ ...aiForm, apiKey: e.target.value })}
-                    placeholder="sk-..."
-                    className="w-full h-9 px-3 mt-1 text-sm bg-bg border border-line rounded-lg text-fg focus:outline-none focus:ring-2 focus:ring-accent/60"
-                  />
-                </label>
-                <p className="text-[11px] text-muted leading-relaxed">
-                  คีย์ถูกเก็บเฉพาะเบราว์เซอร์นี้ (localStorage) และส่งเฉพาะไปยัง URL ที่ตั้งไว้เท่านั้น
-                </p>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-1">
-                <button onClick={() => setShowAiSettings(false)} className="h-9 px-3 rounded-lg border border-line text-sm text-muted hover:text-fg cursor-pointer">
-                  ยกเลิก
-                </button>
-                <button onClick={saveAiForm} className="h-9 px-4 rounded-lg bg-accent text-accent-fg text-sm font-medium hover:brightness-110 cursor-pointer">
-                  บันทึก
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );
