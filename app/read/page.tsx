@@ -381,12 +381,12 @@ export default function ReaderPage() {
       <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-md">
         <div className="max-w-3xl mx-auto flex items-center gap-2 h-14 px-3 sm:px-6">
           <a
-            href="/"
+            href={projectId ? `/project/${projectId}` : "/"}
             className="inline-flex items-center gap-1.5 h-8 pl-1 pr-2 rounded-lg text-sm text-muted hover:text-accent-soft-fg shrink-0 cursor-pointer transition-colors"
-            title="กลับหน้าโปรเจกต์แปล"
+            title={projectId ? "กลับหน้าสารบัญนิยาย" : "กลับหน้าโปรเจกต์แปล"}
           >
-            <Library className="w-4 h-4" />
-            <span className="hidden sm:inline">โปรเจกต์แปล</span>
+            {projectId ? <List className="w-4 h-4" /> : <Library className="w-4 h-4" />}
+            <span className="hidden sm:inline">{projectId ? 'กลับหน้าสารบัญ' : 'โปรเจกต์แปล'}</span>
           </a>
 
           <form onSubmit={handleFormSubmit} className="flex gap-2 flex-1 min-w-0">
@@ -597,57 +597,29 @@ export default function ReaderPage() {
               <h1 className="text-2xl sm:text-3xl font-bold leading-tight">{article.title}</h1>
 
               {/* Action Toolbar */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    onClick={handleCopy}
-                    className="inline-flex items-center gap-1.5 h-8 px-3 text-xs bg-surface text-fg rounded-lg border border-line hover:bg-card hover:border-accent-line transition-colors cursor-pointer"
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copied ? 'คัดลอกแล้ว!' : 'คัดลอกเนื้อหา'}
+              <div className="flex flex-nowrap items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <button type="button" onClick={handleCopy} aria-label={copied ? "คัดลอกแล้ว" : "คัดลอกเนื้อหา"} title={copied ? "คัดลอกแล้ว" : "คัดลอกเนื้อหา"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-fg transition-colors hover:border-accent-line hover:bg-card">
+                    {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={handleTranslate}
-                    disabled={translationBusy}
-                    className="inline-flex items-center gap-1.5 h-8 px-3 text-xs bg-accent text-accent-fg rounded-lg disabled:opacity-50"
-                  >
-                    {translationBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                    {translationBusy ? 'กำลังแปล...' : article.translatedText ? 'แปลใหม่' : 'แปลเป็นไทย'}
+                  <button type="button" onClick={handleTranslate} disabled={translationBusy} aria-label={translationBusy ? "กำลังแปล" : article.translatedText ? "แปลใหม่" : "แปลเป็นไทย"} title={translationBusy ? "กำลังแปล" : article.translatedText ? "แปลใหม่" : "แปลเป็นไทย"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg transition-colors hover:brightness-110 disabled:opacity-50">
+                    {translationBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                   </button>
                   {article.translatedText && (
-                    <button type="button" onClick={() => setShowTranslation((value) => !value)} className="h-8 px-3 text-xs rounded-lg border border-line bg-surface">
-                      {showTranslation ? 'ดูต้นฉบับ' : 'ดูคำแปล'}
+                    <button type="button" onClick={() => setShowTranslation((value) => !value)} aria-label={showTranslation ? "ดูต้นฉบับ" : "ดูคำแปล"} title={showTranslation ? "ดูต้นฉบับ" : "ดูคำแปล"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-fg transition-colors hover:border-accent-line hover:bg-card">
+                      <BookOpen className="h-4 w-4" />
                     </button>
                   )}
-                  {/* Auto Scroll Controls */}
-                  <button
-                    onClick={() => setAutoScroll(!autoScroll)}
-                    className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs rounded-lg border transition-colors cursor-pointer ${
-                      autoScroll ? 'bg-green-600 text-white border-transparent' : 'bg-surface text-fg border-line hover:bg-card'
-                    }`}
-                  >
-                    {autoScroll ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                    {autoScroll ? 'หยุดเลื่อน' : 'เลื่อนอัตโนมัติ'}
+                  <button type="button" onClick={() => setAutoScroll(!autoScroll)} aria-label={autoScroll ? "หยุดเลื่อนอัตโนมัติ" : "เลื่อนอัตโนมัติ"} title={autoScroll ? "หยุดเลื่อนอัตโนมัติ" : "เลื่อนอัตโนมัติ"} className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors ${autoScroll ? "border-transparent bg-green-600 text-white" : "border-line bg-surface text-fg hover:border-accent-line hover:bg-card"}`}>
+                    {autoScroll ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                   </button>
                 </div>
-
-                {/* Chapter Navigation */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => article.prevUrl && fetchArticle(article.prevUrl)}
-                    disabled={!article.prevUrl || loading}
-                    className="inline-flex items-center gap-1 h-8 px-3 text-xs bg-accent-soft text-accent-soft-fg rounded-lg disabled:opacity-40 border border-accent-line font-medium cursor-pointer transition-colors"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" /> ตอนก่อนหน้า
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button type="button" onClick={() => article.prevUrl && fetchArticle(article.prevUrl)} disabled={!article.prevUrl || loading} aria-label="ตอนก่อนหน้า" title="ตอนก่อนหน้า" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-accent-line bg-accent-soft text-accent-soft-fg transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-40">
+                    <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <button
-                    onClick={() => article.nextUrl && fetchArticle(article.nextUrl)}
-                    disabled={!article.nextUrl || loading}
-                    className="inline-flex items-center gap-1 h-8 px-3 text-xs bg-accent text-accent-fg rounded-lg disabled:opacity-40 font-medium cursor-pointer transition-colors"
-                  >
-                    ตอนถัดไป <ChevronRight className="w-3.5 h-3.5" />
+                  <button type="button" onClick={() => article.nextUrl && fetchArticle(article.nextUrl)} disabled={!article.nextUrl || loading} aria-label="ตอนถัดไป" title="ตอนถัดไป" className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-accent-fg transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">
+                    <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
               </div>
