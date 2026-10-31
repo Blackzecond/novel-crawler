@@ -420,6 +420,14 @@ export default function ReaderPage() {
 
           {/* History + Settings toggles */}
           <div className="flex items-center gap-1 shrink-0">
+            <a
+              href="/settings/ai"
+              title="ตั้งค่า AI สำหรับการแปล"
+              aria-label="ตั้งค่า AI สำหรับการแปล"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-card hover:text-fg"
+            >
+              <Sparkles className="w-4 h-4" />
+            </a>
             <button
               onClick={() => setShowHistory(!showHistory)}
               className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors cursor-pointer shrink-0 ${showHistory ? 'bg-accent-soft border-accent-line text-accent-soft-fg' : 'border-line text-muted hover:bg-card hover:text-fg'}`}
