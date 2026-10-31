@@ -350,7 +350,8 @@ export default function ReaderPage() {
 
   const handleCopy = async () => {
     if (!article) return;
-    const textToCopy = `${article.title}\n\n${article.textContent.trim()}`;
+    const visibleText = showTranslation && article.translatedText ? article.translatedText : article.textContent.trim();
+    const textToCopy = `${article.title}\n\n${visibleText}`;
     await navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -657,7 +658,7 @@ export default function ReaderPage() {
             {/* Article Content Render */}
             {showTranslation && article.translatedText ? (
               <div className="space-y-6 leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
-                {article.translatedText.split(/\\n\\s*\\n/).map((paragraph, index) => (
+                {article.translatedText.split(/\n\s*\n/).map((paragraph, index) => (
                   <p key={index} className="mb-6 whitespace-pre-wrap">{paragraph}</p>
                 ))}
               </div>
