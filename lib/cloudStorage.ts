@@ -170,18 +170,25 @@ export const supabaseStore: NovelStore = {
     return loadOneProject(id);
   },
 
-  async getChapterContent(projectId, chapterId) {
+  async getChapterContent(projectId, chapterId, options = {}) {
     await currentUserId();
     const row = await getChapterRow(projectId, chapterId);
     if (!row) return null;
+    const includeOriginalText = options.includeOriginalText !== false;
+    const includeTranslatedText = options.includeTranslatedText !== false;
     const chapter = mapChapter(row);
-    if (row.original_storage_provider === 'supabase') {
-      chapter.originalText = await readText(row.original_storage_path);
-    }
-    if (row.reader_storage_path) chapter.readerContent = await readText(row.reader_storage_path);
-    if (row.translated_storage_provider === 'supabase') {
-      chapter.translatedText = await readText(row.translated_storage_path);
-    }
+    const [originalText, readerContent, translatedText] = await Promise.all([
+      includeOriginalText && row.original_storage_provider === 'supabase'
+        ? readText(row.original_storage_path)
+        : Promise.resolve(undefined),
+      row.reader_storage_path ? readText(row.reader_storage_path) : Promise.resolve(undefined),
+      includeTranslatedText && row.translated_storage_provider === 'supabase'
+        ? readText(row.translated_storage_path)
+        : Promise.resolve(undefined),
+    ]);
+    if (originalText !== undefined) chapter.originalText = originalText;
+    if (readerContent !== undefined) chapter.readerContent = readerContent;
+    if (translatedText !== undefined) chapter.translatedText = translatedText;
     return chapter;
   },
 
@@ -346,23 +353,32 @@ export const supabaseStore: NovelStore = {
     const actualChapterId = row.id;
     const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
+    const originalPath = patch.originalText !== undefined
+      ? contentPath(userId, projectId, actualChapterId, 'original')
+      : row.original_storage_path;
+    const readerPath = patch.readerContent !== undefined
+      ? contentPath(userId, projectId, actualChapterId, 'reader')
+      : row.reader_storage_path;
+    const translatedPath = patch.translatedText !== undefined
+      ? contentPath(userId, projectId, actualChapterId, 'translated')
+      : row.translated_storage_path;
+
+    const uploads: Promise<void>[] = [];
     if (patch.originalText !== undefined) {
-      const path = contentPath(userId, projectId, actualChapterId, 'original');
-      await putText(path, patch.originalText);
       update.original_storage_provider = 'supabase';
-      update.original_storage_path = path;
+      update.original_storage_path = originalPath;
+      uploads.push(putText(originalPath!, patch.originalText));
     }
     if (patch.readerContent !== undefined) {
-      const path = contentPath(userId, projectId, actualChapterId, 'reader');
-      await putText(path, patch.readerContent);
-      update.reader_storage_path = path;
+      update.reader_storage_path = readerPath;
+      uploads.push(putText(readerPath!, patch.readerContent));
     }
     if (patch.translatedText !== undefined) {
-      const path = contentPath(userId, projectId, actualChapterId, 'translated');
-      await putText(path, patch.translatedText);
       update.translated_storage_provider = 'supabase';
-      update.translated_storage_path = path;
+      update.translated_storage_path = translatedPath;
+      uploads.push(putText(translatedPath!, patch.translatedText));
     }
+    await Promise.all(uploads);
     if (patch.title !== undefined) update.title = patch.title;
     if (patch.status !== undefined) {
       update.status = patch.status;
@@ -374,8 +390,20 @@ export const supabaseStore: NovelStore = {
     const { error } = await supabase.from('novel_chapters').update(update)
       .eq('id', actualChapterId).eq('project_id', projectId).eq('user_id', userId);
     if (error) throw error;
-    const updated = await this.getChapterContent(projectId, actualChapterId);
-    if (!updated) return null;
+
+    // Return the chapter from the row and in-memory patch; do not download the files just uploaded.
+    const updated = mapChapter({
+      ...row,
+      title: patch.title ?? row.title,
+      chapter_order: patch.order ?? row.chapter_order,
+      status: patch.status ?? row.status,
+      error_message: 'error' in patch ? patch.error ?? null : row.error_message,
+      original_storage_provider: patch.originalText !== undefined ? 'supabase' : row.original_storage_provider,
+      original_storage_path: originalPath,
+      reader_storage_path: readerPath,
+      translated_storage_provider: patch.translatedText !== undefined ? 'supabase' : row.translated_storage_provider,
+      translated_storage_path: translatedPath,
+    });
     if (patch.originalText !== undefined) updated.originalText = patch.originalText;
     if (patch.translatedText !== undefined) updated.translatedText = patch.translatedText;
     if (patch.readerContent !== undefined) updated.readerContent = patch.readerContent;
