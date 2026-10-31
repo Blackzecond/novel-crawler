@@ -247,10 +247,8 @@ export async function translateNovelText(
       if (!left.trim() || !right.trim()) {
         throw new Error('AI_TRANSLATION_TRUNCATED:ไม่สามารถแบ่งช่วงข้อความที่ถูกตัดได้');
       }
-      const [leftTranslation, rightTranslation] = await Promise.all([
-        requestChunk(left, depth + 1),
-        requestChunk(right, depth + 1),
-      ]);
+      const leftTranslation = await requestChunk(left, depth + 1);
+      const rightTranslation = await requestChunk(right, depth + 1);
       return leftTranslation + rightTranslation;
     }
 
