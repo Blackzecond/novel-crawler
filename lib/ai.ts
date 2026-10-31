@@ -141,15 +141,30 @@ export async function translateNovelText(
     Object.entries(glossary).filter(([source, target]) => source.trim() && target.trim() && text.includes(source)),
   );
   const systemPrompt = [
-    'You are a professional Chinese-to-Thai web novel translator.',
-    'Translate the entire supplied chapter as one continuous literary work.',
-    'Read and consider the whole chapter before translating so names, terminology, tone, style, references, and dialogue remain consistent from beginning to end.',
-    'Preserve the original meaning, paragraph order, dialogue, names, titles, and formatting.',
-    'Do not summarize, omit, explain, add plot details, or include the original Chinese.',
-    'Use consistent Thai transliteration for proper nouns throughout the entire chapter.',
-    'Return the complete Thai translation only. Never stop early or intentionally shorten the chapter.',
+    'คุณเป็นนักแปลนิยายจีนเป็นภาษาไทยระดับมืออาชีพ เชี่ยวชาญนิยายเว็บจีนร่วมสมัยและนิยายแนวเซียน/แฟนตาซี',
+    'งานของคุณคือแปลต้นฉบับภาษาจีนทั้งตอนเป็นภาษาไทย โดยต้องรักษาความหมายและรายละเอียดของต้นฉบับ พร้อมเรียบเรียงให้เป็นภาษาไทยที่เป็นธรรมชาติ',
+    '',
+    'หลักการแปลที่ต้องปฏิบัติตาม:',
+    '1. อ่านและทำความเข้าใจต้นฉบับทั้งตอนก่อนแปล ใช้บริบทของทั้งตอนตัดสินความหมายของคำ สรรพนาม ศัพท์เฉพาะ และบทสนทนา',
+    '2. แปลตามความหมายและบริบท ไม่ถอดโครงสร้างประโยคจีนมาเรียงเป็นภาษาไทยตรง ๆ หากทำให้ภาษาไทยแข็งหรือผิดธรรมชาติ แต่ห้ามเปลี่ยนสาระของประโยค',
+    '3. ใช้ภาษาไทยที่กระชับ ชัดเจน เป็นสำนวนเล่านิยาย ไม่ใช้ภาษาทื่อแบบแปลคำต่อคำ ไม่ใช้คำฟุ่มเฟือยหรือขยายความเกินต้นฉบับ',
+    '4. ห้ามแต่งเติมอารมณ์ ความคิด คำอธิบาย เหตุผล เหตุการณ์ หรือรายละเอียดที่ต้นฉบับไม่มี และห้ามตัดทอนข้อความแม้เห็นว่าเป็นคำซ้ำ',
+    '5. รักษาลำดับย่อหน้า ลำดับเหตุการณ์ บทสนทนา น้ำเสียง และระดับภาษาของตัวละครตามต้นฉบับ',
+    '6. ไม่แปลชื่อบุคคลเป็นความหมาย ไม่แทรกช่องว่างกลางชื่อเต็ม และใช้รูปสะกดชื่อเดิมให้เหมือนกันตลอดทั้งตอน หากมีชื่อใน Glossary ให้ใช้ตามนั้นทุกครั้ง',
+    '7. แปลศัพท์เฉพาะตามหน้าที่และบริบทในเรื่อง อย่าสับสนคำที่มีความหมายใกล้กัน เช่น พลัง จิตสัมผัส กลิ่นอาย ลมหายใจ และพลังปราณ ต้องไม่เหมารวมเป็นคำเดียว',
+    '8. หลีกเลี่ยงคำอังกฤษ คำทับศัพท์สมัยใหม่ และสำนวนภาษาพูดที่ไม่จำเป็น เมื่อมีคำไทยที่ตรงความหมายอยู่แล้วให้ใช้คำไทย',
+    '9. ใช้สรรพนามและประธานเท่าที่จำเป็น ภาษาไทยสามารถละประธานได้เมื่อบริบทชัดเจน อย่าเติมคำว่า เขา หรือชื่อซ้ำทุกประโยคโดยไม่จำเป็น',
+    '10. ตรวจทานคำแปลกับต้นฉบับทั้งตอนก่อนส่ง โดยตรวจความครบถ้วน ความถูกต้องของความหมาย ชื่อ ศัพท์เฉพาะ และความเป็นธรรมชาติของภาษาไทย แก้เฉพาะจุดที่ผิดหรือแข็งเกินไปโดยไม่แต่งใหม่',
+    '',
+    'แนวทางศัพท์จากบริบทนิยาย:',
+    '- 妖獸 ใช้ อสูร เว้นแต่ Glossary กำหนดไว้เป็นอย่างอื่น',
+    '- 神念 หมายถึงสัมผัสรับรู้ทางจิตในบริบทการฝึกตน ให้ใช้ จิตสัมผัส เว้นแต่ Glossary กำหนดคำเฉพาะไว้',
+    '- 收斂氣息 ในบริบทซ่อนตัว/ปกปิดพลัง ให้สื่อว่าเก็บกลิ่นอายหรือปกปิดกลิ่นอาย ไม่แปลตรงตัวเป็นการเก็บลมหายใจ',
+    '- 漣漪 หมายถึงระลอกคลื่นบนผิวน้ำ ไม่ใช่คลื่นสั่น',
+    '- เลือกคำตามบริบทเสมอ หาก Glossary ระบุคำแปลไว้ให้ยึด Glossary เป็นหลัก',
+    'ส่งเฉพาะคำแปลภาษาไทยฉบับสมบูรณ์ทั้งตอน ห้ามส่งคำเกริ่น คำอธิบาย หมายเหตุ หรือข้อความภาษาจีน',
     ...(Object.keys(relevantGlossary).length
-      ? ['Follow this glossary exactly for the listed terms. Do not change their Thai spellings:', JSON.stringify(relevantGlossary)]
+      ? ['Glossary ต่อไปนี้เป็นข้อกำหนดบังคับสำหรับคำที่ระบุ ต้องใช้รูปภาษาไทยตามนี้อย่างสม่ำเสมอ:', JSON.stringify(relevantGlossary)]
       : []),
   ].join('\n');
 
@@ -213,4 +228,70 @@ export async function translateNovelText(
   }
 
   return translated.trim();
+}
+
+/**
+ * บรรณาธิการ AI ตรวจแก้คำแปลทั้งตอนเทียบกับต้นฉบับในคำขอเดียว
+ * เป็นขั้นตอนแยกที่ผู้ใช้เรียกเอง ไม่ทำงานอัตโนมัติและไม่แบ่งตอน
+ */
+export async function editNovelTranslation(
+  sourceText: string,
+  draftTranslation: string,
+  settings?: AiDetectSettings,
+  glossary: Record<string, string> = {},
+): Promise<string> {
+  const cfg = settings ?? loadAiSettings();
+  if (!cfg.apiKey.trim()) throw new Error('AI_NOT_CONFIGURED');
+  if (!sourceText.trim() || !draftTranslation.trim()) throw new Error('ไม่มีต้นฉบับหรือคำแปลสำหรับตรวจแก้');
+
+  const relevantGlossary = Object.fromEntries(
+    Object.entries(glossary).filter(([source, target]) => source.trim() && target.trim() && sourceText.includes(source)),
+  );
+  const systemPrompt = [
+    'คุณเป็นบรรณาธิการภาษาไทยผู้เชี่ยวชาญด้านนิยายแปลจีน หน้าที่คือพิสูจน์อักษรและตรวจแก้คำแปลภาษาไทยโดยเทียบกับต้นฉบับภาษาจีนที่ให้มา',
+    'แก้เฉพาะข้อผิดพลาดที่ตรวจพบได้ ได้แก่ แปลผิดความหมาย แปลตกหล่น เติมเนื้อหาเอง ชื่อหรือศัพท์เฉพาะไม่สม่ำเสมอ ไวยากรณ์ไทยผิด และสำนวนแปลตรงตัวที่ผิดธรรมชาติ',
+    'รักษาความหมาย รายละเอียด น้ำเสียง ลำดับย่อหน้า บทสนทนา และรูปแบบของต้นฉบับอย่างเคร่งครัด',
+    'ห้ามแต่งสำนวนใหม่เพื่อความสวยงาม ห้ามเพิ่มอารมณ์หรือคำอธิบาย ห้ามสรุป ห้ามย่อ และห้ามตัดข้อความที่ถูกต้องอยู่แล้ว',
+    'หากประโยคเดิมถูกต้องและเป็นธรรมชาติอยู่แล้ว ให้คงไว้ ไม่ต้องเปลี่ยนเพียงเพื่อให้ดูแตกต่าง',
+    'ห้ามเดาความหมายที่ต้นฉบับไม่รองรับ หากจุดใดกำกวมให้รักษาความหมายอย่างระมัดระวัง ไม่สร้างข้อมูลเพิ่ม',
+    'ชื่อบุคคลต้องเขียนติดกัน ไม่เว้นวรรคกลางชื่อ และต้องใช้ Glossary ตามที่กำหนด',
+    'ส่งคืนคำแปลภาษาไทยฉบับแก้ไขครบทั้งตอนเท่านั้น ห้ามส่งคำอธิบาย รายงานการแก้ไข หรือข้อความภาษาจีน',
+    ...(Object.keys(relevantGlossary).length
+      ? ['Glossary บังคับ:', JSON.stringify(relevantGlossary)]
+      : []),
+  ].join('\n');
+  const maxTokens = Math.min(16_384, Math.max(2_048, Math.ceil(sourceText.length * 2)));
+
+  const response = await fetch(cfg.baseUrl.replace(/\/$/, '') + '/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer ' + cfg.apiKey.trim(),
+    },
+    body: JSON.stringify({
+      model: cfg.model,
+      temperature: 0.1,
+      max_tokens: maxTokens,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: 'ต้นฉบับภาษาจีนทั้งตอน:\n' + sourceText + '\n\nคำแปลภาษาไทยฉบับร่างที่ต้องตรวจแก้ทั้งตอน:\n' + draftTranslation,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error('AI_EDITOR_API_ERROR:' + response.status + ' ' + detail.slice(0, 500));
+  }
+  const data = await response.json();
+  const choice = data?.choices?.[0];
+  const edited = choice?.message?.content;
+  if (choice?.finish_reason === 'length') {
+    throw new Error('AI_EDITOR_TRUNCATED:คำแก้ไขไม่ครบทั้งตอน กรุณาใช้โมเดลหรือแพ็กเกจที่รองรับ output tokens สูงขึ้น');
+  }
+  if (typeof edited !== 'string' || !edited.trim()) throw new Error('AI บรรณาธิการไม่ส่งคำแก้ไขกลับมา');
+  return edited.trim();
 }
