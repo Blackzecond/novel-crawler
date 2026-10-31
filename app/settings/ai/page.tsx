@@ -74,7 +74,7 @@ export default function AiSettingsPage() {
     if (validationError) throw new Error(validationError);
     const normalized = {
       ...settings,
-      baseUrl: settings.baseUrl.trim().replace(/\\/+$/, ''),
+      baseUrl: settings.baseUrl.trim().replace(/\/+$/, ''),
       model: settings.model.trim(),
       apiKey: settings.apiKey.trim(),
     };
