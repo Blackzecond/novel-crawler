@@ -11,14 +11,19 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [busy, setBusy] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
+    if (!isSupabaseConfigured()) {
+      setCheckingSession(false);
+      return;
+    }
     void getSupabase().auth.getSession().then(({ data }) => {
       if (data.session) router.replace('/');
-    });
+      else setCheckingSession(false);
+    }).catch(() => setCheckingSession(false));
   }, [router]);
 
   const submit = async (event: FormEvent) => {
@@ -57,6 +62,14 @@ export default function LoginPage() {
     }
   };
 
+  if (checkingSession) {
+    return (
+      <main className="min-h-screen bg-bg text-fg flex items-center justify-center gap-2 text-sm text-muted">
+        <Loader2 className="h-5 w-5 animate-spin" /> กำลังตรวจสอบสถานะเข้าสู่ระบบ...
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-bg text-fg flex items-center justify-center px-4 py-10">
       <section className="w-full max-w-sm rounded-2xl border border-line bg-card shadow-sm p-6 space-y-5">
@@ -83,11 +96,11 @@ export default function LoginPage() {
           </label>
           <label className="block">
             <span className="text-xs font-medium text-muted">รหัสผ่าน</span>
-            <input type="password" required minLength={8}
+            <input type="password" required minLength={mode === 'signup' ? 8 : undefined}
               autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
               value={password} onChange={(event) => setPassword(event.target.value)}
               className="mt-1 w-full h-10 rounded-lg border border-line bg-bg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent/60" />
-            <span className="block mt-1 text-[11px] text-muted">อย่างน้อย 8 ตัวอักษร</span>
+            {mode === 'signup' && <span className="block mt-1 text-[11px] text-muted">อย่างน้อย 8 ตัวอักษร</span>}
           </label>
 
           {error && <p role="alert" className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs p-3">{error}</p>}
