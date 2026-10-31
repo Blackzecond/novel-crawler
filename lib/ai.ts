@@ -176,8 +176,10 @@ export async function translateNovelText(
     const systemPrompt = relevantGlossary.length
       ? baseSystemPrompt + '\nFollow this glossary exactly for the listed terms. Do not change their Thai spellings:\n' + JSON.stringify(Object.fromEntries(relevantGlossary))
       : baseSystemPrompt;
-    const leadingBreaks = chunk.match(/^\\n+/)?.[0] ?? '';
-    const trailingBreaks = chunk.match(/\\n+$/)?.[0] ?? '';
+    const leadingWhitespace = chunk.slice(0, chunk.length - chunk.trimStart().length);
+    const trailingWhitespace = chunk.slice(chunk.trimEnd().length);
+    const leadingBreaks = leadingWhitespace.split('').filter((char) => char === String.fromCharCode(10)).join('');
+    const trailingBreaks = trailingWhitespace.split('').filter((char) => char === String.fromCharCode(10)).join('');
     let response: Response | null = null;
     let detail = '';
 
