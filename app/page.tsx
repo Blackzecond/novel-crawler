@@ -248,43 +248,35 @@ export default function ProjectsHomePage() {
   return (
     <div className="min-h-screen bg-bg text-fg transition-colors duration-200">
       {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-md">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3 px-4 sm:px-6 h-14">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="h-8 w-8 inline-flex items-center justify-center rounded-lg bg-accent text-accent-fg shrink-0">
-              <Library className="w-4 h-4" />
+      <header className="sticky top-0 z-30 border-b border-line/80 bg-card/85 backdrop-blur-xl">
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-3 px-4 sm:px-6 h-16">
+          <a href="/" className="flex items-center gap-3 min-w-0" aria-label="Novel Translator หน้าหลัก">
+            <span className="h-10 w-10 inline-flex items-center justify-center rounded-2xl bg-accent text-accent-fg shadow-sm shadow-accent/20 shrink-0">
+              <Library className="w-5 h-5" />
             </span>
-            <div className="min-w-0">
-              <h1 className="text-base font-bold leading-tight truncate">Novel Translator</h1>
-              <p className="text-[11px] text-muted leading-tight truncate hidden sm:block">
-                แปลนิยายจีนเป็นไทยด้วย AI — เริ่มจากวางลิงก์หน้าสารบัญ
-              </p>
-            </div>
-          </div>
-          <a
-            href="/read"
-            className="inline-flex items-center gap-1.5 h-8 px-3 border border-line rounded-lg text-xs bg-card hover:bg-surface hover:border-accent-line transition-colors shrink-0 cursor-pointer"
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            อ่านด่วน (URL ใดก็ได้)
+            <span className="min-w-0">
+              <span className="block text-[15px] font-bold leading-tight tracking-tight truncate">Novel Translator</span>
+              <span className="block text-[11px] text-muted mt-0.5 truncate">พื้นที่จัดการนิยายและงานแปล</span>
+            </span>
           </a>
-          <a
-            href="/glossary-sets"
-            className="inline-flex items-center gap-1.5 h-8 px-3 border border-line rounded-lg text-xs bg-card hover:bg-surface hover:border-accent-line transition-colors shrink-0 cursor-pointer"
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            คลังศัพท์
-          </a>
-          {isSupabaseConfigured() && (
-            <button onClick={() => void signOut()} title="ออกจากระบบ"
-              className="h-8 w-8 inline-flex items-center justify-center border border-line rounded-lg text-muted hover:text-fg bg-card shrink-0">
-              <LogOut className="w-3.5 h-3.5" />
-            </button>
-          )}
+          <nav aria-label="เมนูหลัก" className="flex items-center gap-1 sm:gap-2 shrink-0">
+            <a href="/read" className="inline-flex items-center justify-center gap-2 h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-sm text-muted hover:text-fg hover:bg-surface transition-colors">
+              <BookOpen className="w-4 h-4" /><span className="hidden sm:inline">อ่านด่วน</span>
+            </a>
+            <a href="/glossary-sets" className="inline-flex items-center justify-center gap-2 h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-sm text-muted hover:text-fg hover:bg-surface transition-colors">
+              <Library className="w-4 h-4" /><span className="hidden sm:inline">คลังศัพท์</span>
+            </a>
+            {isSupabaseConfigured() && (
+              <button onClick={() => void signOut()} title="ออกจากระบบ" aria-label="ออกจากระบบ"
+                className="h-9 w-9 inline-flex items-center justify-center rounded-xl text-muted hover:text-danger-fg hover:bg-danger-bg transition-colors">
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
+          </nav>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-8 sm:space-y-10">
         {localMigrationCount > 0 && (
           <section className="rounded-xl border border-amber-300 bg-amber-50 text-amber-950 p-4 space-y-2">
             <div className="flex items-center gap-2 font-semibold text-sm">
@@ -301,32 +293,36 @@ export default function ProjectsHomePage() {
           </section>
         )}
         {/* สร้างโปรเจกต์ใหม่ — Hero */}
-        <section className="rounded-2xl border border-line bg-card shadow-sm p-5 sm:p-6 space-y-4">
+        <section className="relative isolate overflow-hidden rounded-3xl border border-accent-line/70 bg-card shadow-sm">
+          <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-br from-accent-soft via-card to-card" />
+          <div aria-hidden="true" className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-accent/10 blur-3xl" />
+          <div className="p-5 sm:p-8 space-y-5 sm:space-y-6">
           <div className="flex items-start gap-3">
-            <span className="h-9 w-9 inline-flex items-center justify-center rounded-lg bg-accent-soft text-accent-soft-fg shrink-0">
-              <FolderOpen className="w-4.5 h-4.5" />
+            <span className="h-11 w-11 inline-flex items-center justify-center rounded-2xl bg-accent text-accent-fg shadow-md shadow-accent/20 shrink-0">
+              <FolderOpen className="w-5 h-5" />
             </span>
-            <div className="min-w-0">
-              <h2 className="text-base font-bold leading-snug">เริ่มโปรเจกต์แปลเรื่องใหม่</h2>
-              <p className="text-xs text-muted mt-0.5 leading-relaxed">
-                วางลิงก์หน้าสารบัญ (目录) ของนิยายจีน — ระบบจะจับรายชื่อบทให้อัตโนมัติ
+            <div className="min-w-0 pt-0.5">
+              <p className="text-[11px] font-semibold tracking-[0.14em] uppercase text-accent-soft-fg mb-1">เริ่มต้นใช้งาน</p>
+              <h2 className="text-xl sm:text-2xl font-bold leading-tight tracking-tight">เริ่มโปรเจกต์แปลเรื่องใหม่</h2>
+              <p className="text-sm text-muted mt-1.5 leading-relaxed max-w-xl">
+                วางลิงก์หน้าสารบัญนิยายจีน แล้วระบบจะดึงรายชื่อบทมาเตรียมไว้ให้
               </p>
             </div>
           </div>
 
-          <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-2">
+          <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-2.5">
             <input
               type="url"
               required
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://www.uukanshu.cc/b/xxxx/"
-              className="flex-1 px-4 h-11 bg-bg border border-line rounded-xl text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60 focus:border-accent-line"
+              className="flex-1 min-w-0 px-4 h-12 bg-bg/90 border border-line rounded-xl text-sm text-fg placeholder:text-muted shadow-inner shadow-black/[0.02] focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
             />
             <button
               type="submit"
               disabled={creating}
-              className="inline-flex h-11 items-center justify-center gap-1.5 px-5 bg-accent text-accent-fg text-sm font-medium rounded-xl hover:brightness-110 disabled:opacity-50 transition-all cursor-pointer"
+              className="inline-flex h-12 items-center justify-center gap-2 px-6 bg-accent text-accent-fg text-sm font-semibold rounded-xl shadow-md shadow-accent/20 hover:brightness-110 active:scale-[0.98] disabled:opacity-50 transition-all cursor-pointer"
             >
               {creating ? (
                 <Loader2 className="animate-spin w-4 h-4" />
@@ -337,8 +333,8 @@ export default function ProjectsHomePage() {
             </button>
           </form>
 
-          <div className="flex flex-wrap items-center gap-2 -mt-1">
-            <span className="text-xs text-muted">เว็บตัวอย่าง:</span>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <span className="text-xs font-medium text-muted mr-1">เว็บที่รองรับตัวอย่าง</span>
             {EXAMPLE_SITES.map((site) => (
               <button
                 key={site.host}
@@ -372,16 +368,21 @@ export default function ProjectsHomePage() {
               {error}
             </div>
           )}
+                  </div>
         </section>
 
         {/* รายการโปรเจกต์ */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold">
-              โปรเจกต์แปลของฉัน{' '}
-              {mounted && <span className="text-muted font-normal">({projects.length})</span>}
-            </h2>
-            <div className="flex items-center gap-1.5">
+        <section className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold tracking-[0.14em] text-accent-soft-fg uppercase mb-1">คลังงานของคุณ</p>
+              <h2 className="text-xl font-bold tracking-tight">
+                โปรเจกต์แปลของฉัน{' '}
+                {mounted && <span className="text-muted font-medium text-base">({projects.length})</span>}
+              </h2>
+              <p className="text-xs text-muted mt-1">จัดการนิยายที่กำลังอ่านและแปลอยู่ในที่เดียว</p>
+            </div>
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => importInputRef.current?.click()}
                 className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border border-line text-xs bg-card hover:bg-surface hover:border-accent-line transition-colors cursor-pointer"
@@ -433,7 +434,7 @@ export default function ProjectsHomePage() {
               กำลังโหลดโปรเจกต์...
             </div>
           ) : (
-            <div className="grid gap-2.5">
+            <div className="grid gap-3 sm:grid-cols-2">
               {projects.map((p) => (
                 <ProjectCard key={p.id} project={p} onDelete={handleDelete} />
               ))}
@@ -442,8 +443,7 @@ export default function ProjectsHomePage() {
         </section>
 
         <p className="text-[11px] text-muted text-center pt-2 leading-relaxed max-w-lg mx-auto">
-          ข้อมูลทั้งหมดเก็บใน localStorage ของเบราว์เซอร์นี้เท่านั้น (จำกัด ∼5MB) — สำรองด้วย
-          “ส่งออก JSON” แล้วจะผูก Supabase ภายหลังได้ทันที
+          ข้อมูลโปรเจกต์และเนื้อหาบทที่บันทึกแล้วจัดเก็บบนคลาวด์ สามารถส่งออก JSON เพื่อสำรองข้อมูลเพิ่มเติมได้
         </p>
       </main>
     </div>
