@@ -92,12 +92,6 @@ function ProjectCard({
           </div>
         </div>
 
-        <a
-          href={`/project/${project.id}`}
-          className="w-full inline-flex items-center justify-center gap-2 h-9 rounded-xl border border-line text-xs font-semibold hover:border-accent-line hover:bg-accent-soft hover:text-accent-soft-fg transition-colors cursor-pointer"
-        >
-          เปิดโปรเจกต์ <ChevronRight className="w-3.5 h-3.5" />
-        </a>
       </div>
     </article>
   );
@@ -110,6 +104,7 @@ export default function ProjectsHomePage() {
   const [projectsError, setProjectsError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [projectSort, setProjectSort] = useState<'updated' | 'title' | 'progress'>('updated');
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [retryingProjects, setRetryingProjects] = useState(false);
   const [url, setUrl] = useState('');
   const [creating, setCreating] = useState(false);
@@ -543,16 +538,52 @@ export default function ProjectsHomePage() {
                     placeholder="ค้นหาชื่อเรื่องหรือเว็บไซต์…" type="search"
                     className="h-10 w-full rounded-xl border border-line bg-card pl-9 pr-3 text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/40" />
                 </label>
-                <label className="flex shrink-0 items-center gap-2 rounded-xl border border-line bg-card px-3">
-                  <ArrowUpDown className="h-4 w-4 text-muted" />
-                  <span className="sr-only">เรียงลำดับโปรเจกต์</span>
-                  <select value={projectSort} onChange={(event) => setProjectSort(event.target.value as typeof projectSort)}
-                    className="h-10 min-w-0 bg-transparent text-xs text-fg outline-none">
-                    <option value="updated">แก้ไขล่าสุด</option>
-                    <option value="title">ชื่อเรื่อง</option>
-                    <option value="progress">ความคืบหน้าการดึง</option>
-                  </select>
-                </label>
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSortMenuOpen((open) => !open)}
+                    aria-label="เรียงลำดับโปรเจกต์"
+                    aria-haspopup="listbox"
+                    aria-expanded={sortMenuOpen}
+                    className="inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-card px-3 text-xs text-fg transition-colors hover:border-accent-line hover:bg-surface focus:outline-none focus:ring-2 focus:ring-accent/40"
+                  >
+                    <ArrowUpDown className="h-4 w-4 text-muted" />
+                    <span>{projectSort === 'updated' ? 'แก้ไขล่าสุด' : projectSort === 'title' ? 'ชื่อเรื่อง' : 'ความคืบหน้าการดึง'}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 text-muted transition-transform ${sortMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {sortMenuOpen && (
+                    <div
+                      role="listbox"
+                      aria-label="เรียงลำดับโปรเจกต์"
+                      className="absolute right-0 top-full z-20 mt-2 min-w-full overflow-hidden rounded-xl border border-line bg-card p-1.5 shadow-xl"
+                    >
+                      {([
+                        ['updated', 'แก้ไขล่าสุด'],
+                        ['title', 'ชื่อเรื่อง'],
+                        ['progress', 'ความคืบหน้าการดึง'],
+                      ] as const).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          role="option"
+                          aria-selected={projectSort === value}
+                          onClick={() => {
+                            setProjectSort(value);
+                            setSortMenuOpen(false);
+                          }}
+                          className={`flex w-full items-center justify-between whitespace-nowrap rounded-lg px-3 py-2 text-left text-xs transition-colors ${
+                            projectSort === value
+                              ? 'bg-accent-soft text-accent-soft-fg font-semibold'
+                              : 'text-fg hover:bg-surface'
+                          }`}
+                        >
+                          {label}
+                          {projectSort === value && <span aria-hidden="true">✓</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               {visibleProjects.length > 0 ? (
                 <div className="grid gap-3 sm:grid-cols-2">
