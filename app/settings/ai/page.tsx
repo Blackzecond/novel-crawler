@@ -192,7 +192,7 @@ export default function AiSettingsPage() {
                     setProvider(next);
                     if (next !== 'custom') {
                       const preset = AI_PROVIDER_PRESETS[next];
-                      update({ baseUrl: preset.baseUrl, model: preset.model });
+                      update({ baseUrl: preset.baseUrl, model: preset.model, apiKey: '' });
                     } else {
                       setSaved(false);
                     }
