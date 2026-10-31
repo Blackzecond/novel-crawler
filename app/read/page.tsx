@@ -313,7 +313,7 @@ export default function ReaderPage() {
     if (!article || translationBusy) return;
     const settings = loadAiSettings();
     if (!hasAiKey(settings)) {
-      setTranslationError('กรุณาตั้งค่า AI Base URL, Model และ API Key ในหน้าโปรเจกต์ก่อน');
+      setTranslationError('ยังไม่ได้ตั้งค่า API สำหรับการแปล กรุณากรอก Base URL, Model และ API Key ก่อน');
       return;
     }
     setTranslationBusy(true);
@@ -625,7 +625,14 @@ export default function ReaderPage() {
               </div>
             </div>
 
-            {translationError && <div role="alert" className="rounded-lg border border-danger-line bg-danger-bg p-3 text-sm text-danger-fg">{translationError}</div>}
+            {translationError && (
+              <div role="alert" className="rounded-lg border border-danger-line bg-danger-bg p-3 text-sm text-danger-fg">
+                <p>{translationError}</p>
+                <a href="/settings/ai" className="mt-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:opacity-80">
+                  เปิดหน้าตั้งค่า AI
+                </a>
+              </div>
+            )}
 
             {/* Article Content Render */}
             {showTranslation && article.translatedText ? (
