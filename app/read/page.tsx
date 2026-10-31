@@ -323,20 +323,29 @@ export default function ReaderPage() {
       const updatedArticle = { ...article, translatedText: translated };
       setArticle(updatedArticle);
       chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
+      setShowTranslation(true);
+
+      // The translation is usable immediately; persistence failure must not hide it.
       if (projectId && currentChapterId) {
-        const saved = await getStore().updateChapter(projectId, currentChapterId, {
-          translatedText: translated,
-          status: 'translated',
-          error: undefined,
-        });
-        if (saved) {
-          setReaderProject((current) => current?.id === projectId ? {
-            ...current,
-            chapters: current.chapters.map((item) => item.id === currentChapterId ? { ...item, status: 'translated' } : item),
-          } : current);
+        try {
+          const saved = await getStore().updateChapter(projectId, currentChapterId, {
+            translatedText: translated,
+            status: 'translated',
+            error: undefined,
+          });
+          if (saved) {
+            setReaderProject((current) => current?.id === projectId ? {
+              ...current,
+              chapters: current.chapters.map((item) => item.id === currentChapterId ? { ...item, status: 'translated' } : item),
+            } : current);
+          } else {
+            setTranslationError('แปลสำเร็จแล้ว แต่ยังบันทึกคำแปลลงคลังไม่ได้ คำแปลนี้ยังแสดงอยู่ใน Reader');
+          }
+        } catch (saveError) {
+          console.warn('Could not save translated chapter:', saveError);
+          setTranslationError('แปลสำเร็จแล้ว แต่บันทึกคำแปลไม่สำเร็จ คำแปลนี้ยังแสดงอยู่ใน Reader');
         }
       }
-      setShowTranslation(true);
     } catch (err) {
       setTranslationError(err instanceof Error ? err.message : 'แปลไม่สำเร็จ');
     } finally {
