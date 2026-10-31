@@ -43,7 +43,11 @@ export interface NewProjectData {
 export interface NovelStore {
   listProjects(): Promise<NovelProject[]>;
   getProject(id: string): Promise<NovelProject | null>;
-  getChapterContent(projectId: string, chapterId: string): Promise<NovelChapter | null>;
+  getChapterContent(
+    projectId: string,
+    chapterId: string,
+    options?: { includeOriginalText?: boolean; includeTranslatedText?: boolean }
+  ): Promise<NovelChapter | null>;
   createProject(data: NewProjectData): Promise<NovelProject>;
   renameProject(id: string, title: string): Promise<NovelProject | null>;
   updateProject(
