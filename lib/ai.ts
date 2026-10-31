@@ -158,26 +158,26 @@ export async function translateNovelText(
   if (!text.trim()) throw new Error('ไม่มีเนื้อหาสำหรับแปล');
 
   const glossaryEntries = Object.entries(glossary).filter(([source, target]) => source.trim() && target.trim());
-  const glossaryInstruction = glossaryEntries.length
-    ? 'Follow this glossary exactly for the listed terms. Do not change their Thai spellings:\n' +
-      JSON.stringify(Object.fromEntries(glossaryEntries))
-    : '';
-
-  const systemPrompt = [
+  const baseSystemPrompt = [
     'You are a professional Chinese-to-Thai web novel translator.',
     'Translate the supplied Chinese novel text into natural, faithful Thai.',
     'Preserve the original meaning, paragraph order, dialogue, names, titles, and formatting.',
     'Do not summarize, omit, explain, add plot details, or include the original Chinese.',
     'Use consistent Thai transliteration for proper nouns within this passage.',
     'Return only the Thai translation.',
-    glossaryInstruction,
-  ].filter(Boolean).join('\n');
+  ].join('\n');
 
   const chunks = splitTranslationText(text);
   const translatedChunks: string[] = [];
 
   for (let index = 0; index < chunks.length; index++) {
     const chunk = chunks[index];
+    const relevantGlossary = glossaryEntries.filter(([source]) => chunk.includes(source));
+    const systemPrompt = relevantGlossary.length
+      ? baseSystemPrompt + '\nFollow this glossary exactly for the listed terms. Do not change their Thai spellings:\n' + JSON.stringify(Object.fromEntries(relevantGlossary))
+      : baseSystemPrompt;
+    const leadingBreaks = chunk.match(/^\\n+/)?.[0] ?? '';
+    const trailingBreaks = chunk.match(/\\n+$/)?.[0] ?? '';
     let response: Response | null = null;
     let detail = '';
 
@@ -226,7 +226,7 @@ export async function translateNovelText(
     if (typeof translated !== 'string' || !translated.trim()) {
       throw new Error('AI ไม่ส่งคำแปลกลับมาในส่วนที่ ' + (index + 1) + '/' + chunks.length);
     }
-    translatedChunks.push(translated.trim());
+    translatedChunks.push(leadingBreaks + translated.trim() + trailingBreaks);
   }
 
   return translatedChunks.join('').trim();
