@@ -1,11 +1,32 @@
-// ชั้น AI พรีเมียมสำหรับโปรเจกต์แปล — วันนี้ใช้ API ที่ผู้ใช้ตั้งเอง (OpenAI-compatible)
-// ตั้งค่า (base URL / โมเดล / key) อยู่ในเครื่องของผู้ใช้ผ่าน localStorage เท่านั้น
-// ขอคีย์ได้ ผมจะทำ scaffold รอให้กรอกแล้วใช้ได้ทันที
+// AI provider layer for Novel Crawler.
+// API keys remain in this browser's localStorage. All providers use OpenAI-compatible Chat Completions.
 
 export interface AiDetectSettings {
   baseUrl: string;
   apiKey: string;
   model: string;
+}
+
+export type AiProvider = 'gemini' | 'qwen' | 'custom';
+
+export const AI_PROVIDER_PRESETS: Record<Exclude<AiProvider, 'custom'>, { label: string; baseUrl: string; model: string }> = {
+  gemini: {
+    label: 'Google Gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    model: 'gemini-3.8-flash',
+  },
+  qwen: {
+    label: 'Alibaba Qwen',
+    baseUrl: 'https://trial.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
+    model: 'qwen3.8-max',
+  },
+};
+
+export function inferAiProvider(baseUrl: string): AiProvider {
+  const normalized = baseUrl.toLowerCase();
+  if (normalized.includes('generativelanguage.googleapis.com')) return 'gemini';
+  if (normalized.includes('maas.aliyuncs.com') || normalized.includes('dashscope')) return 'qwen';
+  return 'custom';
 }
 
 export interface AiDetectPair {
@@ -16,9 +37,9 @@ export interface AiDetectPair {
 export const AI_SETTINGS_KEY = 'novel_ai_settings_v1';
 
 export const defaultAiSettings: AiDetectSettings = {
-  baseUrl: 'https://api.openai.com/v1',
+  baseUrl: AI_PROVIDER_PRESETS.gemini.baseUrl,
   apiKey: '',
-  model: 'gpt-4o-mini',
+  model: AI_PROVIDER_PRESETS.gemini.model,
 };
 
 export function loadAiSettings(): AiDetectSettings {
@@ -45,6 +66,54 @@ export function hasAiKey(settings = loadAiSettings()): boolean {
   return settings.apiKey.trim().length > 0;
 }
 
+async function requestChatCompletion(
+  settings: AiDetectSettings,
+  messages: Array<{ role: 'system' | 'user'; content: string }>,
+  maxTokens?: number,
+  temperature = 0.2,
+): Promise<{ content: string; finishReason: string | null }> {
+  if (!settings.apiKey.trim()) throw new Error('AI_NOT_CONFIGURED');
+  const response = await fetch(settings.baseUrl.replace(/\/$/, '') + '/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer ' + settings.apiKey.trim(),
+    },
+    body: JSON.stringify({
+      model: settings.model,
+      temperature,
+      ...(maxTokens ? { max_tokens: maxTokens } : {}),
+      messages,
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error('AI_API_ERROR:' + response.status + ' ' + detail.slice(0, 500));
+  }
+
+  const data = await response.json();
+  const choice = data?.choices?.[0];
+  const raw = choice?.message?.content;
+  const content = typeof raw === 'string'
+    ? raw
+    : Array.isArray(raw)
+      ? raw.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('')
+      : '';
+  if (!content.trim()) throw new Error('AI ไม่ส่งข้อความกลับมา');
+  // finish_reason is metadata only. Never discard content already returned by a provider.
+  return { content: content.trim(), finishReason: typeof choice?.finish_reason === 'string' ? choice.finish_reason : null };
+}
+
+function estimateOutputTokens(text: string): number {
+  // Reserve a generous output budget for Thai prose; provider limits still apply.
+  return Math.min(65_536, Math.max(4_096, Math.ceil(text.length * 2.5)));
+}
+
+/**
+ * ตรวจชื่อตัวละคร/ศัพท์เฉพาะจากเนื้อหาบทจีน แล้วถอดเสียง/แปลเป็นไทยพร้อมกัน
+ * คืน [] ถ้าไม่พบ — ผู้เรียกเป็นตัวต่อที่เก็บ glossary ของโปรเจกต์ (dedupe ที่จุดเรียก)
+ */
 /**
  * ตรวจชื่อตัวละคร/ศัพท์เฉพาะจากเนื้อหาบทจีน แล้วถอดเสียง/แปลเป็นไทยพร้อมกัน
  * คืน [] ถ้าไม่พบ — ผู้เรียกเป็นตัวต่อที่เก็บ glossary ของโปรเจกต์ (dedupe ที่จุดเรียก)
@@ -114,19 +183,9 @@ export async function detectNamedTerms(text: string, settings?: AiDetectSettings
   return pairs;
 }
 
-
-/**
- * แปลข้อความนิยายเป็นภาษาไทยผ่าน OpenAI-compatible Chat Completions API.
- * API key อ่านจาก localStorage และส่งตรงไปยัง Base URL ที่ผู้ใช้กำหนด
- * ผลลัพธ์เป็นข้อความล้วนเพื่อให้ Reader แสดงผลอย่างปลอดภัยโดยไม่ใช้ dangerouslySetInnerHTML.
- */
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * แปลนิยายหนึ่งตอนด้วยคำขอเดียว เพื่อรักษาบริบทและความต่อเนื่องตลอดทั้งตอน.
- * ไม่แบ่งข้อความหรือ retry ด้วยการตัดข้อความเป็นส่วนย่อย หากชนเพดานจะแจ้งข้อผิดพลาด.
+ /**
+ * แปลนิยายหนึ่งตอนด้วยคำขอเดียว ไม่แบ่งข้อความหรือ retry ด้วยการตัดข้อความเป็นส่วนย่อย
+ * รับ glossary ของโปรเจกต์เพื่อรักษาชื่อและศัพท์เฉพาะให้สม่ำเสมอ
  */
 export async function translateNovelText(
   text: string,
@@ -134,78 +193,81 @@ export async function translateNovelText(
   glossary: Record<string, string> = {},
 ): Promise<string> {
   const cfg = settings ?? loadAiSettings();
-  if (!cfg.apiKey.trim()) throw new Error('AI_NOT_CONFIGURED');
   if (!text.trim()) throw new Error('ไม่มีเนื้อหาสำหรับแปล');
 
   const relevantGlossary = Object.fromEntries(
     Object.entries(glossary).filter(([source, target]) => source.trim() && target.trim() && text.includes(source)),
   );
   const systemPrompt = [
-    'You are a professional Chinese-to-Thai web novel translator.',
-    'Translate the entire supplied chapter as one continuous literary work.',
-    'Read and consider the whole chapter before translating so names, terminology, tone, style, references, and dialogue remain consistent from beginning to end.',
-    'Preserve the original meaning, paragraph order, dialogue, names, titles, and formatting.',
-    'Do not summarize, omit, explain, add plot details, or include the original Chinese.',
-    'Use consistent Thai transliteration for proper nouns throughout the entire chapter.',
-    'Return the complete Thai translation only. Never stop early or intentionally shorten the chapter.',
+    'คุณเป็นนักแปลนิยายจีนเป็นภาษาไทยระดับมืออาชีพ เชี่ยวชาญนิยายเว็บจีนร่วมสมัยและนิยายแนวเซียน/แฟนตาซี',
+    'แปลต้นฉบับภาษาจีนทั้งตอนเป็นภาษาไทย โดยรักษาความหมาย รายละเอียด และบริบทของต้นฉบับ',
+    'อ่านและทำความเข้าใจต้นฉบับทั้งตอนก่อนแปล ใช้บริบทของทั้งตอนตัดสินความหมายของคำ สรรพนาม ศัพท์เฉพาะ และบทสนทนา',
+    'ใช้ภาษาไทยที่กระชับ เป็นธรรมชาติแบบนิยายแปล ห้ามถอดโครงสร้างประโยคจีนจนภาษาไทยแข็งหรือผิดธรรมชาติ',
+    'ห้ามแต่งเติมอารมณ์ ความคิด คำอธิบาย เหตุผล เหตุการณ์ หรือรายละเอียดที่ต้นฉบับไม่มี และห้ามตัดทอนข้อความแม้เห็นว่าเป็นคำซ้ำ',
+    'รักษาลำดับย่อหน้า ลำดับเหตุการณ์ บทสนทนา น้ำเสียง และระดับภาษาของตัวละครตามต้นฉบับ',
+    'ชื่อบุคคลต้องเขียนติดกัน ไม่เว้นวรรคกลางชื่อ และใช้รูปสะกดเดิมให้เหมือนกันตลอดทั้งตอน',
+    'แปลศัพท์เฉพาะตามหน้าที่และบริบท อย่าเหมารวมคำที่มีความหมายต่างกัน เช่น จิตสัมผัส กลิ่นอาย ลมหายใจ และพลังปราณ',
+    'หลีกเลี่ยงคำอังกฤษและสำนวนภาษาพูดที่ไม่จำเป็น ใช้คำไทยเมื่อมีคำที่ตรงความหมาย',
+    'ใช้สรรพนามและประธานเท่าที่จำเป็น สามารถละประธานได้เมื่อบริบทชัดเจน',
+    'ส่งเฉพาะคำแปลภาษาไทยทั้งตอน ห้ามส่งคำเกริ่น คำอธิบาย หมายเหตุ หรือข้อความภาษาจีน',
     ...(Object.keys(relevantGlossary).length
-      ? ['Follow this glossary exactly for the listed terms. Do not change their Thai spellings:', JSON.stringify(relevantGlossary)]
+      ? ['Glossary ต่อไปนี้เป็นข้อกำหนดบังคับ ต้องใช้รูปภาษาไทยตามนี้อย่างสม่ำเสมอ:', JSON.stringify(relevantGlossary)]
       : []),
   ].join('\n');
 
-  // Estimate a sufficient completion budget for the whole chapter, within Qwen 3.8 27B's 16K output ceiling.
-  const maxTokens = Math.min(16_384, Math.max(2_048, Math.ceil(text.length * 2)));
+  const result = await requestChatCompletion(
+    cfg,
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: text },
+    ],
+    estimateOutputTokens(text),
+    0.2,
+  );
+  return result.content;
+}
 
-  let response: Response | null = null;
-  let detail = '';
-  for (let attempt = 0; attempt < 5; attempt++) {
-    response = await fetch(cfg.baseUrl.replace(/\/$/, '') + '/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + cfg.apiKey.trim(),
-      },
-      body: JSON.stringify({
-        model: cfg.model,
-        temperature: 0.2,
-        max_tokens: maxTokens,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: text },
-        ],
-      }),
-    });
-
-    if (response.ok) break;
-    detail = await response.text().catch(() => '');
-    const isOutputRateLimit = response.status === 429 && /output tokens per minute|OTPM|requested\s+\d+/i.test(detail);
-    if (!isOutputRateLimit || attempt === 4) {
-      throw new Error('AI_API_ERROR:' + response.status + ' ' + detail.slice(0, 500));
-    }
-
-    const retryAfterHeader = Number(response.headers.get('retry-after'));
-    const retryAfterMessage = detail.match(/try again in\s+([\d.]+)\s*(ms|milliseconds|s|seconds?)/i);
-    const messageDelay = retryAfterMessage
-      ? Number(retryAfterMessage[1]) * (/^(ms|milliseconds)$/i.test(retryAfterMessage[2]) ? 1 : 1000)
-      : 0;
-    const waitMs = retryAfterHeader > 0
-      ? Math.max(250, retryAfterHeader * 1000)
-      : messageDelay > 0
-        ? Math.max(250, messageDelay + 250)
-        : 5000;
-    await wait(waitMs);
+/**
+ * AI บรรณาธิการตรวจคำแปลไทยทั้งตอนเทียบกับต้นฉบับจีนทั้งตอนในคำขอเดียว
+ * ผู้ใช้เป็นผู้กดเรียกเอง ไม่มีการทำงานอัตโนมัติ และไม่แบ่งตอน
+ */
+export async function editNovelTranslation(
+  sourceText: string,
+  draftTranslation: string,
+  settings?: AiDetectSettings,
+  glossary: Record<string, string> = {},
+): Promise<string> {
+  const cfg = settings ?? loadAiSettings();
+  if (!sourceText.trim() || !draftTranslation.trim()) {
+    throw new Error('ไม่มีต้นฉบับหรือคำแปลสำหรับตรวจแก้');
   }
 
-  if (!response?.ok) {
-    throw new Error('AI_API_ERROR:429 ' + detail.slice(0, 500));
-  }
+  const relevantGlossary = Object.fromEntries(
+    Object.entries(glossary).filter(([source, target]) => source.trim() && target.trim() && sourceText.includes(source)),
+  );
+  const systemPrompt = [
+    'คุณเป็นบรรณาธิการภาษาไทยผู้เชี่ยวชาญด้านนิยายแปลจีน หน้าที่คือพิสูจน์อักษรและตรวจแก้คำแปลโดยเทียบกับต้นฉบับจีน',
+    'แก้เฉพาะข้อผิดพลาดที่ตรวจพบได้ ได้แก่ แปลผิดความหมาย แปลตกหล่น เติมเนื้อหาเอง ชื่อหรือศัพท์เฉพาะไม่สม่ำเสมอ ไวยากรณ์ไทยผิด และสำนวนแปลตรงตัวที่ผิดธรรมชาติ',
+    'รักษาความหมาย รายละเอียด น้ำเสียง ลำดับย่อหน้า บทสนทนา และรูปแบบของต้นฉบับอย่างเคร่งครัด',
+    'ห้ามแต่งสำนวนใหม่เพื่อความสวยงาม ห้ามเพิ่มอารมณ์หรือคำอธิบาย ห้ามสรุป ห้ามย่อ และห้ามตัดข้อความที่ถูกต้องอยู่แล้ว',
+    'หากประโยคเดิมถูกต้องและเป็นธรรมชาติอยู่แล้ว ให้คงไว้ ไม่ต้องเปลี่ยนเพียงเพื่อให้ดูแตกต่าง',
+    'ห้ามเดาความหมายที่ต้นฉบับไม่รองรับ หากจุดใดกำกวมให้รักษาความหมายอย่างระมัดระวัง',
+    'ชื่อบุคคลต้องเขียนติดกัน ไม่เว้นวรรคกลางชื่อ และต้องใช้ Glossary ตามที่กำหนด',
+    'ส่งคืนคำแปลภาษาไทยฉบับแก้ไขครบทั้งตอนเท่านั้น ห้ามส่งคำอธิบาย รายงานการแก้ไข หรือข้อความภาษาจีน',
+    ...(Object.keys(relevantGlossary).length
+      ? ['Glossary บังคับ:', JSON.stringify(relevantGlossary)]
+      : []),
+  ].join('\n');
 
-  const data = await response.json();
-  const choice = data?.choices?.[0];
-  const translated = choice?.message?.content;
-  if (typeof translated !== 'string' || !translated.trim()) {
-    throw new Error('AI ไม่ส่งคำแปลกลับมา');
-  }
-
-  return translated.trim();
+  const combinedInput = sourceText + '\n\n' + draftTranslation;
+  const result = await requestChatCompletion(
+    cfg,
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'ต้นฉบับภาษาจีนทั้งตอน:\n' + sourceText + '\n\nคำแปลภาษาไทยฉบับร่างที่ต้องตรวจแก้ทั้งตอน:\n' + draftTranslation },
+    ],
+    estimateOutputTokens(draftTranslation || combinedInput),
+    0.1,
+  );
+  return result.content;
 }
