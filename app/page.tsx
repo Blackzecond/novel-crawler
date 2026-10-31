@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Library, BookOpen, Loader2, Trash2, Download, Upload,
-  ChevronRight, AlertTriangle, ExternalLink, Globe, Sparkles, FolderOpen, LogOut, CloudUpload,
+  ChevronRight, AlertTriangle, ExternalLink, Globe, Sparkles, FolderOpen, LogOut, CloudUpload, Search, ArrowUpDown, RefreshCw,
 } from 'lucide-react';
 import { getLocalProjectsForMigration, getStore, NovelProject } from '@/lib/storage';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -107,6 +107,10 @@ export default function ProjectsHomePage() {
   const router = useRouter();
   const [projects, setProjects] = useState<NovelProject[]>([]);
   const [mounted, setMounted] = useState(false);
+  const [projectsError, setProjectsError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [projectSort, setProjectSort] = useState<'updated' | 'title' | 'progress'>('updated');
+  const [retryingProjects, setRetryingProjects] = useState(false);
   const [url, setUrl] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
@@ -151,15 +155,53 @@ export default function ProjectsHomePage() {
           }
         }
         setProjects(await getStore().listProjects());
+        setProjectsError('');
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'โหลดข้อมูลไม่สำเร็จ');
+        setProjectsError(err instanceof Error ? err.message : 'โหลดข้อมูลไม่สำเร็จ');
       } finally {
         setMounted(true);
       }
     })();
   }, [router]);
 
-  const loadProjects = async () => setProjects(await getStore().listProjects());
+  const loadProjects = async () => {
+    try {
+      const nextProjects = await getStore().listProjects();
+      setProjects(nextProjects);
+      setProjectsError('');
+      return true;
+    } catch (err) {
+      setProjectsError(err instanceof Error ? err.message : 'โหลดข้อมูลไม่สำเร็จ');
+      return false;
+    }
+  };
+
+  const retryLoadProjects = async () => {
+    if (retryingProjects) return;
+    setRetryingProjects(true);
+    setProjectsError('');
+    try {
+      await loadProjects();
+    } finally {
+      setRetryingProjects(false);
+    }
+  };
+
+  const visibleProjects = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase();
+    const filtered = projects.filter((project) =>
+      !query || project.title.toLocaleLowerCase().includes(query) || project.host.toLocaleLowerCase().includes(query)
+    );
+    return [...filtered].sort((a, b) => {
+      if (projectSort === 'title') return a.title.localeCompare(b.title, 'th');
+      if (projectSort === 'progress') {
+        const progressA = a.chapters.length ? a.chapters.filter((chapter) => chapter.status !== 'pending').length / a.chapters.length : 0;
+        const progressB = b.chapters.length ? b.chapters.filter((chapter) => chapter.status !== 'pending').length / b.chapters.length : 0;
+        return progressB - progressA || b.updatedAt - a.updatedAt;
+      }
+      return b.updatedAt - a.updatedAt;
+    });
+  }, [projects, searchQuery, projectSort]);
 
   const migrateLocalProjects = async () => {
     if (migratingLocal || !cloudUserId) return;
@@ -223,8 +265,12 @@ export default function ProjectsHomePage() {
 
   const handleDelete = async (p: NovelProject) => {
     if (!window.confirm(`ลบโปรเจกต์ "${p.title}" (รวมทุกบทและเนื้อหาที่ดึงมา)?`)) return;
-    await getStore().deleteProject(p.id);
-    void loadProjects();
+    try {
+      await getStore().deleteProject(p.id);
+      await loadProjects();
+    } catch (err) {
+      setProjectsError(err instanceof Error ? err.message : 'ลบโปรเจกต์ไม่สำเร็จ');
+    }
   };
 
   const handleExport = async () => {
@@ -433,7 +479,21 @@ export default function ProjectsHomePage() {
             </div>
           </div>
 
-          {mounted && projects.length === 0 && (
+          {projectsError && (
+            <div role="alert" className="flex flex-col gap-3 rounded-2xl border border-danger-line bg-danger-bg p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-danger-fg">โหลดคลังโปรเจกต์ไม่สำเร็จ</p>
+                <p className="mt-1 break-words text-xs text-danger-fg/80">{projectsError}</p>
+              </div>
+              <button type="button" onClick={() => void retryLoadProjects()} disabled={retryingProjects}
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-danger-line bg-card px-3 text-xs font-semibold text-danger-fg disabled:opacity-50">
+                {retryingProjects ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {retryingProjects ? 'กำลังลองใหม่…' : 'ลองโหลดอีกครั้ง'}
+              </button>
+            </div>
+          )}
+
+          {mounted && !projectsError && projects.length === 0 && (
             <div className="rounded-2xl border border-dashed border-accent-line bg-accent-soft/40 py-10 px-6 text-center">
               <span className="h-14 w-14 rounded-2xl bg-card border border-line inline-flex items-center justify-center mb-4 text-accent-soft-fg">
                 <FolderOpen className="w-7 h-7" />
@@ -453,17 +513,58 @@ export default function ProjectsHomePage() {
           )}
 
           {!mounted ? (
-            <div className="text-center py-12 text-muted text-sm">
-              <Loader2 className="animate-spin w-5 h-5 mx-auto mb-2" />
-              กำลังโหลดโปรเจกต์...
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {projects.map((p) => (
-                <ProjectCard key={p.id} project={p} onDelete={handleDelete} />
+            <div role="status" aria-label="กำลังโหลดโปรเจกต์" className="grid gap-3 sm:grid-cols-2">
+              {Array.from({ length: 4 }, (_, index) => (
+                <div key={index} aria-hidden="true" className="rounded-2xl border border-line bg-card p-5 animate-pulse">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-surface" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="h-3 w-2/3 rounded bg-surface" />
+                      <div className="h-2.5 w-1/3 rounded bg-surface" />
+                    </div>
+                  </div>
+                  <div className="mt-5 h-16 rounded-xl bg-surface" />
+                  <div className="mt-4 h-2 rounded bg-surface" />
+                  <div className="mt-4 h-9 rounded-xl bg-surface" />
+                </div>
               ))}
+              <span className="sr-only">กำลังโหลดโปรเจกต์…</span>
             </div>
-          )}
+          ) : !projectsError && projects.length > 0 ? (
+            <>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <label className="relative min-w-0 flex-1">
+                  <span className="sr-only">ค้นหาโปรเจกต์</span>
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                  <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="ค้นหาชื่อเรื่องหรือเว็บไซต์…" type="search"
+                    className="h-10 w-full rounded-xl border border-line bg-card pl-9 pr-3 text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/40" />
+                </label>
+                <label className="flex shrink-0 items-center gap-2 rounded-xl border border-line bg-card px-3">
+                  <ArrowUpDown className="h-4 w-4 text-muted" />
+                  <span className="sr-only">เรียงลำดับโปรเจกต์</span>
+                  <select value={projectSort} onChange={(event) => setProjectSort(event.target.value as typeof projectSort)}
+                    className="h-10 min-w-0 bg-transparent text-xs text-fg outline-none">
+                    <option value="updated">แก้ไขล่าสุด</option>
+                    <option value="title">ชื่อเรื่อง</option>
+                    <option value="progress">ความคืบหน้าการดึง</option>
+                  </select>
+                </label>
+              </div>
+              {visibleProjects.length > 0 ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {visibleProjects.map((p) => <ProjectCard key={p.id} project={p} onDelete={handleDelete} />)}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-line bg-card/60 px-6 py-10 text-center">
+                  <Search className="mx-auto h-7 w-7 text-muted" />
+                  <p className="mt-3 text-sm font-semibold">ไม่พบโปรเจกต์ที่ตรงกับคำค้น</p>
+                  <p className="mt-1 text-xs text-muted">ลองค้นด้วยชื่อเรื่องหรือโดเมนเว็บไซต์อื่น</p>
+                  <button type="button" onClick={() => setSearchQuery('')} className="mt-4 text-xs font-semibold text-accent-soft-fg hover:underline">ล้างคำค้น</button>
+                </div>
+              )}
+            </>
+          ) : null}
         </section>
 
         <p className="text-[11px] text-muted text-center pt-2 leading-relaxed max-w-lg mx-auto">
