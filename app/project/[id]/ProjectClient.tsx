@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 import {
-  detectNamedTerms, hasAiKey, loadAiSettings, saveAiSettings,
+  detectNamedTerms, hasAiKey, loadAiSettings, saveAiSettings, translateNovelText,
 } from '@/lib/ai';
 import { loadCloudAiSettings, saveCloudAiSettings } from '@/lib/cloudPreferences';
 
@@ -19,6 +19,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // ค่าปริยายช่องว่างระหว่างดึงแต่ละบท (กันเว็บต้นทาง rate-limit)
 // ภายหลังจะยอมรับการตั้งค่าเฉพาะเว็บต้นทางแทนค่าคงที่นี้
 const FETCH_DELAY_MS = 700;
+
+function htmlToPlainText(html: string): string {
+  if (typeof DOMParser === 'undefined') return html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim();
+  const parsed = new DOMParser().parseFromString(html, 'text/html');
+  return (parsed.body.textContent ?? '').split(String.fromCharCode(160)).join(' ').trim();
+}
 
 function StatusBadge({ status }: { status: NovelChapter['status'] }) {
   if (status === 'translated')
@@ -60,6 +66,8 @@ export default function ProjectClient({ id }: { id: string }) {
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [glossaryNotice, setGlossaryNotice] = useState('');
   const [detecBusyIds, setDetecBusyIds] = useState<Set<string>>(new Set());
+  const [translateBusyIds, setTranslateBusyIds] = useState<Set<string>>(new Set());
+  const [chapterNotice, setChapterNotice] = useState('');
   const [addZh, setAddZh] = useState('');
   const [addTh, setAddTh] = useState('');
   const [aiReady, setAiReady] = useState(false);
@@ -122,10 +130,14 @@ export default function ProjectClient({ id }: { id: string }) {
 
   // โหลดเนื้อหาเฉพาะบทที่ผู้ใช้เปิด เพื่อลดการดาวน์โหลดนิยายทั้งเรื่องจาก Storage
   const loadChapterContent = async (chapter: NovelChapter) => {
-    if (chapter.originalText !== undefined || chapter.status === 'pending') return chapter;
+    if (chapter.originalText !== undefined) return chapter;
     const loadedChapter = await getStore().getChapterContent(id, chapter.id);
-    if (loadedChapter) applyChapter(loadedChapter);
-    return loadedChapter ?? chapter;
+    if (!loadedChapter) return chapter;
+    if (loadedChapter.originalText === undefined && loadedChapter.readerContent) {
+      loadedChapter.originalText = htmlToPlainText(loadedChapter.readerContent);
+    }
+    applyChapter(loadedChapter);
+    return loadedChapter;
   };
 
   const toggleExpanded = async (chapter: NovelChapter) => {
@@ -279,12 +291,48 @@ export default function ProjectClient({ id }: { id: string }) {
 
   const detectChapter = async (c: NovelChapter) => {
     setDetecBusyIds((prev) => new Set(prev).add(c.id));
+    setChapterNotice('');
     try {
       const chapter = await loadChapterContent(c);
-      if (!chapter.originalText) return;
-      await runDetect(c.title, chapter.originalText);
+      const sourceText = chapter.originalText ?? (chapter.readerContent ? htmlToPlainText(chapter.readerContent) : '');
+      if (!sourceText.trim()) {
+        setChapterNotice('ไม่พบเนื้อหาที่แคชไว้ในบท “' + c.title + '” กรุณาดึงเนื้อหาบทนี้ก่อน');
+        return;
+      }
+      await runDetect(c.title, sourceText);
+    } catch (err) {
+      setChapterNotice('โหลดเนื้อหาสำหรับจับศัพท์ไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setDetecBusyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(c.id);
+        return next;
+      });
+    }
+  };
+
+  const translateChapter = async (c: NovelChapter) => {
+    setTranslateBusyIds((prev) => new Set(prev).add(c.id));
+    setChapterNotice('');
+    try {
+      const chapter = await loadChapterContent(c);
+      const sourceText = chapter.originalText ?? (chapter.readerContent ? htmlToPlainText(chapter.readerContent) : '');
+      if (!sourceText.trim()) {
+        setChapterNotice('ไม่พบเนื้อหาที่แคชไว้ในบท “' + c.title + '” กรุณาดึงเนื้อหาบทนี้ก่อน');
+        return;
+      }
+      const latest = await getStore().getProject(id);
+      const translatedText = await translateNovelText(sourceText, loadAiSettings(), latest?.glossary ?? project?.glossary ?? {});
+      const saved = await getStore().updateChapter(id, chapter.id, {
+        url: chapter.url, title: chapter.title, order: chapter.order,
+        translatedText, status: 'translated', error: undefined,
+      });
+      if (saved) applyChapter(saved);
+      setChapterNotice('แปลบท “' + c.title + '” สำเร็จและบันทึกลงคลังแล้ว');
+    } catch (err) {
+      setChapterNotice('แปลบท “' + c.title + '” ไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setTranslateBusyIds((prev) => {
         const next = new Set(prev);
         next.delete(c.id);
         return next;
@@ -649,6 +697,7 @@ export default function ProjectClient({ id }: { id: string }) {
           {chapters.map((c) => {
             const busy = busyIds.has(c.id);
             const detecting = detecBusyIds.has(c.id);
+            const translating = translateBusyIds.has(c.id);
             const expanded = expandedId === c.id;
             const isLastRead = c.id === project.lastReadChapterId;
             return (
@@ -711,16 +760,10 @@ export default function ProjectClient({ id }: { id: string }) {
                       </button>
                       <button
                         onClick={() => void detectChapter(c)}
-                        disabled={!c.originalText || detecting || !aiReady}
-                        title={
-                          !c.originalText
-                            ? 'ต้องดึงเนื้อหาบทนี้ก่อน'
-                            : !aiReady
-                              ? 'ยังไม่ได้ตั้ง AI API key — กลับไปหน้าหลักแล้วเลือก “ตั้งค่า AI”'
-                              : 'จับชื่อตัวละคร/ศัพท์เฉพาะจากบทนี้ด้วย AI (ไม่เพิ่มคำที่มีอยู่แล้ว)'
-                        }
+                        disabled={detecting || !aiReady}
+                        title={!aiReady ? 'ยังไม่ได้ตั้ง AI API key — กลับไปหน้าหลักแล้วเลือก “ตั้งค่า AI”' : 'โหลดเนื้อหาจาก Storage/Cache แล้วจับชื่อตัวละครและศัพท์เฉพาะด้วย AI'}
                         className={`inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs border transition-colors ${
-                          c.originalText && aiReady
+                          aiReady
                             ? 'border-accent-line bg-accent-soft text-accent-soft-fg hover:brightness-105'
                             : 'border-line bg-surface text-muted opacity-60 cursor-not-allowed'
                         }`}
@@ -729,11 +772,13 @@ export default function ProjectClient({ id }: { id: string }) {
                         จับศัพท์ (AI)
                       </button>
                       <button
-                        disabled
-                        title="รอ Phase 3 — ต่อยอดด้วย AI key แล้วใช้งานได้"
-                        className="inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs border border-line bg-surface text-muted opacity-60 cursor-not-allowed"
+                        onClick={() => void translateChapter(c)}
+                        disabled={translating || !aiReady}
+                        title={!aiReady ? 'ยังไม่ได้ตั้ง AI API key — กลับไปหน้าหลักแล้วเลือก “ตั้งค่า AI”' : 'แปลเนื้อหาที่แคชไว้และบันทึกคำแปลลงคลัง'}
+                        className={`inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs border transition-colors ${aiReady ? 'border-accent-line bg-accent-soft text-accent-soft-fg hover:brightness-105' : 'border-line bg-surface text-muted opacity-60 cursor-not-allowed'}`}
                       >
-                        แปลด้วย AI
+                        {translating ? <Loader2 className="w-3 h-3 animate-spin" /> : <BookOpen className="w-3 h-3" />}
+                        {translating ? 'กำลังแปล' : 'แปลด้วย AI'}
                       </button>
                     </div>
                     {isLastRead && (
@@ -741,15 +786,22 @@ export default function ProjectClient({ id }: { id: string }) {
                         <History className="w-3 h-3" /> คุณค้างอ่านบทนี้ไว้
                       </p>
                     )}
+                    {chapterNotice && <p role="status" className="text-[11px] text-muted rounded-lg bg-surface border border-line px-2.5 py-1.5">{chapterNotice}</p>}
                     <pre className="text-xs leading-relaxed whitespace-pre-wrap font-sans max-h-56 overflow-y-auto p-3 rounded-lg bg-bg border border-line">
-                      {c.originalText?.slice(0, 2000) || 'ยังไม่ได้ดึงเนื้อหา'}
+                      {c.originalText?.slice(0, 2000) || (c.readerContent ? htmlToPlainText(c.readerContent).slice(0, 2000) : 'ยังไม่ได้ดึงเนื้อหา')}
                       {c.originalText && c.originalText.length > 2000 && ' …'}
                     </pre>
-                    {c.originalText && (
+                    {(c.originalText || c.readerContent) && (
                       <p className="flex items-center gap-1 text-[11px] text-muted">
                         <Download className="w-3 h-3" />
-                        {c.originalText.length.toLocaleString()} ตัวอักษร
+                        {(c.originalText ?? htmlToPlainText(c.readerContent ?? '')).length.toLocaleString()} ตัวอักษร
                       </p>
+                    )}
+                    {c.translatedText && (
+                      <div className="space-y-1">
+                        <p className="text-[11px] font-medium text-muted">คำแปลที่บันทึกไว้</p>
+                        <pre className="text-xs leading-relaxed whitespace-pre-wrap font-sans max-h-40 overflow-y-auto p-3 rounded-lg bg-bg border border-line">{c.translatedText.slice(0, 2000)}{c.translatedText.length > 2000 ? ' …' : ''}</pre>
+                      </div>
                     )}
                   </div>
                 )}
