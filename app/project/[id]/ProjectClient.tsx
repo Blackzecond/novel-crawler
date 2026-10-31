@@ -6,11 +6,11 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, Loader2, Play, Square, Trash2,
   ExternalLink, Search, ArrowUpDown, AlertTriangle, CheckCircle2, Circle,
   Sparkles, Globe, BookOpen, Download, FolderOpen, Pencil, Check,
-  BookMarked, Settings, Plus, History,
+  BookMarked, Plus, History,
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 import {
-  detectNamedTerms, hasAiKey, loadAiSettings,
+  detectNamedTerms, hasAiKey, loadAiSettings, saveAiSettings,
 } from '@/lib/ai';
 import { loadCloudAiSettings, saveCloudAiSettings } from '@/lib/cloudPreferences';
 
