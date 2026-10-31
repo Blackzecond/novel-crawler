@@ -4,9 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Sun, Moon, BookOpen, Loader2, Copy, Check, 
   ChevronLeft, ChevronRight, Play, Pause, 
-  History, RotateCcw, Trash2, Library, Settings, X, List,
+  History, RotateCcw, Trash2, Library, Settings, X, List, Sparkles,
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
+import { loadAiSettings, hasAiKey, translateNovelText } from '@/lib/ai';
 import {
   loadReaderSettings, saveReaderSettings, applySavedTheme,
   readerDefaults, ReaderFont, ReaderTheme,
@@ -20,6 +21,7 @@ interface ArticleData {
   title: string;
   content: string;
   textContent: string;
+  translatedText?: string;
   prevUrl: string | null;
   nextUrl: string | null;
 }
@@ -33,6 +35,10 @@ interface HistoryItem {
 export default function ReaderPage() {
   const [url, setUrl] = useState('');
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
+  const [translationBusy, setTranslationBusy] = useState(false);
+  const [translationError, setTranslationError] = useState('');
+  const [showTranslation, setShowTranslation] = useState(false);
   const [readerProject, setReaderProject] = useState<NovelProject | null>(null);
   const chapterCacheRef = useRef<Map<string, ArticleData>>(new Map());
   const [showToc, setShowToc] = useState(false);
@@ -205,6 +211,9 @@ export default function ReaderPage() {
         const inMemoryArticle = chapterCacheRef.current.get(cacheKey);
         if (inMemoryArticle) {
           setArticle(inMemoryArticle);
+          setTranslationError('');
+          setShowTranslation(false);
+          setCurrentChapterId(readerProject?.chapters.find((item) => item.url === targetUrl)?.id ?? null);
           syncReaderUrl(targetUrl, activeProjectId);
           saveToHistory(targetUrl, inMemoryArticle.title);
           window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -225,18 +234,22 @@ export default function ReaderPage() {
       }
       if (!forceRender && activeProjectId && project && chapter && chapter.status !== 'pending') {
         const cached = await getStore().getChapterContent(activeProjectId, chapter.id, {
-          includeOriginalText: false,
-          includeTranslatedText: false,
+          includeOriginalText: true,
+          includeTranslatedText: true,
         });
         if (cached?.readerContent !== undefined) {
           const index = project.chapters.findIndex((item) => item.url === targetUrl);
           const cachedArticle: ArticleData = {
             title: chapter.title, content: cached.readerContent,
+            translatedText: cached.translatedText,
             textContent: cached.originalText ?? cached.readerContent.replace(/<[^>]*>/g, ' ').trim(),
             prevUrl: index > 0 ? project.chapters[index - 1].url : null,
             nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : null,
           };
           chapterCacheRef.current.set(cacheKey, cachedArticle);
+          setCurrentChapterId(chapter.id);
+          setTranslationError('');
+          setShowTranslation(false);
           setArticle(cachedArticle);
           syncReaderUrl(targetUrl, activeProjectId);
           saveToHistory(targetUrl, cachedArticle.title);
@@ -263,6 +276,9 @@ export default function ReaderPage() {
       // Render first. Saving to Storage/DB runs in the background so network persistence
       // cannot hold the reader on its loading screen after parsing has succeeded.
       chapterCacheRef.current.set(cacheKey, articleData);
+      setCurrentChapterId(chapter?.id ?? null);
+      setTranslationError('');
+      setShowTranslation(false);
       setArticle(articleData);
       syncReaderUrl(targetUrl, activeProjectId);
 
@@ -291,6 +307,41 @@ export default function ReaderPage() {
       saveToHistory(targetUrl, articleData.title);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) { setError(err.message); } finally { setLoading(false); }
+  };
+
+  const handleTranslate = async () => {
+    if (!article || translationBusy) return;
+    const settings = loadAiSettings();
+    if (!hasAiKey(settings)) {
+      setTranslationError('กรุณาตั้งค่า AI Base URL, Model และ API Key ในหน้าโปรเจกต์ก่อน');
+      return;
+    }
+    setTranslationBusy(true);
+    setTranslationError('');
+    try {
+      const translated = await translateNovelText(article.textContent, settings);
+      const updatedArticle = { ...article, translatedText: translated };
+      setArticle(updatedArticle);
+      chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
+      if (projectId && currentChapterId) {
+        const saved = await getStore().updateChapter(projectId, currentChapterId, {
+          translatedText: translated,
+          status: 'translated',
+          error: undefined,
+        });
+        if (saved) {
+          setReaderProject((current) => current?.id === projectId ? {
+            ...current,
+            chapters: current.chapters.map((item) => item.id === currentChapterId ? { ...item, status: 'translated' } : item),
+          } : current);
+        }
+      }
+      setShowTranslation(true);
+    } catch (err) {
+      setTranslationError(err instanceof Error ? err.message : 'แปลไม่สำเร็จ');
+    } finally {
+      setTranslationBusy(false);
+    }
   };
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -546,7 +597,7 @@ export default function ReaderPage() {
 
               {/* Action Toolbar */}
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={handleCopy}
                     className="inline-flex items-center gap-1.5 h-8 px-3 text-xs bg-surface text-fg rounded-lg border border-line hover:bg-card hover:border-accent-line transition-colors cursor-pointer"
@@ -555,6 +606,20 @@ export default function ReaderPage() {
                     {copied ? 'คัดลอกแล้ว!' : 'คัดลอกเนื้อหา'}
                   </button>
 
+                  <button
+                    type="button"
+                    onClick={handleTranslate}
+                    disabled={translationBusy}
+                    className="inline-flex items-center gap-1.5 h-8 px-3 text-xs bg-accent text-accent-fg rounded-lg disabled:opacity-50"
+                  >
+                    {translationBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    {translationBusy ? 'กำลังแปล...' : article.translatedText ? 'แปลใหม่' : 'แปลเป็นไทย'}
+                  </button>
+                  {article.translatedText && (
+                    <button type="button" onClick={() => setShowTranslation((value) => !value)} className="h-8 px-3 text-xs rounded-lg border border-line bg-surface">
+                      {showTranslation ? 'ดูต้นฉบับ' : 'ดูคำแปล'}
+                    </button>
+                  )}
                   {/* Auto Scroll Controls */}
                   <button
                     onClick={() => setAutoScroll(!autoScroll)}
@@ -587,12 +652,22 @@ export default function ReaderPage() {
               </div>
             </div>
 
+            {translationError && <div role="alert" className="rounded-lg border border-danger-line bg-danger-bg p-3 text-sm text-danger-fg">{translationError}</div>}
+
             {/* Article Content Render */}
-            <div
-              className="space-y-6 [&>p]:mb-6 [&>p]:block leading-relaxed"
-              style={{ fontSize: `${fontSize}px` }}
-              dangerouslySetInnerHTML={{ __html: article.content }}
-            />
+            {showTranslation && article.translatedText ? (
+              <div className="space-y-6 leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
+                {article.translatedText.split(/\\n\\s*\\n/).map((paragraph, index) => (
+                  <p key={index} className="mb-6 whitespace-pre-wrap">{paragraph}</p>
+                ))}
+              </div>
+            ) : (
+              <div
+                className="space-y-6 [&>p]:mb-6 [&>p]:block leading-relaxed"
+                style={{ fontSize: `${fontSize}px` }}
+                dangerouslySetInnerHTML={{ __html: article.content }}
+              />
+            )}
 
             {/* Bottom Chapter Navigation */}
             <div className="flex justify-between items-center gap-2 pt-6 mt-8 border-t border-line">
