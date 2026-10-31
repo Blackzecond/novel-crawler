@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { 
-  Sun, Moon, BookOpen, Loader2, Copy, Check, 
-  ChevronLeft, ChevronRight, Play, Pause, 
+  Sun, Moon, BookOpen, Loader2, Copy, Check, Pencil,
+  ChevronLeft, ChevronRight, Play, Pause,
   History, RotateCcw, Trash2, Library, Settings, X, List, Sparkles,
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
-import { loadAiSettings, hasAiKey, translateNovelText } from '@/lib/ai';
+import { loadAiSettings, hasAiKey, translateNovelText, editNovelTranslation } from '@/lib/ai';
 import {
   loadReaderSettings, saveReaderSettings, applySavedTheme,
   readerDefaults, ReaderFont, ReaderTheme,
@@ -37,6 +37,7 @@ export default function ReaderPage() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
   const [translationBusy, setTranslationBusy] = useState(false);
+  const [editorBusy, setEditorBusy] = useState(false);
   const [translationError, setTranslationError] = useState('');
   const [showTranslation, setShowTranslation] = useState(false);
   const [readerProject, setReaderProject] = useState<NovelProject | null>(null);
@@ -310,7 +311,7 @@ export default function ReaderPage() {
   };
 
   const handleTranslate = async () => {
-    if (!article || translationBusy) return;
+    if (!article || translationBusy || editorBusy) return;
     const settings = loadAiSettings();
     if (!hasAiKey(settings)) {
       setTranslationError('ยังไม่ได้ตั้งค่า API สำหรับการแปล กรุณากรอก Base URL, Model และ API Key ก่อน');
@@ -319,7 +320,9 @@ export default function ReaderPage() {
     setTranslationBusy(true);
     setTranslationError('');
     try {
-      const translated = await translateNovelText(article.textContent, settings);
+      const latestProject = projectId ? await getStore().getProject(projectId) : null;
+      const glossary = latestProject?.glossary ?? readerProject?.glossary ?? {};
+      const translated = await translateNovelText(article.textContent, settings, glossary);
       const updatedArticle = { ...article, translatedText: translated };
       setArticle(updatedArticle);
       chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
@@ -352,6 +355,44 @@ export default function ReaderPage() {
       setTranslationBusy(false);
     }
   };
+  const handleEditTranslation = async () => {
+    if (!article?.translatedText || editorBusy || translationBusy) return;
+    const settings = loadAiSettings();
+    if (!hasAiKey(settings)) {
+      setTranslationError('ยังไม่ได้ตั้งค่า API สำหรับ AI บ.ก. กรุณาตั้งค่า API ก่อน');
+      return;
+    }
+    setEditorBusy(true);
+    setTranslationError('');
+    try {
+      const latestProject = projectId ? await getStore().getProject(projectId) : null;
+      const glossary = latestProject?.glossary ?? readerProject?.glossary ?? {};
+      const edited = await editNovelTranslation(article.textContent, article.translatedText, settings, glossary);
+      const updatedArticle = { ...article, translatedText: edited };
+      setArticle(updatedArticle);
+      chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
+      setShowTranslation(true);
+
+      if (projectId && currentChapterId) {
+        try {
+          const saved = await getStore().updateChapter(projectId, currentChapterId, {
+            translatedText: edited,
+            status: 'translated',
+            error: undefined,
+          });
+          if (!saved) setTranslationError('AI บ.ก. ตรวจแก้แล้ว แต่บันทึกฉบับแก้ไขลงคลังไม่ได้');
+        } catch (saveError) {
+          console.warn('Could not save AI-edited chapter:', saveError);
+          setTranslationError('AI บ.ก. ตรวจแก้แล้ว แต่บันทึกฉบับแก้ไขลงคลังไม่สำเร็จ');
+        }
+      }
+    } catch (err) {
+      setTranslationError(err instanceof Error ? err.message : 'AI บ.ก. ตรวจแก้ไม่สำเร็จ');
+    } finally {
+      setEditorBusy(false);
+    }
+  };
+
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     fetchArticle(url);
@@ -623,9 +664,22 @@ export default function ReaderPage() {
                     {translationBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                   </button>
                   {article.translatedText && (
-                    <button type="button" onClick={() => setShowTranslation((value) => !value)} aria-label={showTranslation ? "ดูต้นฉบับ" : "ดูคำแปล"} title={showTranslation ? "ดูต้นฉบับ" : "ดูคำแปล"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-fg transition-colors hover:border-accent-line hover:bg-card">
-                      <BookOpen className="h-4 w-4" />
-                    </button>
+                    <>
+                      <button type="button" onClick={() => setShowTranslation((value) => !value)} aria-label={showTranslation ? "ดูต้นฉบับ" : "ดูคำแปล"} title={showTranslation ? "ดูต้นฉบับ" : "ดูคำแปล"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-fg transition-colors hover:border-accent-line hover:bg-card">
+                        <BookOpen className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleEditTranslation}
+                        disabled={editorBusy || translationBusy}
+                        aria-label={editorBusy ? "AI บ.ก. กำลังตรวจแก้" : "AI บ.ก. ตรวจแก้คำแปล"}
+                        title={editorBusy ? "AI บ.ก. กำลังตรวจแก้ทั้งตอน" : "AI บ.ก. ตรวจแก้คำแปลทั้งตอน (เรียกใช้เอง)"}
+                        className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-accent-line bg-accent-soft px-2.5 text-xs font-medium text-accent-soft-fg transition-colors hover:brightness-105 disabled:opacity-50"
+                      >
+                        {editorBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+                        <span className="hidden sm:inline">AI บ.ก.</span>
+                      </button>
+                    </>
                   )}
                   <button type="button" onClick={() => setAutoScroll(!autoScroll)} aria-label={autoScroll ? "หยุดเลื่อนอัตโนมัติ" : "เลื่อนอัตโนมัติ"} title={autoScroll ? "หยุดเลื่อนอัตโนมัติ" : "เลื่อนอัตโนมัติ"} className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors ${autoScroll ? "border-transparent bg-green-600 text-white" : "border-line bg-surface text-fg hover:border-accent-line hover:bg-card"}`}>
                     {autoScroll ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
