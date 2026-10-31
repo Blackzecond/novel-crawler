@@ -15,13 +15,13 @@ const thaiSerif = Noto_Serif_Thai({
 });
 
 export const metadata: Metadata = {
-  title: 'Novel Reader App',
-  description: 'แอปอ่านนิยายโหมดคลีน',
+  title: 'Novel Translator',
+  description: 'จัดการคลังนิยาย อ่านต้นฉบับ และเตรียมเนื้อหาสำหรับแปล',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Novel Reader',
+    title: 'Novel Translator',
   },
 };
 
