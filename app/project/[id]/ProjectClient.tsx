@@ -270,7 +270,7 @@ export default function ProjectClient({ id }: { id: string }) {
       await mergeDetected(pairs, chapterTitle);
     } catch (err: any) {
       if (err.message === 'AI_NOT_CONFIGURED') {
-        setGlossaryNotice('ยังไม่ได้ตั้ง AI API key — กด “ตั้งค่า AI” ในแผงศัพท์เฉพาะเพื่อใส่คีย์/โมเดลที่ใช้');
+        setGlossaryNotice('ยังไม่ได้ตั้ง AI API key — กด “ตั้งค่า AI” ที่แถบด้านบนเพื่อใส่คีย์/โมเดลที่ใช้');
       } else {
         setGlossaryNotice(`ตรวจศัพท์ล้มเหลว: ${err.message}`);
       }
@@ -421,6 +421,14 @@ export default function ProjectClient({ id }: { id: string }) {
             )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            <Link
+              href={`/settings/ai?returnTo=${encodeURIComponent(`/project/${id}`)}`}
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-line px-2.5 text-xs font-medium text-muted hover:border-accent-line hover:bg-accent-soft hover:text-accent-soft-fg transition-colors"
+              title="ตั้งค่า AI สำหรับการแปลและตรวจจับศัพท์"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">ตั้งค่า AI</span>
+            </Link>
             <a
               href={project.sourceUrl}
               target="_blank"
@@ -565,16 +573,6 @@ export default function ProjectClient({ id }: { id: string }) {
                     อัตโนมัติหลังดึง
                   </button>
                 </div>
-                <Link
-                  href="/settings/ai"
-                  className={`inline-flex items-center gap-1.5 px-2.5 h-7 rounded-lg border text-[11px] transition-colors ${
-                    aiReady ? 'border-line text-muted hover:text-fg' : 'border-amber-400/60 text-amber-600 hover:bg-amber-50'
-                  }`}
-                  title="ตั้งค่า API สำหรับการแปลและจับศัพท์เฉพาะ"
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${aiReady ? 'bg-green-500' : 'bg-amber-500'}`} />
-                  ตั้งค่า AI
-                </Link>
               </div>
 
               <p className="text-[11px] text-muted leading-relaxed">
@@ -726,7 +724,7 @@ export default function ProjectClient({ id }: { id: string }) {
                           !c.originalText
                             ? 'ต้องดึงเนื้อหาบทนี้ก่อน'
                             : !aiReady
-                              ? 'ยังไม่ได้ตั้ง AI API key — กด “ตั้งค่า AI” ในแผงศัพท์เฉพาะ'
+                              ? 'ยังไม่ได้ตั้ง AI API key — กด “ตั้งค่า AI” ที่แถบด้านบน'
                               : 'จับชื่อตัวละคร/ศัพท์เฉพาะจากบทนี้ด้วย AI (ไม่เพิ่มคำที่มีอยู่แล้ว)'
                         }
                         className={`inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs border transition-colors ${
