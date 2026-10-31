@@ -178,6 +178,22 @@ export default function ReaderPage() {
     void saveCloudReadingHistory([]).catch((syncError) => console.warn('Could not clear cloud reading history:', syncError));
   };
 
+  // Keep the current chapter in the address bar so refresh restores the chapter being read.
+  const syncReaderUrl = (targetUrl: string, activeProjectId: string | null) => {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set('url', targetUrl);
+    if (activeProjectId) {
+      nextUrl.searchParams.set('projectId', activeProjectId);
+    } else {
+      nextUrl.searchParams.delete('projectId');
+    }
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`,
+    );
+  };
+
   const fetchArticle = async (targetUrl: string, forceRender = false, projectIdOverride?: string | null) => {
     if (!targetUrl) return;
     const activeProjectId = projectIdOverride === undefined ? projectId : projectIdOverride;
@@ -199,7 +215,9 @@ export default function ReaderPage() {
             prevUrl: index > 0 ? project.chapters[index - 1].url : null,
             nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : null,
           };
-          setArticle(cachedArticle); saveToHistory(targetUrl, cachedArticle.title);
+          setArticle(cachedArticle);
+          syncReaderUrl(targetUrl, activeProjectId);
+          saveToHistory(targetUrl, cachedArticle.title);
           void getStore().updateProject(activeProjectId, { lastReadChapterId: chapter.id }).catch((progressError) => console.warn('Could not update last-read progress:', progressError));
           window.scrollTo({ top: 0, behavior: 'smooth' }); return;
         }
@@ -227,7 +245,10 @@ export default function ReaderPage() {
           prevUrl: index > 0 ? project.chapters[index - 1].url : null,
           nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : null };
       }
-      setArticle(articleData); saveToHistory(targetUrl, articleData.title); window.scrollTo({ top: 0, behavior: 'smooth' });
+      setArticle(articleData);
+      syncReaderUrl(targetUrl, activeProjectId);
+      saveToHistory(targetUrl, articleData.title);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) { setError(err.message); } finally { setLoading(false); }
   };
   const handleFormSubmit = (e: React.FormEvent) => {
