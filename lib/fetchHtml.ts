@@ -22,10 +22,14 @@ export function isChallengePage(html: string): boolean {
 export async function fetchArticleHtml(targetUrl: string, forceRender = false): Promise<string> {
   const apiKey = process.env.SCRAPER_API_KEY || '';
   const sessionId = getDomainSessionId(targetUrl);
+  const hostname = (() => { try { return new URL(targetUrl).hostname; } catch { return 'invalid-url'; } })();
+  const timings: Record<string, number> = {};
+  const startedAt = Date.now();
   let html = '';
 
   // 1) direct fetch — เร็วสุด แต่รับได้เฉพาะเว็บที่ไม่มี anti-bot
   if (!forceRender) {
+    const stageStartedAt = Date.now();
     try {
       const res = await fetch(targetUrl, {
         headers: {
@@ -39,11 +43,16 @@ export async function fetchArticleHtml(targetUrl: string, forceRender = false): 
         const text = await res.text();
         if (!isChallengePage(text)) html = text;
       }
-    } catch (e) {}
+    } catch (e) {
+      // Fallbacks are expected for sites that block direct requests.
+    } finally {
+      timings.direct = Date.now() - stageStartedAt;
+    }
   }
 
   // 2) ScraperAPI fast proxy (ไม่ render JS) — สำหรับเว็บกัน UA หรือ rate-limit ปกติ
   if (!html && !forceRender && apiKey) {
+    const stageStartedAt = Date.now();
     try {
       const fastProxyUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&session_number=${sessionId}&keep_headers=true`;
       const res = await fetch(fastProxyUrl, { signal: AbortSignal.timeout(7000) });
@@ -51,17 +60,33 @@ export async function fetchArticleHtml(targetUrl: string, forceRender = false): 
         const text = await res.text();
         if (!isChallengePage(text)) html = text;
       }
-    } catch (e) {}
+    } catch (e) {
+      // Continue to the full-render fallback.
+    } finally {
+      timings.fastProxy = Date.now() - stageStartedAt;
+    }
   }
 
   // 3) ScraperAPI full render — สำหรับเว็บที่สารบัญ/เนื้อหาวาดด้วย JS หรือติด Cloudflare
   if (!html && apiKey) {
+    const stageStartedAt = Date.now();
     try {
       const renderUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&session_number=${sessionId}&render=true`;
       const res = await fetch(renderUrl, { signal: AbortSignal.timeout(60000) });
       if (res.ok) html = await res.text();
-    } catch (e) {}
+    } catch (e) {
+      // Return an empty result when all configured strategies fail.
+    } finally {
+      timings.fullRender = Date.now() - stageStartedAt;
+    }
   }
 
+  console.info('[fetchArticleHtml]', {
+    host: hostname,
+    totalMs: Date.now() - startedAt,
+    stages: timings,
+    result: html ? 'html' : 'empty',
+    forceRender,
+  });
   return html;
 }
