@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   ChevronLeft, ChevronRight, ChevronDown, Loader2, Play, Square, Trash2,
   ExternalLink, Search, ArrowUpDown, AlertTriangle, CheckCircle2, Circle,
-  Sparkles, Globe, BookOpen, Download, FolderOpen, Pencil, Check,
+  Sparkles, Globe, BookOpen, Download, FolderOpen, Pencil, Check, X,
   BookMarked, Plus, History,
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
