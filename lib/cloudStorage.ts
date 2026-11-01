@@ -213,7 +213,7 @@ export const supabaseStore: NovelStore = {
 
     if (data.glossary && Object.keys(data.glossary).length) {
       const entries = Object.entries(data.glossary).map(([source_term, translated_term]) => ({
-        user_id: userId, project_id: projectRow.id, source_term, translated_term,
+        user_id: userId, project_id: projectRow.id, source_term, translated_term, term_type: 'other',
       }));
       const { error: glossaryError } = await supabase.from('glossary_entries').insert(entries);
       if (glossaryError) throw glossaryError;
@@ -234,7 +234,7 @@ export const supabaseStore: NovelStore = {
     if (patch.title !== undefined) update.title = patch.title;
     if (patch.glossaryMode !== undefined) update.glossary_mode = patch.glossaryMode;
     if (patch.lastReadChapterId !== undefined) update.last_read_chapter_id = patch.lastReadChapterId || null;
-    if (Object.keys(update).length > 1 || patch.glossary !== undefined) {
+    if (Object.keys(update).length > 1 || patch.glossary !== undefined || patch.glossaryTypes !== undefined) {
       const { error } = await supabase.from('novel_projects').update(update).eq('id', id).eq('user_id', userId);
       if (error) throw error;
     }
