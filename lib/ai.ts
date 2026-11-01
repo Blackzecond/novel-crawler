@@ -200,7 +200,7 @@ export async function detectNamedTerms(text: string, settings?: AiDetectSettings
     throw new Error('AI_NOT_CONFIGURED');
   }
 
-  const content = text.slice(0, 6000); // ตัดเพื่อควบคุมค่าใช้จ่าย (ดึงบทคือ 5-8k ตัวอักษรพอดี)
+  const content = text; // ตรวจทั้งบทเพื่อไม่ให้พลาดชื่อและศัพท์ที่ปรากฏช่วงท้าย
   const systemPrompt = [
     'You are a glossary extractor for Chinese web novels.',
     'From the chapter text, extract proper nouns so a Thai translator can translate them consistently:',
