@@ -39,6 +39,7 @@ export function inferAiProvider(baseUrl: string): AiProvider {
 export interface AiDetectPair {
   zh: string;
   th: string;
+  type: 'character' | 'term';
 }
 
 export const AI_SETTINGS_KEY = 'novel_ai_settings_v1';
@@ -206,9 +207,10 @@ export async function detectNamedTerms(text: string, settings?: AiDetectSettings
     'character names (人名), nicknames/titles, sect/clan names (门派/家族), place names (地名),',
     'cultivation techniques, magic/artifact terms (功法/武功/法宝), and other recurring special terms.',
     'Do NOT include common nouns or ordinary dialogue words.',
-    'For each item give: zh = the exact term as written in the text,',
-    'th = the Thai name you propose (transliterate personal/licensed names, translate sect/place/artifact terms).',
-    'Maximum 30 items. Respond ONLY with JSON: {"items":[{"zh":"...","th":"..."}]}',
+    'For each item give: zh = the exact term as written in the text, th = the Thai name you propose,',
+    'type = "character" only for a named person or character; use "term" for every other proper noun or special term.',
+    'Do not classify titles, nicknames, sects, places, techniques, artifacts, or organizations as characters.',
+    'Maximum 30 items. Respond ONLY with JSON: {"items":[{"zh":"...","th":"...","type":"character|term"}]}',
   ].join(' ');
 
   const result = await requestChatCompletion(
