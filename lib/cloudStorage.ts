@@ -19,7 +19,7 @@ type ChapterRow = {
   translated_storage_path: string | null;
   error_message: string | null; created_at: string; updated_at: string;
 };
-type GlossaryRow = { source_term: string; translated_term: string };
+type GlossaryRow = { project_id: string; source_term: string; translated_term: string; term_type?: string | null };
 
 function toTimestamp(value: string): number {
   const parsed = Date.parse(value);
@@ -37,7 +37,7 @@ function mapChapter(row: ChapterRow): NovelChapter {
   };
 }
 
-function mapProject(row: ProjectRow, fetchedChapters: NovelChapter[], glossary: Record<string, string>): NovelProject {
+function mapProject(row: ProjectRow, fetchedChapters: NovelChapter[], glossary: Record<string, string>, glossaryTypes: Record<string, 'character' | 'term'>): NovelProject {
   const fetchedByUrl = new Map(fetchedChapters.map((chapter) => [chapter.url, chapter]));
   const catalog = Array.isArray(row.chapter_catalog) ? row.chapter_catalog : [];
   const chapters: NovelChapter[] = catalog.map((item) => fetchedByUrl.get(item.url) ?? ({
@@ -55,6 +55,7 @@ function mapProject(row: ProjectRow, fetchedChapters: NovelChapter[], glossary: 
     sourceUrl: row.source_url,
     host: row.host,
     glossary,
+    glossaryTypes,
     glossaryMode: row.glossary_mode,
     lastReadChapterId: row.last_read_chapter_id ?? undefined,
     chapters,
@@ -86,17 +87,18 @@ async function loadChapters(projectIds: string[]): Promise<ChapterRow[]> {
   return (data ?? []) as ChapterRow[];
 }
 
-async function loadGlossary(projectIds: string[]): Promise<Map<string, Record<string, string>>> {
-  const result = new Map<string, Record<string, string>>();
+async function loadGlossary(projectIds: string[]): Promise<Map<string, { terms: Record<string, string>; types: Record<string, 'character' | 'term'> }>> {
+  const result = new Map<string, { terms: Record<string, string>; types: Record<string, 'character' | 'term'> }>();
   if (!projectIds.length) return result;
   const { data, error } = await getSupabase()
-    .from('glossary_entries').select('project_id, source_term, translated_term')
+    .from('glossary_entries').select('project_id, source_term, translated_term, term_type')
     .in('project_id', projectIds);
   if (error) throw error;
-  for (const row of data ?? []) {
-    const terms = result.get(row.project_id) ?? {};
-    terms[row.source_term] = row.translated_term;
-    result.set(row.project_id, terms);
+  for (const row of (data ?? []) as GlossaryRow[]) {
+    const value = result.get(row.project_id) ?? { terms: {}, types: {} };
+    value.terms[row.source_term] = row.translated_term;
+    value.types[row.source_term] = row.term_type === 'character' ? 'character' : 'term';
+    result.set(row.project_id, value);
   }
   return result;
 }
@@ -111,7 +113,10 @@ async function buildProjects(rows: ProjectRow[]): Promise<NovelProject[]> {
     list.push(mapChapter(row));
     byProject.set(row.project_id, list);
   }
-  return rows.map((row) => mapProject(row, byProject.get(row.id) ?? [], glossaries.get(row.id) ?? {}));
+  return rows.map((row) => {
+    const glossary = glossaries.get(row.id) ?? { terms: {}, types: {} };
+    return mapProject(row, byProject.get(row.id) ?? [], glossary.terms, glossary.types);
+  });
 }
 
 function contentPath(userId: string, projectId: string, chapterId: string, kind: 'original' | 'translated' | 'reader') {
@@ -233,19 +238,23 @@ export const supabaseStore: NovelStore = {
       const { error } = await supabase.from('novel_projects').update(update).eq('id', id).eq('user_id', userId);
       if (error) throw error;
     }
-    if (patch.glossary !== undefined) {
+    if (patch.glossary !== undefined || patch.glossaryTypes !== undefined) {
       const { data: existing, error: existingError } = await supabase.from('glossary_entries')
-        .select('source_term').eq('project_id', id).eq('user_id', userId);
+        .select('source_term, translated_term, term_type').eq('project_id', id).eq('user_id', userId);
       if (existingError) throw existingError;
-      const wanted = new Set(Object.keys(patch.glossary));
-      const removed = (existing ?? []).map((row) => row.source_term).filter((term) => !wanted.has(term));
+      const existingRows = (existing ?? []) as Array<{ source_term: string; translated_term: string; term_type?: string | null }>;
+      const existingMap = new Map(existingRows.map((row) => [row.source_term, row]));
+      const terms = patch.glossary ?? Object.fromEntries(existingRows.map((row) => [row.source_term, row.translated_term]));
+      const wanted = new Set(Object.keys(terms));
+      const removed = existingRows.map((row) => row.source_term).filter((term) => !wanted.has(term));
       if (removed.length) {
         const { error } = await supabase.from('glossary_entries').delete()
           .eq('project_id', id).eq('user_id', userId).in('source_term', removed);
         if (error) throw error;
       }
-      const entries = Object.entries(patch.glossary).map(([source_term, translated_term]) => ({
+      const entries = Object.entries(terms).map(([source_term, translated_term]) => ({
         user_id: userId, project_id: id, source_term, translated_term,
+        term_type: patch.glossaryTypes?.[source_term] ?? (existingMap.get(source_term)?.term_type === 'character' ? 'character' : 'other'),
       }));
       if (entries.length) {
         const { error } = await supabase.from('glossary_entries').upsert(entries, { onConflict: 'project_id,source_term' });
@@ -253,6 +262,15 @@ export const supabaseStore: NovelStore = {
       }
     }
     return loadOneProject(id);
+  },
+
+  async deleteGlossaryTerms(projectId, sourceTerms) {
+    if (!sourceTerms.length) return loadOneProject(projectId);
+    const userId = await currentUserId();
+    const { error } = await getSupabase().from('glossary_entries').delete()
+      .eq('project_id', projectId).eq('user_id', userId).in('source_term', sourceTerms);
+    if (error) throw error;
+    return loadOneProject(projectId);
   },
 
   async importProjects(incoming) {
