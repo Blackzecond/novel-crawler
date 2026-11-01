@@ -296,9 +296,16 @@ export default function ProjectClient({ id }: { id: string }) {
     if (!latest) throw new Error('ไม่พบโปรเจกต์');
     const glossary = { ...latest.glossary };
     const glossaryTypes = { ...latest.glossaryTypes };
-    for (const item of items) {
+    const validItems = items.filter((item) => item.zh.trim() && item.th.trim());
+    const retainedSources = new Set(validItems.map((item) => item.zh.trim()));
+    for (const original of detectedGlossary?.items ?? []) {
+      if (!retainedSources.has(original.zh)) {
+        delete glossary[original.zh];
+        delete glossaryTypes[original.zh];
+      }
+    }
+    for (const item of validItems) {
       const zh = item.zh.trim(); const th = item.th.trim();
-      if (!zh || !th) continue;
       glossary[zh] = th;
       glossaryTypes[zh] = item.type;
     }
