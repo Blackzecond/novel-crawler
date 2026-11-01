@@ -667,20 +667,20 @@ export default function ReaderPage() {
                   return <div key={group.type} className="space-y-1.5">
                     <h3 className="text-xs font-semibold">{group.title} ({entries.length})</h3>
                     {entries.length ? entries.map(([source, translated]) => (
-                      <div key={source} className="grid grid-cols-[minmax(0,0.8fr)_auto_minmax(0,1.5fr)_5rem_auto] items-center gap-2">
-                        <span lang="zh-CN" className="min-w-0 truncate text-xs font-medium">{source}</span>
-                        <span className="text-muted">→</span>
+                      <div key={source} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[minmax(0,0.8fr)_auto_minmax(0,1.5fr)_5rem_auto]">
+                        <span lang="zh-CN" className="col-span-2 min-w-0 truncate text-xs font-medium sm:col-span-1">{source}</span>
+                        <span className="hidden text-muted sm:inline">→</span>
                         <input key={source + ':' + translated} defaultValue={translated}
                           aria-label={`คำแปลของ ${source}`}
                           onBlur={(event) => { if (event.target.value.trim() !== translated) void updateReaderGlossaryTerm(source, event.target.value); }}
-                          className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-bg px-2 text-xs" />
+                          className="col-span-3 h-8 min-w-0 w-full rounded-lg border border-line bg-bg px-2 text-xs sm:col-span-1" />
                         <select value={readerProject.glossaryTypes?.[source] === 'character' ? 'character' : 'term'}
                           onChange={(event) => void updateReaderGlossaryTerm(source, translated, event.target.value as 'character' | 'term')}
-                          aria-label={`ประเภทของ ${source}`} className="h-8 w-20 rounded-lg border border-line bg-bg px-1 text-[11px]">
+                          aria-label={`ประเภทของ ${source}`} className="col-start-2 h-8 w-full min-w-0 rounded-lg border border-line bg-bg px-1 text-[11px] sm:col-auto sm:w-20">
                           <option value="character">ตัวละคร</option><option value="term">ศัพท์</option>
                         </select>
                         <button type="button" onClick={() => void updateReaderGlossaryTerm(source, '')} title="ลบศัพท์"
-                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-bg hover:text-danger-fg"><Trash2 className="h-3.5 w-3.5" /></button>
+                          className="col-start-3 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-bg hover:text-danger-fg sm:col-auto"><Trash2 className="h-3.5 w-3.5" /></button>
                       </div>
                     )) : <p className="text-[11px] text-muted">ยังไม่มีรายการ</p>}
                   </div>;
