@@ -4,10 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Sun, Moon, BookOpen, Loader2, Copy, Check, Pencil,
   ChevronLeft, ChevronRight, Play, Pause,
-  History, RotateCcw, Trash2, Library, Settings, X, List, Sparkles,
+  History, RotateCcw, Trash2, Library, Settings, X, List, Sparkles, BookMarked, Plus,
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
-import { loadAiSettings, hasAiKey, translateNovelText, editNovelTranslation } from '@/lib/ai';
+import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, editNovelTranslation } from '@/lib/ai';
 import {
   loadReaderSettings, saveReaderSettings, applySavedTheme,
   readerDefaults, ReaderFont, ReaderTheme,
@@ -43,6 +43,11 @@ export default function ReaderPage() {
   const [readerProject, setReaderProject] = useState<NovelProject | null>(null);
   const chapterCacheRef = useRef<Map<string, ArticleData>>(new Map());
   const [showToc, setShowToc] = useState(false);
+  const [showGlossary, setShowGlossary] = useState(false);
+  const [glossaryNotice, setGlossaryNotice] = useState('');
+  const [readerGlossaryZh, setReaderGlossaryZh] = useState('');
+  const [readerGlossaryTh, setReaderGlossaryTh] = useState('');
+  const [readerGlossaryType, setReaderGlossaryType] = useState<'character' | 'term'>('term');
   const [tocFilter, setTocFilter] = useState('');
   const [loading, setLoading] = useState(false);
   const [article, setArticle] = useState<ArticleData | null>(null);
@@ -299,6 +304,36 @@ export default function ReaderPage() {
                   : item),
               } : current);
               await getStore().updateProject(activeProjectId, { lastReadChapterId: savedChapter.id });
+
+              // In auto mode, detect glossary entries for chapters fetched directly in Reader too.
+              if (project.glossaryMode === 'auto' && hasAiKey() && data.textContent) {
+                try {
+                  const pairs = await detectNamedTerms(data.textContent);
+                  const latest = await getStore().getProject(activeProjectId);
+                  if (latest) {
+                    const glossary = { ...latest.glossary };
+                    const glossaryTypes = { ...latest.glossaryTypes };
+                    const added: typeof pairs = [];
+                    for (const pair of pairs) {
+                      if (!pair.zh || !pair.th || glossary[pair.zh] !== undefined) continue;
+                      glossary[pair.zh] = pair.th;
+                      glossaryTypes[pair.zh] = pair.type;
+                      added.push(pair);
+                    }
+                    if (added.length) {
+                      const updatedProject = await getStore().updateProject(activeProjectId, { glossary, glossaryTypes });
+                      if (!updatedProject) throw new Error('บันทึกคลังศัพท์ไม่สำเร็จ');
+                      setReaderProject(updatedProject);
+                      const names = added.map((pair) => pair.zh + ' → ' + pair.th).join(', ');
+                      setGlossaryNotice(`จับศัพท์อัตโนมัติและบันทึกแล้ว ${added.length} รายการจากบท “${chapter.title}”: ${names}`);
+                    } else {
+                      setGlossaryNotice(pairs.length ? 'จับศัพท์อัตโนมัติแล้ว แต่ไม่มีรายการใหม่ (คำเดิมไม่ถูกเพิ่มซ้ำ)' : 'จับศัพท์อัตโนมัติแล้ว — ไม่พบคำใหม่ในบทนี้');
+                    }
+                  }
+                } catch (detectError) {
+                  setGlossaryNotice(`จับศัพท์อัตโนมัติไม่สำเร็จ: ${detectError instanceof Error ? detectError.message : String(detectError)}`);
+                }
+              }
             }
           } catch (saveError) {
             console.warn('Could not save fetched chapter cache:', saveError);
@@ -393,6 +428,62 @@ export default function ReaderPage() {
     }
   };
 
+  const updateReaderGlossaryTerm = async (source: string, translated: string, type?: 'character' | 'term') => {
+    if (!projectId) return;
+    try {
+      const latest = await getStore().getProject(projectId);
+      if (!latest) throw new Error('ไม่พบโปรเจกต์');
+      const glossary = { ...latest.glossary };
+      const glossaryTypes = { ...latest.glossaryTypes };
+      if (!translated.trim()) {
+        delete glossary[source];
+        delete glossaryTypes[source];
+      } else {
+        glossary[source] = translated.trim();
+        if (type) glossaryTypes[source] = type;
+      }
+      const updated = await getStore().updateProject(projectId, { glossary, glossaryTypes });
+      if (!updated) throw new Error('บันทึกคลังศัพท์ไม่สำเร็จ');
+      setReaderProject(updated);
+      setGlossaryNotice(`บันทึกแล้ว: ${source}${translated.trim() ? ' → ' + translated.trim() : ' (ลบออกแล้ว)'}`);
+    } catch (err) {
+      setGlossaryNotice(`บันทึกไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const addReaderGlossaryTerm = async () => {
+    const source = readerGlossaryZh.trim();
+    const translated = readerGlossaryTh.trim();
+    if (!projectId || !source || !translated) return;
+    try {
+      const latest = await getStore().getProject(projectId);
+      if (!latest) throw new Error('ไม่พบโปรเจกต์');
+      const updated = await getStore().updateProject(projectId, {
+        glossary: { ...latest.glossary, [source]: translated },
+        glossaryTypes: { ...latest.glossaryTypes, [source]: readerGlossaryType },
+      });
+      if (!updated) throw new Error('บันทึกคลังศัพท์ไม่สำเร็จ');
+      setReaderProject(updated);
+      setReaderGlossaryZh('');
+      setReaderGlossaryTh('');
+      setGlossaryNotice(`เพิ่มและบันทึกแล้ว: ${source} → ${translated}`);
+    } catch (err) {
+      setGlossaryNotice(`เพิ่มศัพท์ไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const toggleReaderGlossary = async () => {
+    const next = !showGlossary;
+    setShowGlossary(next);
+    if (next && projectId && !readerProject) {
+      try {
+        setReaderProject(await getStore().getProject(projectId));
+      } catch (err) {
+        setGlossaryNotice(err instanceof Error ? err.message : 'โหลดคลังศัพท์ไม่สำเร็จ');
+      }
+    }
+  };
+
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     fetchArticle(url);
@@ -461,6 +552,12 @@ export default function ReaderPage() {
 
           {/* History + Settings toggles */}
           <div className="flex items-center gap-1 shrink-0">
+            {projectId && (
+              <button type="button" onClick={() => void toggleReaderGlossary()} title="เปิดคลังศัพท์ของเรื่องนี้" aria-label="เปิดคลังศัพท์"
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors ${showGlossary ? 'border-accent-line bg-accent-soft text-accent-soft-fg' : 'border-line text-muted hover:bg-card hover:text-fg'}`}>
+                <BookMarked className="h-4 w-4" />
+              </button>
+            )}
             <a
               href="/settings/ai"
               title="ตั้งค่า AI สำหรับการแปล"
@@ -494,6 +591,7 @@ export default function ReaderPage() {
           </div>
         </div>
       </header>
+      {glossaryNotice && <div role="status" className="mx-auto max-w-3xl px-4 pt-3 text-xs leading-relaxed text-accent-soft-fg sm:px-6"><div className="rounded-lg border border-accent-line bg-accent-soft px-3 py-2"><BookMarked className="mr-1.5 inline h-3.5 w-3.5" />{glossaryNotice}</div></div>}
 
       {projectId && (
         <div className="max-w-3xl mx-auto px-3 sm:px-6 pt-2">
@@ -521,6 +619,58 @@ export default function ReaderPage() {
           )}
         </div>
       )}
+      {showGlossary && projectId && (
+        <section className="border-b border-line bg-card">
+          <div className="mx-auto max-w-3xl space-y-3 px-4 py-4 sm:px-6">
+            <div className="flex items-center justify-between gap-2">
+              <div><h2 className="flex items-center gap-2 text-sm font-bold"><BookMarked className="h-4 w-4 text-accent" />คลังศัพท์ของเรื่องนี้</h2>
+                <p className="mt-1 text-[11px] text-muted">แยกตัวละครกับศัพท์เฉพาะ · แก้ไขแล้วบันทึกลงโปรเจกต์ทันที</p></div>
+              <button type="button" onClick={() => setShowGlossary(false)} aria-label="ปิดคลังศัพท์" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface"><X className="h-4 w-4" /></button>
+            </div>
+            {!readerProject ? <p className="text-xs text-muted">กำลังโหลดคลังศัพท์…</p> : (
+              <>
+                {([
+                  { type: 'character' as const, title: 'ตัวละคร' },
+                  { type: 'term' as const, title: 'ศัพท์เฉพาะ' },
+                ]).map((group) => {
+                  const entries = Object.entries(readerProject.glossary).filter(([source]) =>
+                    (readerProject.glossaryTypes?.[source] === 'character' ? 'character' : 'term') === group.type);
+                  return <div key={group.type} className="space-y-1.5">
+                    <h3 className="text-xs font-semibold">{group.title} ({entries.length})</h3>
+                    {entries.length ? entries.map(([source, translated]) => (
+                      <div key={source} className="flex items-center gap-2">
+                        <span lang="zh-CN" className="max-w-[34%] shrink-0 truncate text-xs font-medium">{source}</span>
+                        <span className="text-muted">→</span>
+                        <input key={source + ':' + translated} defaultValue={translated}
+                          aria-label={`คำแปลของ ${source}`}
+                          onBlur={(event) => { if (event.target.value.trim() !== translated) void updateReaderGlossaryTerm(source, event.target.value); }}
+                          className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-bg px-2 text-xs" />
+                        <select value={readerProject.glossaryTypes?.[source] === 'character' ? 'character' : 'term'}
+                          onChange={(event) => void updateReaderGlossaryTerm(source, translated, event.target.value as 'character' | 'term')}
+                          aria-label={`ประเภทของ ${source}`} className="h-8 w-20 rounded-lg border border-line bg-bg px-1 text-[11px]">
+                          <option value="character">ตัวละคร</option><option value="term">ศัพท์</option>
+                        </select>
+                        <button type="button" onClick={() => void updateReaderGlossaryTerm(source, '')} title="ลบศัพท์"
+                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-bg hover:text-danger-fg"><Trash2 className="h-3.5 w-3.5" /></button>
+                      </div>
+                    )) : <p className="text-[11px] text-muted">ยังไม่มีรายการ</p>}
+                  </div>;
+                })}
+                <div className="grid gap-2 sm:grid-cols-[1fr_1fr_7rem_auto]">
+                  <input value={readerGlossaryZh} onChange={(event) => setReaderGlossaryZh(event.target.value)} placeholder="คำต้นฉบับจีน" className="h-9 min-w-0 rounded-lg border border-line bg-bg px-2 text-xs" />
+                  <input value={readerGlossaryTh} onChange={(event) => setReaderGlossaryTh(event.target.value)} placeholder="คำแปลไทย" className="h-9 min-w-0 rounded-lg border border-line bg-bg px-2 text-xs" />
+                  <select value={readerGlossaryType} onChange={(event) => setReaderGlossaryType(event.target.value as 'character' | 'term')} className="h-9 rounded-lg border border-line bg-bg px-2 text-xs">
+                    <option value="character">ตัวละคร</option><option value="term">ศัพท์เฉพาะ</option>
+                  </select>
+                  <button type="button" disabled={!readerGlossaryZh.trim() || !readerGlossaryTh.trim()} onClick={() => void addReaderGlossaryTerm()}
+                    className="inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-40"><Plus className="h-3.5 w-3.5" />เพิ่ม</button>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* แผงการตั้งค่า — วางนอก <header> เพราะ backdrop-blur ทำ fixed คำนวณผิดที่:
           ยึดขอบล่างจอบนมือถือ, ปรากฏใต้ header มุมขวาบนเดสก์ท็อป */}
       {showSettings && (

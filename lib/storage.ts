@@ -23,6 +23,7 @@ export interface NovelProject {
   sourceUrl: string;
   host: string;
   glossary: Record<string, string>;
+  glossaryTypes: Record<string, 'character' | 'term'>;
   // โหมดตรวจชื่อตัวละคร/ศัพท์เฉพาะด้วย AI: 'manual' = กดเองรายบท, 'auto' = จับหลังดึงเนื้อหาสำเร็จทุกบท
   glossaryMode: 'manual' | 'auto';
   // id บทล่าสุดที่เปิดอ่านจากโปรเจกต์นี้ — ใช้ทำปุ่ม "อ่านต่อ"
@@ -52,8 +53,9 @@ export interface NovelStore {
   renameProject(id: string, title: string): Promise<NovelProject | null>;
   updateProject(
     id: string,
-    patch: Partial<Pick<NovelProject, 'title' | 'glossary' | 'glossaryMode' | 'lastReadChapterId'>>
+    patch: Partial<Pick<NovelProject, 'title' | 'glossary' | 'glossaryTypes' | 'glossaryMode' | 'lastReadChapterId'>>
   ): Promise<NovelProject | null>;
+  deleteGlossaryTerms(projectId: string, sourceTerms: string[]): Promise<NovelProject | null>;
   // นำเข้าจากไฟล์ส่งออก JSON — id ซ้ำกับข้อมูลในเครื่องจะถูกแทนที่ด้วยข้อมูลไฟล์นำเข้า
   importProjects(projects: NovelProject[]): Promise<{ imported: number; skipped: number }>;
   deleteProject(id: string): Promise<void>;
@@ -88,6 +90,7 @@ function normalizeProject(p: any): NovelProject | null {
     sourceUrl: String(p.sourceUrl ?? ''),
     host: String(p.host ?? ''),
     glossary: p.glossary && typeof p.glossary === 'object' ? p.glossary : {},
+    glossaryTypes: p.glossaryTypes && typeof p.glossaryTypes === 'object' ? p.glossaryTypes : {},
     glossaryMode: p.glossaryMode === 'auto' ? 'auto' : 'manual',
     lastReadChapterId: typeof p.lastReadChapterId === 'string' ? p.lastReadChapterId : undefined,
     createdAt: Number(p.createdAt) || Date.now(),
@@ -139,6 +142,7 @@ export const localStorageStore: NovelStore = {
       sourceUrl: data.sourceUrl,
       host: data.host,
       glossary: data.glossary ?? {},
+      glossaryTypes: {},
       glossaryMode: 'manual',
       createdAt: now,
       updatedAt: now,
@@ -165,8 +169,23 @@ export const localStorageStore: NovelStore = {
     if (!target) return null;
     if (patch.title !== undefined) target.title = patch.title;
     if (patch.glossary !== undefined) target.glossary = patch.glossary;
+    if (patch.glossaryTypes !== undefined) target.glossaryTypes = patch.glossaryTypes;
     if (patch.glossaryMode !== undefined) target.glossaryMode = patch.glossaryMode;
     if (patch.lastReadChapterId !== undefined) target.lastReadChapterId = patch.lastReadChapterId;
+    target.updatedAt = Date.now();
+    saveAll(projects);
+    return target;
+  },
+
+  async deleteGlossaryTerms(projectId, sourceTerms) {
+    const projects = loadAllValid();
+    const target = projects.find((p) => p.id === projectId);
+    if (!target) return null;
+    const glossary = { ...target.glossary };
+    const glossaryTypes = { ...target.glossaryTypes };
+    for (const term of sourceTerms) { delete glossary[term]; delete glossaryTypes[term]; }
+    target.glossary = glossary;
+    target.glossaryTypes = glossaryTypes;
     target.updatedAt = Date.now();
     saveAll(projects);
     return target;
