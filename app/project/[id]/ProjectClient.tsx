@@ -354,37 +354,46 @@ export default function ProjectClient({ id }: { id: string }) {
 
   /** แก้/ลบคำแปลใน glossary (th ว่าง = ลบคำ) */
   const updateGlossaryTerm = async (zh: string, th: string, type?: 'character' | 'term') => {
-    const latest = await getStore().getProject(id);
-    if (!latest) return;
-    const glossary = { ...latest.glossary };
-    const glossaryTypes = { ...latest.glossaryTypes };
-    if (th.trim()) {
-      glossary[zh] = th.trim();
-      if (type) glossaryTypes[zh] = type;
-    } else {
-      delete glossary[zh];
-      delete glossaryTypes[zh];
+    try {
+      const latest = await getStore().getProject(id);
+      if (!latest) throw new Error('ไม่พบโปรเจกต์');
+      const glossary = { ...latest.glossary };
+      const glossaryTypes = { ...latest.glossaryTypes };
+      if (th.trim()) {
+        glossary[zh] = th.trim();
+        if (type) glossaryTypes[zh] = type;
+      } else {
+        delete glossary[zh];
+        delete glossaryTypes[zh];
+      }
+      const updated = await getStore().updateProject(id, { glossary, glossaryTypes });
+      if (!updated) throw new Error('บันทึกไม่สำเร็จ');
+      setProject(updated);
+      setGlossaryNotice(th.trim() ? `บันทึกคำแปลแล้ว: ${zh} → ${th.trim()}` : `ลบ ${zh} ออกจากคลังแล้ว`);
+    } catch (err) {
+      setGlossaryNotice(`บันทึกศัพท์ไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
     }
-    const updated = await getStore().updateProject(id, { glossary, glossaryTypes });
-    if (updated) setProject(updated);
   };
 
   const addManualTerm = async () => {
     const zh = addZh.trim();
     const th = addTh.trim();
     if (!zh) return;
-    const latest = await getStore().getProject(id);
-    if (!latest) return;
-    const glossary = { ...latest.glossary, [zh]: th };
-    const glossaryTypes = { ...latest.glossaryTypes, [zh]: addTermType };
-    const updated = await getStore().updateProject(id, { glossary, glossaryTypes });
-    if (updated) {
+    try {
+      const latest = await getStore().getProject(id);
+      if (!latest) throw new Error('ไม่พบโปรเจกต์');
+      const glossary = { ...latest.glossary, [zh]: th };
+      const glossaryTypes = { ...latest.glossaryTypes, [zh]: addTermType };
+      const updated = await getStore().updateProject(id, { glossary, glossaryTypes });
+      if (!updated || updated.glossary[zh] !== th) throw new Error('บันทึกไม่สำเร็จ');
       setProject(updated);
       setGlossaryNotice(`เพิ่มและบันทึกแล้ว: ${zh}${th ? ' → ' + th : ' (ยังไม่ระบุคำแปล)'} (${addTermType === 'character' ? 'ตัวละคร' : 'ศัพท์เฉพาะ'})`);
+      setAddZh('');
+      setAddTh('');
+      setAddTermType('term');
+    } catch (err) {
+      setGlossaryNotice(`เพิ่มศัพท์ไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
     }
-    setAddZh('');
-    setAddTh('');
-    setAddTermType('term');
   };
 
   const deleteGlossaryTerms = async (terms: string[]) => {
