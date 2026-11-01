@@ -254,7 +254,7 @@ export const supabaseStore: NovelStore = {
       }
       const entries = Object.entries(terms).map(([source_term, translated_term]) => ({
         user_id: userId, project_id: id, source_term, translated_term,
-        term_type: patch.glossaryTypes?.[source_term] ?? (existingMap.get(source_term)?.term_type === 'character' ? 'character' : 'other'),
+        term_type: patch.glossaryTypes?.[source_term] === 'character' || (!patch.glossaryTypes?.[source_term] && existingMap.get(source_term)?.term_type === 'character') ? 'character' : 'other',
       }));
       if (entries.length) {
         const { error } = await supabase.from('glossary_entries').upsert(entries, { onConflict: 'project_id,source_term' });
