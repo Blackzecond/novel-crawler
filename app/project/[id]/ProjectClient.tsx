@@ -13,6 +13,7 @@ import {
   detectNamedTerms, hasAiKey, loadAiSettings, saveAiSettings, translateNovelText,
 } from '@/lib/ai';
 import { loadCloudAiSettings, saveCloudAiSettings } from '@/lib/cloudPreferences';
+import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -65,6 +66,7 @@ export default function ProjectClient({ id }: { id: string }) {
   // แผงศัพท์เฉพาะ (glossary)
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [glossaryNotice, setGlossaryNotice] = useState('');
+  const [detectedGlossary, setDetectedGlossary] = useState<{ items: DetectedGlossaryItem[]; sourceLabel?: string } | null>(null);
   const [detecBusyIds, setDetecBusyIds] = useState<Set<string>>(new Set());
   const [translateBusyIds, setTranslateBusyIds] = useState<Set<string>>(new Set());
   const [chapterNotice, setChapterNotice] = useState('');
@@ -286,6 +288,25 @@ export default function ProjectClient({ id }: { id: string }) {
       terms.length ? `ศัพท์: ${terms.map((pair) => pair.zh + ' → ' + pair.th).join(', ')}` : '',
     ].filter(Boolean).join(' · ');
     setGlossaryNotice(`บันทึกสำเร็จ ${savedTerms.length} รายการ${sourceLabel ? ` จากบท “${sourceLabel}”` : ''} — ${details}`);
+    setDetectedGlossary({ items: savedTerms.map((pair) => ({ zh: pair.zh, th: pair.th, type: pair.type })), sourceLabel });
+  };
+
+  const saveDetectedGlossaryEdits = async (items: DetectedGlossaryItem[]) => {
+    const latest = await getStore().getProject(id);
+    if (!latest) throw new Error('ไม่พบโปรเจกต์');
+    const glossary = { ...latest.glossary };
+    const glossaryTypes = { ...latest.glossaryTypes };
+    for (const item of items) {
+      const zh = item.zh.trim(); const th = item.th.trim();
+      if (!zh || !th) continue;
+      glossary[zh] = th;
+      glossaryTypes[zh] = item.type;
+    }
+    const updated = await getStore().updateProject(id, { glossary, glossaryTypes });
+    if (!updated) throw new Error('บันทึกการแก้ไขคลังศัพท์ไม่สำเร็จ');
+    setProject(updated);
+    setGlossaryNotice(`บันทึกการแก้ไขศัพท์แล้ว ${items.filter((item) => item.zh.trim() && item.th.trim()).length} รายการ`);
+    setDetectedGlossary(null);
   };
 
   const runDetect = async (chapterTitle: string, text: string) => {
@@ -694,15 +715,15 @@ export default function ProjectClient({ id }: { id: string }) {
                       {group.title} <span className="text-muted font-normal">({group.entries.length})</span>
                     </h3>
                     {group.entries.map(([zh, th]) => (
-                      <div key={zh} className="flex items-center gap-2 rounded-lg px-1 py-1">
+                      <div key={zh} className="grid grid-cols-[auto_minmax(0,0.8fr)_auto_minmax(0,1.5fr)_5.5rem_auto] items-center gap-2 rounded-lg px-1 py-1">
                         <input type="checkbox" aria-label={`เลือก ${zh}`} checked={selectedGlossaryTerms.includes(zh)}
                           onChange={(event) => setSelectedGlossaryTerms((current) => event.target.checked ? [...current, zh] : current.filter((term) => term !== zh))}
                           className="h-4 w-4 shrink-0 accent-current" />
-                        <span className="max-w-[30%] shrink-0 truncate text-sm font-medium" lang="zh-CN">{zh}</span>
+                        <span className="min-w-0 truncate text-sm font-medium" lang="zh-CN">{zh}</span>
                         <span className="shrink-0 text-muted">→</span>
                         <input key={`${zh}:${th}`} defaultValue={th}
                           onBlur={(event) => { if (event.target.value.trim() !== th) void updateGlossaryTerm(zh, event.target.value); }}
-                          className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-bg px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-accent/60"
+                          className="h-8 min-w-0 w-full flex-1 rounded-lg border border-line bg-bg px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-accent/60"
                           aria-label={`คำแปลไทยของ ${zh}`} />
                         <select aria-label={`ประเภทของ ${zh}`} value={group.type}
                           onChange={(event) => void updateGlossaryTerm(zh, th, event.target.value as 'character' | 'term')}
@@ -872,6 +893,7 @@ export default function ProjectClient({ id }: { id: string }) {
 
 
       </main>
+      {detectedGlossary && <DetectedGlossaryModal items={detectedGlossary.items} sourceLabel={detectedGlossary.sourceLabel} onClose={() => setDetectedGlossary(null)} onSave={saveDetectedGlossaryEdits} />}
     </div>
   );
 }
