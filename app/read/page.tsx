@@ -16,6 +16,7 @@ import {
   loadCloudReaderSettings, saveCloudReaderSettings,
   loadCloudReadingHistory, saveCloudReadingHistory,
 } from '@/lib/cloudPreferences';
+import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
 
 interface ArticleData {
   title: string;
@@ -45,6 +46,7 @@ export default function ReaderPage() {
   const [showToc, setShowToc] = useState(false);
   const [showGlossary, setShowGlossary] = useState(false);
   const [glossaryNotice, setGlossaryNotice] = useState('');
+  const [detectedGlossary, setDetectedGlossary] = useState<{ items: DetectedGlossaryItem[]; sourceLabel?: string } | null>(null);
   const [readerGlossaryZh, setReaderGlossaryZh] = useState('');
   const [readerGlossaryTh, setReaderGlossaryTh] = useState('');
   const [readerGlossaryType, setReaderGlossaryType] = useState<'character' | 'term'>('term');
@@ -326,6 +328,7 @@ export default function ReaderPage() {
                       setReaderProject(updatedProject);
                       const names = added.map((pair) => pair.zh + ' → ' + pair.th).join(', ');
                       setGlossaryNotice(`จับศัพท์อัตโนมัติและบันทึกแล้ว ${added.length} รายการจากบท “${chapter.title}”: ${names}`);
+                      setDetectedGlossary({ items: added.map((pair) => ({ zh: pair.zh, th: pair.th, type: pair.type })), sourceLabel: chapter.title });
                     } else {
                       setGlossaryNotice(pairs.length ? 'จับศัพท์อัตโนมัติแล้ว แต่ไม่มีรายการใหม่ (คำเดิมไม่ถูกเพิ่มซ้ำ)' : 'จับศัพท์อัตโนมัติแล้ว — ไม่พบคำใหม่ในบทนี้');
                     }
@@ -449,6 +452,25 @@ export default function ReaderPage() {
     } catch (err) {
       setGlossaryNotice(`บันทึกไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
     }
+  };
+
+  const saveDetectedGlossaryEdits = async (items: DetectedGlossaryItem[]) => {
+    if (!projectId) return;
+    const latest = await getStore().getProject(projectId);
+    if (!latest) throw new Error('ไม่พบโปรเจกต์');
+    const glossary = { ...latest.glossary };
+    const glossaryTypes = { ...latest.glossaryTypes };
+    for (const item of items) {
+      const zh = item.zh.trim(); const th = item.th.trim();
+      if (!zh || !th) continue;
+      glossary[zh] = th;
+      glossaryTypes[zh] = item.type;
+    }
+    const updated = await getStore().updateProject(projectId, { glossary, glossaryTypes });
+    if (!updated) throw new Error('บันทึกการแก้ไขคลังศัพท์ไม่สำเร็จ');
+    setReaderProject(updated);
+    setGlossaryNotice(`บันทึกการแก้ไขศัพท์แล้ว ${items.filter((item) => item.zh.trim() && item.th.trim()).length} รายการ`);
+    setDetectedGlossary(null);
   };
 
   const addReaderGlossaryTerm = async () => {
@@ -638,8 +660,8 @@ export default function ReaderPage() {
                   return <div key={group.type} className="space-y-1.5">
                     <h3 className="text-xs font-semibold">{group.title} ({entries.length})</h3>
                     {entries.length ? entries.map(([source, translated]) => (
-                      <div key={source} className="flex items-center gap-2">
-                        <span lang="zh-CN" className="max-w-[34%] shrink-0 truncate text-xs font-medium">{source}</span>
+                      <div key={source} className="grid grid-cols-[minmax(0,0.8fr)_auto_minmax(0,1.5fr)_5rem_auto] items-center gap-2">
+                        <span lang="zh-CN" className="min-w-0 truncate text-xs font-medium">{source}</span>
                         <span className="text-muted">→</span>
                         <input key={source + ':' + translated} defaultValue={translated}
                           aria-label={`คำแปลของ ${source}`}
@@ -898,6 +920,7 @@ export default function ReaderPage() {
           </div>
         )}
       </main>
+      {detectedGlossary && <DetectedGlossaryModal items={detectedGlossary.items} sourceLabel={detectedGlossary.sourceLabel} onClose={() => setDetectedGlossary(null)} onSave={saveDetectedGlossaryEdits} />}
     </div>
   );
 }
