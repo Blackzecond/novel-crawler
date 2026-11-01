@@ -240,7 +240,7 @@ export async function detectNamedTerms(text: string, settings?: AiDetectSettings
     const th = typeof item?.th === 'string' ? item.th.trim() : '';
     if (!zh || !th || seen.has(zh)) continue;
     seen.add(zh);
-    pairs.push({ zh, th });
+    pairs.push({ zh, th, type: item?.type === 'character' ? 'character' : 'term' });
   }
   return pairs;
 }
