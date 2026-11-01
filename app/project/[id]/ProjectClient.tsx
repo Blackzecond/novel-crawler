@@ -451,7 +451,8 @@ export default function ProjectClient({ id }: { id: string }) {
   const hasOriginalOrderAsc = orders.length > 1 && orders[0] <= orders[orders.length - 1];
   const progressPct = total ? ((queue.running ? queue.done : fetchedCount) / total) * 100 : 0;
   const glossaryEntries = Object.entries(project.glossary);
-  const characterEntries = glossaryEntries.filter(([zh]) => project.glossaryTypes?.[zh] === 'character');\n  const termEntries = glossaryEntries.filter(([zh]) => project.glossaryTypes?.[zh] !== 'character');
+  const characterEntries = glossaryEntries.filter(([zh]) => project.glossaryTypes?.[zh] === 'character');
+  const termEntries = glossaryEntries.filter(([zh]) => project.glossaryTypes?.[zh] !== 'character');
   const lastRead = project.lastReadChapterId
     ? project.chapters.find((c) => c.id === project.lastReadChapterId) ?? null
     : null;
