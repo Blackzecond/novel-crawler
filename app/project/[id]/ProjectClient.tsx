@@ -70,6 +70,8 @@ export default function ProjectClient({ id }: { id: string }) {
   const [chapterNotice, setChapterNotice] = useState('');
   const [addZh, setAddZh] = useState('');
   const [addTh, setAddTh] = useState('');
+  const [addTermType, setAddTermType] = useState<'character' | 'term'>('term');
+  const [selectedGlossaryTerms, setSelectedGlossaryTerms] = useState<string[]>([]);
   const [aiReady, setAiReady] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -253,27 +255,37 @@ export default function ProjectClient({ id }: { id: string }) {
 
   // ---------- ศัพท์เฉพาะ (glossary) ----------
   /** เพิ่มคู่ศัพท์ใหม่เข้า glossary ของโปรเจกต์ — ข้ามคำที่มีอยู่แล้วเสมอ (dedupe) */
-  const mergeDetected = async (pairs: { zh: string; th: string }[], sourceLabel?: string) => {
+  const mergeDetected = async (pairs: { zh: string; th: string; type: 'character' | 'term' }[], sourceLabel?: string) => {
     const latest = await getStore().getProject(id);
-    if (!latest) return;
+    if (!latest) throw new Error('ไม่พบโปรเจกต์สำหรับบันทึกคลังศัพท์');
     const glossary = { ...latest.glossary };
-    let added = 0;
-    for (const { zh, th } of pairs) {
-      if (!zh || glossary[zh] === undefined) {
-        if (!zh) continue;
-        glossary[zh] = th;
-        added++;
-      }
+    const glossaryTypes = { ...latest.glossaryTypes };
+    const added: typeof pairs = [];
+    for (const pair of pairs) {
+      const zh = pair.zh.trim();
+      const th = pair.th.trim();
+      if (!zh || !th || glossary[zh] !== undefined) continue;
+      glossary[zh] = th;
+      glossaryTypes[zh] = pair.type === 'character' ? 'character' : 'term';
+      added.push({ ...pair, zh, th });
     }
-    if (added === 0) {
-      setGlossaryNotice('ตรวจแล้ว — ปรากฏว่าไม่มีศัพท์/ชื่อใหม่ที่ยังไม่มีในโปรเจกต์ (dedupe ไม่เพิ่มซ้ำ)');
+    if (added.length === 0) {
+      setGlossaryNotice(pairs.length
+        ? 'ตรวจเสร็จแล้ว แต่ไม่พบคำใหม่ที่ยังไม่มีในคลัง (คำเดิมจะไม่ถูกเพิ่มซ้ำ)'
+        : 'ตรวจเสร็จแล้ว — AI ไม่พบชื่อหรือศัพท์เฉพาะในบทนี้');
       return;
     }
-    const updated = await getStore().updateProject(id, { glossary });
-    if (updated) setProject(updated);
-    setGlossaryNotice(
-      `เพิ่มศัพท์ใหม่ ${added} คำ${sourceLabel ? ` จากบท “${sourceLabel}”` : ''} (แก้/ลบได้ในแผงนี้)`
-    );
+    const updated = await getStore().updateProject(id, { glossary, glossaryTypes });
+    const savedTerms = updated ? added.filter((pair) => updated.glossary[pair.zh] === pair.th) : [];
+    if (!updated || savedTerms.length !== added.length) throw new Error('บันทึกศัพท์ไม่ครบ กรุณาลองใหม่');
+    setProject(updated);
+    const characters = savedTerms.filter((pair) => pair.type === 'character');
+    const terms = savedTerms.filter((pair) => pair.type !== 'character');
+    const details = [
+      characters.length ? `ตัวละคร: ${characters.map((pair) => pair.zh + ' → ' + pair.th).join(', ')}` : '',
+      terms.length ? `ศัพท์: ${terms.map((pair) => pair.zh + ' → ' + pair.th).join(', ')}` : '',
+    ].filter(Boolean).join(' · ');
+    setGlossaryNotice(`บันทึกสำเร็จ ${savedTerms.length} รายการ${sourceLabel ? ` จากบท “${sourceLabel}”` : ''} — ${details}`);
   };
 
   const runDetect = async (chapterTitle: string, text: string) => {
@@ -341,25 +353,53 @@ export default function ProjectClient({ id }: { id: string }) {
   };
 
   /** แก้/ลบคำแปลใน glossary (th ว่าง = ลบคำ) */
-  const updateGlossaryTerm = async (zh: string, th: string) => {
+  const updateGlossaryTerm = async (zh: string, th: string, type?: 'character' | 'term') => {
     const latest = await getStore().getProject(id);
     if (!latest) return;
     const glossary = { ...latest.glossary };
-    if (th.trim()) glossary[zh] = th.trim();
-    else delete glossary[zh];
-    const updated = await getStore().updateProject(id, { glossary });
+    const glossaryTypes = { ...latest.glossaryTypes };
+    if (th.trim()) {
+      glossary[zh] = th.trim();
+      if (type) glossaryTypes[zh] = type;
+    } else {
+      delete glossary[zh];
+      delete glossaryTypes[zh];
+    }
+    const updated = await getStore().updateProject(id, { glossary, glossaryTypes });
     if (updated) setProject(updated);
   };
 
   const addManualTerm = async () => {
-    if (!addZh.trim()) return;
+    const zh = addZh.trim();
+    const th = addTh.trim();
+    if (!zh || !th) return;
     const latest = await getStore().getProject(id);
     if (!latest) return;
-    const glossary = { ...latest.glossary, [addZh.trim()]: addTh.trim() };
-    const updated = await getStore().updateProject(id, { glossary });
-    if (updated) setProject(updated);
+    const glossary = { ...latest.glossary, [zh]: th };
+    const glossaryTypes = { ...latest.glossaryTypes, [zh]: addTermType };
+    const updated = await getStore().updateProject(id, { glossary, glossaryTypes });
+    if (updated) {
+      setProject(updated);
+      setGlossaryNotice(`เพิ่มและบันทึกแล้ว: ${zh} → ${th} (${addTermType === 'character' ? 'ตัวละคร' : 'ศัพท์เฉพาะ'})`);
+    }
     setAddZh('');
     setAddTh('');
+    setAddTermType('term');
+  };
+
+  const deleteGlossaryTerms = async (terms: string[]) => {
+    if (!terms.length) return;
+    const confirmed = window.confirm(`ลบรายการที่เลือก ${terms.length} รายการออกจากคลังศัพท์หรือไม่?`);
+    if (!confirmed) return;
+    try {
+      const updated = await getStore().deleteGlossaryTerms(id, terms);
+      if (!updated) throw new Error('ไม่พบโปรเจกต์');
+      setProject(updated);
+      setSelectedGlossaryTerms([]);
+      setGlossaryNotice(`ลบศัพท์สำเร็จ ${terms.length} รายการ`);
+    } catch (err) {
+      setGlossaryNotice(`ลบศัพท์ไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const setGlossaryMode = async (mode: 'manual' | 'auto') => {
@@ -410,7 +450,7 @@ export default function ProjectClient({ id }: { id: string }) {
     .sort((a, b) => (sortDesc ? b.order - a.order : a.order - b.order));
   const hasOriginalOrderAsc = orders.length > 1 && orders[0] <= orders[orders.length - 1];
   const progressPct = total ? ((queue.running ? queue.done : fetchedCount) / total) * 100 : 0;
-  const glossaryEntries = Object.entries(project.glossary);
+  const glossaryEntries = Object.entries(project.glossary);\n  const characterEntries = glossaryEntries.filter(([zh]) => project.glossaryTypes?.[zh] === 'character');\n  const termEntries = glossaryEntries.filter(([zh]) => project.glossaryTypes?.[zh] !== 'character');
   const lastRead = project.lastReadChapterId
     ? project.chapters.find((c) => c.id === project.lastReadChapterId) ?? null
     : null;
