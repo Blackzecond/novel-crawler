@@ -16,6 +16,7 @@ import {
   loadCloudReaderSettings, saveCloudReaderSettings,
   loadCloudReadingHistory, saveCloudReadingHistory,
 } from '@/lib/cloudPreferences';
+import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
 
 interface ArticleData {
   title: string;
@@ -45,6 +46,7 @@ export default function ReaderPage() {
   const [showToc, setShowToc] = useState(false);
   const [showGlossary, setShowGlossary] = useState(false);
   const [glossaryNotice, setGlossaryNotice] = useState('');
+  const [detectedGlossary, setDetectedGlossary] = useState<{ items: DetectedGlossaryItem[]; sourceLabel?: string } | null>(null);
   const [readerGlossaryZh, setReaderGlossaryZh] = useState('');
   const [readerGlossaryTh, setReaderGlossaryTh] = useState('');
   const [readerGlossaryType, setReaderGlossaryType] = useState<'character' | 'term'>('term');
@@ -326,6 +328,7 @@ export default function ReaderPage() {
                       setReaderProject(updatedProject);
                       const names = added.map((pair) => pair.zh + ' → ' + pair.th).join(', ');
                       setGlossaryNotice(`จับศัพท์อัตโนมัติและบันทึกแล้ว ${added.length} รายการจากบท “${chapter.title}”: ${names}`);
+                      setDetectedGlossary({ items: added.map((pair) => ({ zh: pair.zh, th: pair.th, type: pair.type })), sourceLabel: chapter.title });
                     } else {
                       setGlossaryNotice(pairs.length ? 'จับศัพท์อัตโนมัติแล้ว แต่ไม่มีรายการใหม่ (คำเดิมไม่ถูกเพิ่มซ้ำ)' : 'จับศัพท์อัตโนมัติแล้ว — ไม่พบคำใหม่ในบทนี้');
                     }
@@ -449,6 +452,32 @@ export default function ReaderPage() {
     } catch (err) {
       setGlossaryNotice(`บันทึกไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
     }
+  };
+
+  const saveDetectedGlossaryEdits = async (items: DetectedGlossaryItem[]) => {
+    if (!projectId) return;
+    const latest = await getStore().getProject(projectId);
+    if (!latest) throw new Error('ไม่พบโปรเจกต์');
+    const glossary = { ...latest.glossary };
+    const glossaryTypes = { ...latest.glossaryTypes };
+    const validItems = items.filter((item) => item.zh.trim() && item.th.trim());
+    const retainedSources = new Set(validItems.map((item) => item.zh.trim()));
+    for (const original of detectedGlossary?.items ?? []) {
+      if (!retainedSources.has(original.zh)) {
+        delete glossary[original.zh];
+        delete glossaryTypes[original.zh];
+      }
+    }
+    for (const item of validItems) {
+      const zh = item.zh.trim(); const th = item.th.trim();
+      glossary[zh] = th;
+      glossaryTypes[zh] = item.type;
+    }
+    const updated = await getStore().updateProject(projectId, { glossary, glossaryTypes });
+    if (!updated) throw new Error('บันทึกการแก้ไขคลังศัพท์ไม่สำเร็จ');
+    setReaderProject(updated);
+    setGlossaryNotice(`บันทึกการแก้ไขศัพท์แล้ว ${items.filter((item) => item.zh.trim() && item.th.trim()).length} รายการ`);
+    setDetectedGlossary(null);
   };
 
   const addReaderGlossaryTerm = async () => {
@@ -638,20 +667,20 @@ export default function ReaderPage() {
                   return <div key={group.type} className="space-y-1.5">
                     <h3 className="text-xs font-semibold">{group.title} ({entries.length})</h3>
                     {entries.length ? entries.map(([source, translated]) => (
-                      <div key={source} className="flex items-center gap-2">
-                        <span lang="zh-CN" className="max-w-[34%] shrink-0 truncate text-xs font-medium">{source}</span>
-                        <span className="text-muted">→</span>
+                      <div key={source} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[minmax(0,0.8fr)_auto_minmax(0,1.5fr)_5rem_auto]">
+                        <span lang="zh-CN" className="col-span-2 min-w-0 truncate text-xs font-medium sm:col-span-1">{source}</span>
+                        <span className="hidden text-muted sm:inline">→</span>
                         <input key={source + ':' + translated} defaultValue={translated}
                           aria-label={`คำแปลของ ${source}`}
                           onBlur={(event) => { if (event.target.value.trim() !== translated) void updateReaderGlossaryTerm(source, event.target.value); }}
-                          className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-bg px-2 text-xs" />
+                          className="col-span-3 h-8 min-w-0 w-full rounded-lg border border-line bg-bg px-2 text-xs sm:col-span-1" />
                         <select value={readerProject.glossaryTypes?.[source] === 'character' ? 'character' : 'term'}
                           onChange={(event) => void updateReaderGlossaryTerm(source, translated, event.target.value as 'character' | 'term')}
-                          aria-label={`ประเภทของ ${source}`} className="h-8 w-20 rounded-lg border border-line bg-bg px-1 text-[11px]">
+                          aria-label={`ประเภทของ ${source}`} className="col-start-2 h-8 w-full min-w-0 rounded-lg border border-line bg-bg px-1 text-[11px] sm:col-auto sm:w-20">
                           <option value="character">ตัวละคร</option><option value="term">ศัพท์</option>
                         </select>
                         <button type="button" onClick={() => void updateReaderGlossaryTerm(source, '')} title="ลบศัพท์"
-                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-bg hover:text-danger-fg"><Trash2 className="h-3.5 w-3.5" /></button>
+                          className="col-start-3 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-bg hover:text-danger-fg sm:col-auto"><Trash2 className="h-3.5 w-3.5" /></button>
                       </div>
                     )) : <p className="text-[11px] text-muted">ยังไม่มีรายการ</p>}
                   </div>;
@@ -898,6 +927,7 @@ export default function ReaderPage() {
           </div>
         )}
       </main>
+      {detectedGlossary && <DetectedGlossaryModal items={detectedGlossary.items} sourceLabel={detectedGlossary.sourceLabel} onClose={() => setDetectedGlossary(null)} onSave={saveDetectedGlossaryEdits} />}
     </div>
   );
 }
