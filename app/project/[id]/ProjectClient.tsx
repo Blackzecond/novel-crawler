@@ -722,23 +722,23 @@ export default function ProjectClient({ id }: { id: string }) {
                       {group.title} <span className="text-muted font-normal">({group.entries.length})</span>
                     </h3>
                     {group.entries.map(([zh, th]) => (
-                      <div key={zh} className="grid grid-cols-[auto_minmax(0,0.8fr)_auto_minmax(0,1.5fr)_5.5rem_auto] items-center gap-2 rounded-lg px-1 py-1">
+                      <div key={zh} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-1 py-1 sm:grid-cols-[auto_minmax(0,0.8fr)_auto_minmax(0,1.5fr)_5.5rem_auto]">
                         <input type="checkbox" aria-label={`เลือก ${zh}`} checked={selectedGlossaryTerms.includes(zh)}
                           onChange={(event) => setSelectedGlossaryTerms((current) => event.target.checked ? [...current, zh] : current.filter((term) => term !== zh))}
                           className="h-4 w-4 shrink-0 accent-current" />
-                        <span className="min-w-0 truncate text-sm font-medium" lang="zh-CN">{zh}</span>
-                        <span className="shrink-0 text-muted">→</span>
+                        <span className="col-span-1 min-w-0 truncate text-sm font-medium" lang="zh-CN">{zh}</span>
+                        <span className="hidden shrink-0 text-muted sm:inline">→</span>
                         <input key={`${zh}:${th}`} defaultValue={th}
                           onBlur={(event) => { if (event.target.value.trim() !== th) void updateGlossaryTerm(zh, event.target.value); }}
-                          className="h-8 min-w-0 w-full flex-1 rounded-lg border border-line bg-bg px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-accent/60"
+                          className="col-span-2 h-8 min-w-0 w-full rounded-lg border border-line bg-bg px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-accent/60 sm:col-span-1"
                           aria-label={`คำแปลไทยของ ${zh}`} />
                         <select aria-label={`ประเภทของ ${zh}`} value={group.type}
                           onChange={(event) => void updateGlossaryTerm(zh, th, event.target.value as 'character' | 'term')}
-                          className="h-8 w-[5.5rem] shrink-0 rounded-lg border border-line bg-bg px-1 text-[11px] text-fg">
+                          className="col-start-2 h-8 w-full min-w-0 rounded-lg border border-line bg-bg px-1 text-[11px] text-fg sm:col-auto sm:w-[5.5rem] sm:shrink-0">
                           <option value="character">ตัวละคร</option><option value="term">ศัพท์</option>
                         </select>
                         <button type="button" onClick={() => void deleteGlossaryTerms([zh])}
-                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-bg hover:text-danger-fg"
+                          className="col-start-3 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-bg hover:text-danger-fg sm:col-auto"
                           aria-label={`ลบศัพท์ ${zh}`} title="ลบศัพท์นี้"><Trash2 className="h-3.5 w-3.5" /></button>
                       </div>
                     ))}
