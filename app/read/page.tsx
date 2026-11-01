@@ -7,7 +7,7 @@ import {
   History, RotateCcw, Trash2, Library, Settings, X, List, Sparkles, BookMarked, Plus,
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
-import { loadAiSettings, hasAiKey, translateNovelText, editNovelTranslation } from '@/lib/ai';
+import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, editNovelTranslation } from '@/lib/ai';
 import {
   loadReaderSettings, saveReaderSettings, applySavedTheme,
   readerDefaults, ReaderFont, ReaderTheme,
@@ -304,6 +304,36 @@ export default function ReaderPage() {
                   : item),
               } : current);
               await getStore().updateProject(activeProjectId, { lastReadChapterId: savedChapter.id });
+
+              // In auto mode, detect glossary entries for chapters fetched directly in Reader too.
+              if (project.glossaryMode === 'auto' && hasAiKey() && data.textContent) {
+                try {
+                  const pairs = await detectNamedTerms(data.textContent);
+                  const latest = await getStore().getProject(activeProjectId);
+                  if (latest) {
+                    const glossary = { ...latest.glossary };
+                    const glossaryTypes = { ...latest.glossaryTypes };
+                    const added: typeof pairs = [];
+                    for (const pair of pairs) {
+                      if (!pair.zh || !pair.th || glossary[pair.zh] !== undefined) continue;
+                      glossary[pair.zh] = pair.th;
+                      glossaryTypes[pair.zh] = pair.type;
+                      added.push(pair);
+                    }
+                    if (added.length) {
+                      const updatedProject = await getStore().updateProject(activeProjectId, { glossary, glossaryTypes });
+                      if (!updatedProject) throw new Error('บันทึกคลังศัพท์ไม่สำเร็จ');
+                      setReaderProject(updatedProject);
+                      const names = added.map((pair) => pair.zh + ' → ' + pair.th).join(', ');
+                      setGlossaryNotice(`จับศัพท์อัตโนมัติและบันทึกแล้ว ${added.length} รายการจากบท “${chapter.title}”: ${names}`);
+                    } else {
+                      setGlossaryNotice(pairs.length ? 'จับศัพท์อัตโนมัติแล้ว แต่ไม่มีรายการใหม่ (คำเดิมไม่ถูกเพิ่มซ้ำ)' : 'จับศัพท์อัตโนมัติแล้ว — ไม่พบคำใหม่ในบทนี้');
+                    }
+                  }
+                } catch (detectError) {
+                  setGlossaryNotice(`จับศัพท์อัตโนมัติไม่สำเร็จ: ${detectError instanceof Error ? detectError.message : String(detectError)}`);
+                }
+              }
             }
           } catch (saveError) {
             console.warn('Could not save fetched chapter cache:', saveError);
@@ -561,6 +591,7 @@ export default function ReaderPage() {
           </div>
         </div>
       </header>
+      {glossaryNotice && <div role="status" className="mx-auto max-w-3xl px-4 pt-3 text-xs leading-relaxed text-accent-soft-fg sm:px-6"><div className="rounded-lg border border-accent-line bg-accent-soft px-3 py-2"><BookMarked className="mr-1.5 inline h-3.5 w-3.5" />{glossaryNotice}</div></div>}
 
       {projectId && (
         <div className="max-w-3xl mx-auto px-3 sm:px-6 pt-2">
@@ -636,7 +667,6 @@ export default function ReaderPage() {
                 </div>
               </>
             )}
-            {glossaryNotice && <p role="status" className="rounded-lg border border-accent-line bg-accent-soft px-3 py-2 text-xs text-accent-soft-fg">{glossaryNotice}</p>}
           </div>
         </section>
       )}
