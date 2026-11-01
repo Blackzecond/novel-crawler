@@ -450,7 +450,8 @@ export default function ProjectClient({ id }: { id: string }) {
     .sort((a, b) => (sortDesc ? b.order - a.order : a.order - b.order));
   const hasOriginalOrderAsc = orders.length > 1 && orders[0] <= orders[orders.length - 1];
   const progressPct = total ? ((queue.running ? queue.done : fetchedCount) / total) * 100 : 0;
-  const glossaryEntries = Object.entries(project.glossary);\n  const characterEntries = glossaryEntries.filter(([zh]) => project.glossaryTypes?.[zh] === 'character');\n  const termEntries = glossaryEntries.filter(([zh]) => project.glossaryTypes?.[zh] !== 'character');
+  const glossaryEntries = Object.entries(project.glossary);
+  const characterEntries = glossaryEntries.filter(([zh]) => project.glossaryTypes?.[zh] === 'character');\n  const termEntries = glossaryEntries.filter(([zh]) => project.glossaryTypes?.[zh] !== 'character');
   const lastRead = project.lastReadChapterId
     ? project.chapters.find((c) => c.id === project.lastReadChapterId) ?? null
     : null;
@@ -661,70 +662,72 @@ export default function ProjectClient({ id }: { id: string }) {
                   : 'โหมดกดเอง: ขยายบทที่ดึงแล้วแล้วกด “จับศัพท์ (AI)” คำที่มีอยู่แล้วจะไม่ถูกเพิ่มซ้ำ'}
               </p>
 
-              {/* รายการศัพท์ */}
-              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                {glossaryEntries.map(([zh, th]) => (
-                  <div key={zh} className="flex items-center gap-2">
-                    <span className="text-sm font-medium truncate max-w-[38%] shrink-0" lang="zh-CN">{zh}</span>
-                    <span className="text-muted shrink-0">→</span>
-                    <input
-                      key={`${zh}:${th}`}
-                      defaultValue={th}
-                      onBlur={(e) => {
-                        if (e.target.value.trim() !== th) void updateGlossaryTerm(zh, e.target.value);
-                      }}
-                      className="flex-1 min-w-0 h-8 px-2 text-sm bg-bg border border-line rounded-lg text-fg focus:outline-none focus:ring-2 focus:ring-accent/60"
-                      aria-label={`คำแปลไทยของ ${zh}`}
-                    />
-                    <button
-                      onClick={() => void updateGlossaryTerm(zh, '')}
-                      className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted hover:text-danger-fg shrink-0 cursor-pointer"
-                      aria-label={`ลบศัพท์ ${zh}`}
-                      title="ลบศัพท์นี้"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-                {glossaryEntries.length === 0 && (
-                  <p className="text-xs text-muted">
-                    ยังไม่มีศัพท์ในโปรเจกต์ — ตรวจจากบทที่ดึงแล้ว หรือเพิ่มคำเองด้านล่าง
-                  </p>
-                )}
+              {/* แยกตัวละครและศัพท์เฉพาะ พร้อมเลือกหลายรายการเพื่อลบ */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => setSelectedGlossaryTerms(glossaryEntries.map(([zh]) => zh))}
+                  disabled={!glossaryEntries.length} className="h-8 rounded-lg border border-line px-2.5 text-xs hover:bg-surface disabled:opacity-40">เลือกทั้งหมด</button>
+                <button type="button" onClick={() => setSelectedGlossaryTerms([])} disabled={!selectedGlossaryTerms.length}
+                  className="h-8 rounded-lg border border-line px-2.5 text-xs hover:bg-surface disabled:opacity-40">ยกเลิกเลือก</button>
+                <span className="text-xs text-muted">เลือกแล้ว {selectedGlossaryTerms.length} / {glossaryEntries.length}</span>
+                <button type="button" onClick={() => void deleteGlossaryTerms(selectedGlossaryTerms)} disabled={!selectedGlossaryTerms.length}
+                  className="ml-auto inline-flex h-8 items-center gap-1 rounded-lg border border-danger-line px-2.5 text-xs text-danger-fg hover:bg-danger-bg disabled:opacity-40">
+                  <Trash2 className="h-3.5 w-3.5" />ลบที่เลือก
+                </button>
               </div>
-
+              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                {([
+                  { type: 'character' as const, title: 'ตัวละคร', entries: characterEntries },
+                  { type: 'term' as const, title: 'ศัพท์เฉพาะ', entries: termEntries },
+                ]).map((group) => (
+                  <section key={group.type} className="space-y-1.5">
+                    <h3 className="sticky top-0 z-10 rounded-md bg-surface px-2 py-1.5 text-xs font-semibold">
+                      {group.title} <span className="text-muted font-normal">({group.entries.length})</span>
+                    </h3>
+                    {group.entries.map(([zh, th]) => (
+                      <div key={zh} className="flex items-center gap-2 rounded-lg px-1 py-1">
+                        <input type="checkbox" aria-label={`เลือก ${zh}`} checked={selectedGlossaryTerms.includes(zh)}
+                          onChange={(event) => setSelectedGlossaryTerms((current) => event.target.checked ? [...current, zh] : current.filter((term) => term !== zh))}
+                          className="h-4 w-4 shrink-0 accent-current" />
+                        <span className="max-w-[30%] shrink-0 truncate text-sm font-medium" lang="zh-CN">{zh}</span>
+                        <span className="shrink-0 text-muted">→</span>
+                        <input key={`${zh}:${th}`} defaultValue={th}
+                          onBlur={(event) => { if (event.target.value.trim() !== th) void updateGlossaryTerm(zh, event.target.value); }}
+                          className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-bg px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-accent/60"
+                          aria-label={`คำแปลไทยของ ${zh}`} />
+                        <select aria-label={`ประเภทของ ${zh}`} value={group.type}
+                          onChange={(event) => void updateGlossaryTerm(zh, th, event.target.value as 'character' | 'term')}
+                          className="h-8 w-[5.5rem] shrink-0 rounded-lg border border-line bg-bg px-1 text-[11px] text-fg">
+                          <option value="character">ตัวละคร</option><option value="term">ศัพท์</option>
+                        </select>
+                        <button type="button" onClick={() => void deleteGlossaryTerms([zh])}
+                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-bg hover:text-danger-fg"
+                          aria-label={`ลบศัพท์ ${zh}`} title="ลบศัพท์นี้"><Trash2 className="h-3.5 w-3.5" /></button>
+                      </div>
+                    ))}
+                    {!group.entries.length && <p className="px-2 py-1 text-xs text-muted">ยังไม่มีรายการ</p>}
+                  </section>
+                ))}
+              </div>
               {/* เพิ่มคำเอง */}
-              <div className="flex items-center gap-2">
-                <input
-                  value={addZh}
-                  onChange={(e) => setAddZh(e.target.value)}
-                  placeholder="ศัพท์จีน เช่น 林动"
-                  className="w-32 sm:w-44 shrink-0 h-8 px-2 text-sm bg-bg border border-line rounded-lg text-fg focus:outline-none focus:ring-2 focus:ring-accent/60"
-                />
-                <span className="text-muted shrink-0">→</span>
-                <input
-                  value={addTh}
-                  onChange={(e) => setAddTh(e.target.value)}
-                  placeholder="คำแปลไทย (เว้นได้ เติมทีหลัง)"
-                  className="flex-1 min-w-0 h-8 px-2 text-sm bg-bg border border-line rounded-lg text-fg focus:outline-none focus:ring-2 focus:ring-accent/60"
-                />
-                <button
-                  disabled={!addZh.trim()}
-                  onClick={() => void addManualTerm()}
-                  className="h-8 inline-flex items-center gap-1 px-2.5 rounded-lg bg-accent text-accent-fg text-xs font-medium disabled:opacity-40 cursor-pointer shrink-0"
-                >
-                  <Plus className="w-3.5 h-3.5" /> เพิ่ม
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_auto]">
+                <input value={addZh} onChange={(event) => setAddZh(event.target.value)} placeholder="ศัพท์จีน เช่น 林动"
+                  className="h-9 min-w-0 rounded-lg border border-line bg-bg px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-accent/60" />
+                <input value={addTh} onChange={(event) => setAddTh(event.target.value)} placeholder="คำแปลไทย"
+                  className="h-9 min-w-0 rounded-lg border border-line bg-bg px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-accent/60" />
+                <select value={addTermType} onChange={(event) => setAddTermType(event.target.value as 'character' | 'term')}
+                  className="h-9 rounded-lg border border-line bg-bg px-2 text-xs text-fg">
+                  <option value="character">ตัวละคร</option><option value="term">ศัพท์เฉพาะ</option>
+                </select>
+                <button disabled={!addZh.trim() || !addTh.trim()} onClick={() => void addManualTerm()}
+                  className="inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-40">
+                  <Plus className="h-3.5 w-3.5" /> เพิ่ม
                 </button>
               </div>
 
-              {glossaryNotice && (
-                <p className="text-[11px] text-muted flex items-start gap-1.5 rounded-lg bg-surface border border-line px-2.5 py-1.5">
-                  <Sparkles className="w-3 h-3 mt-0.5 shrink-0 text-accent" /> {glossaryNotice}
-                </p>
-              )}
             </div>
           )}
         </section>
+        {glossaryNotice && <div role="status" className="rounded-xl border border-accent-line bg-accent-soft px-3 py-2.5 text-xs leading-relaxed text-accent-soft-fg"><Sparkles className="mr-1.5 inline h-3.5 w-3.5" />{glossaryNotice}</div>}
 
         {/* รายการบท */}
         <section className="rounded-xl border border-line bg-card shadow-sm divide-y divide-line">
