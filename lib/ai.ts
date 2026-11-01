@@ -118,7 +118,10 @@ async function requestChatCompletion(
       if (Array.isArray(value.content)) return collectText(value.content);
       return '';
     };
-    const content = outputText || collectText(data?.steps) || collectText(data?.output);
+    const modelOutputSteps = Array.isArray(data?.steps)
+      ? data.steps.filter((step: any) => step?.type === 'model_output').map((step: any) => step.content)
+      : [];
+    const content = outputText || collectText(modelOutputSteps) || collectText(data?.output);
     if (!content.trim()) {
       const status = typeof data?.status === 'string' ? data.status : 'unknown';
       throw new Error('AI ไม่ส่งข้อความกลับมา (Interactions status: ' + status + ')');
