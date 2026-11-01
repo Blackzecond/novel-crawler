@@ -78,6 +78,7 @@ async function requestChatCompletion(
   messages: Array<{ role: 'system' | 'user'; content: string }>,
   maxTokens?: number,
   temperature = 0.2,
+  thinkingLevel: 'minimal' | 'low' | 'medium' | 'high' = 'low',
 ): Promise<{ content: string; finishReason: string | null }> {
   if (!settings.apiKey.trim()) throw new Error('AI_NOT_CONFIGURED');
 
@@ -97,7 +98,7 @@ async function requestChatCompletion(
         store: false,
         generation_config: {
           ...(maxTokens ? { max_output_tokens: maxTokens } : {}),
-          thinking_level: 'low',
+          thinking_level: thinkingLevel,
         },
       }),
     });
@@ -124,7 +125,10 @@ async function requestChatCompletion(
     const content = outputText || collectText(modelOutputSteps) || collectText(data?.output);
     if (!content.trim()) {
       const status = typeof data?.status === 'string' ? data.status : 'unknown';
-      throw new Error('AI ไม่ส่งข้อความกลับมา (Interactions status: ' + status + ')');
+      const incompleteDetails = data?.incomplete_details
+        ? ' — ' + JSON.stringify(data.incomplete_details).slice(0, 300)
+        : '';
+      throw new Error('AI ไม่ส่งข้อความกลับมา (Interactions status: ' + status + incompleteDetails + ')');
     }
     return {
       content: content.trim(),
@@ -169,8 +173,9 @@ export async function testAiConnection(settings: AiDetectSettings): Promise<stri
   const result = await requestChatCompletion(
     settings,
     [{ role: 'user', content: 'Reply with exactly: OK' }],
-    64,
+    512,
     0,
+    'minimal',
   );
   return result.content;
 }
@@ -280,6 +285,7 @@ export async function translateNovelText(
     ],
     estimateOutputTokens(text),
     0.2,
+    'high',
   );
   return result.content;
 }
@@ -325,6 +331,7 @@ export async function editNovelTranslation(
     ],
     estimateOutputTokens(draftTranslation || combinedInput),
     0.1,
+    'high',
   );
   return result.content;
 }
