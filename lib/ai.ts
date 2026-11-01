@@ -129,7 +129,7 @@ async function requestChatCompletion(
     };
   }
 
-  const response = await fetch(settings.baseUrl.replace(/\\/$/, '') + '/chat/completions', {
+  const response = await fetch(settings.baseUrl.replace(/\/$/, '') + '/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
