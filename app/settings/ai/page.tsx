@@ -8,6 +8,8 @@ import {
   AiProvider,
   AI_PROVIDER_PRESETS,
   inferAiProvider,
+  normalizeAiBaseUrl,
+  testAiConnection,
   defaultAiSettings,
   hasAiKey,
   loadAiSettings,
@@ -43,7 +45,7 @@ export default function AiSettingsPage() {
         if (!active) return;
         const merged = {
           ...local,
-          baseUrl: cloud?.baseUrl || local.baseUrl,
+          baseUrl: normalizeAiBaseUrl(cloud?.baseUrl || local.baseUrl),
           model: cloud?.model || local.model,
         };
         setSettings(merged);
@@ -125,26 +127,9 @@ export default function AiSettingsPage() {
     setNotice('');
     try {
       const cfg = await persist();
-      const response = await fetch(`${cfg.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${cfg.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: cfg.model,
-          temperature: 0,
-          messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
-        }),
-      });
-      if (!response.ok) {
-        const detail = await response.text().catch(() => '');
-        throw new Error(`ทดสอบไม่ผ่าน (${response.status}): ${detail.slice(0, 220) || response.statusText}`);
-      }
-      const data = await response.json();
-      const answer = data?.choices?.[0]?.message?.content;
-      if (typeof answer !== 'string' || !answer.trim()) {
-        throw new Error('เชื่อมต่อได้ แต่รูปแบบคำตอบจาก API ไม่ตรงกับ Chat Completions');
+      const answer = await testAiConnection(cfg);
+      if (!answer.trim()) {
+        throw new Error('เชื่อมต่อได้ แต่ API ไม่ส่งข้อความกลับมา');
       }
       setNotice('เชื่อมต่อสำเร็จ โมเดลตอบกลับแล้ว พร้อมใช้งานทั้ง Reader และระบบจับศัพท์');
       setSaved(true);
@@ -199,7 +184,7 @@ export default function AiSettingsPage() {
                   }}
                   className="h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:ring-2 focus:ring-accent/50"
                 >
-                  <option value="gemini">Google Gemini — แนะนำให้เริ่มทดสอบ</option>
+                  <option value="gemini">Google Gemini — Interactions API</option>
                   <option value="qwen">Alibaba Qwen — โมเดลจีน</option>
                   <option value="custom">Custom OpenAI-compatible</option>
                 </select>
@@ -219,7 +204,7 @@ export default function AiSettingsPage() {
                   className="h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:ring-2 focus:ring-accent/50"
                 />
                 <span className="block text-xs text-muted">
-                  Gemini ใช้ https://generativelanguage.googleapis.com/v1beta/openai; Qwen ใช้ https://trial.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1 หรือ URL เฉพาะ Workspace จาก Alibaba Cloud
+                  Gemini ใช้ https://generativelanguage.googleapis.com/v1/interactions (Interactions API); Qwen ใช้ https://trial.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1 หรือ URL เฉพาะ Workspace จาก Alibaba Cloud
                 </span>
               </label>
 

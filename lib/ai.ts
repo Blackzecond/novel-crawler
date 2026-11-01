@@ -1,5 +1,5 @@
 // AI provider layer for Novel Crawler.
-// API keys remain in this browser's localStorage. All providers use OpenAI-compatible Chat Completions.
+// API keys remain in this browser's localStorage. Gemini uses the native Interactions API; other providers use OpenAI-compatible Chat Completions.
 
 export interface AiDetectSettings {
   baseUrl: string;
@@ -12,7 +12,7 @@ export type AiProvider = 'gemini' | 'qwen' | 'custom';
 export const AI_PROVIDER_PRESETS: Record<Exclude<AiProvider, 'custom'>, { label: string; baseUrl: string; model: string }> = {
   gemini: {
     label: 'Google Gemini',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1/interactions',
     model: 'gemini-3.8-flash',
   },
   qwen: {
@@ -21,6 +21,13 @@ export const AI_PROVIDER_PRESETS: Record<Exclude<AiProvider, 'custom'>, { label:
     model: 'qwen3.8-max',
   },
 };
+
+export function normalizeAiBaseUrl(baseUrl: string): string {
+  if (baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')) {
+    return AI_PROVIDER_PRESETS.gemini.baseUrl;
+  }
+  return baseUrl;
+}
 
 export function inferAiProvider(baseUrl: string): AiProvider {
   const normalized = baseUrl.toLowerCase();
@@ -49,7 +56,7 @@ export function loadAiSettings(): AiDetectSettings {
     if (!raw) return { ...defaultAiSettings };
     const parsed = JSON.parse(raw);
     return {
-      baseUrl: typeof parsed.baseUrl === 'string' && parsed.baseUrl ? parsed.baseUrl : defaultAiSettings.baseUrl,
+      baseUrl: typeof parsed.baseUrl === 'string' && parsed.baseUrl ? normalizeAiBaseUrl(parsed.baseUrl) : defaultAiSettings.baseUrl,
       apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : '',
       model: typeof parsed.model === 'string' && parsed.model ? parsed.model : defaultAiSettings.model,
     };
@@ -73,6 +80,58 @@ async function requestChatCompletion(
   temperature = 0.2,
 ): Promise<{ content: string; finishReason: string | null }> {
   if (!settings.apiKey.trim()) throw new Error('AI_NOT_CONFIGURED');
+
+  if (inferAiProvider(settings.baseUrl) === 'gemini') {
+    const systemInstruction = messages.filter((message) => message.role === 'system').map((message) => message.content).join('\n\n');
+    const input = messages.filter((message) => message.role === 'user').map((message) => message.content).join('\n\n');
+    const response = await fetch(AI_PROVIDER_PRESETS.gemini.baseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': settings.apiKey.trim(),
+      },
+      body: JSON.stringify({
+        model: settings.model,
+        ...(systemInstruction ? { system_instruction: systemInstruction } : {}),
+        input,
+        store: false,
+        generation_config: {
+          ...(maxTokens ? { max_output_tokens: maxTokens } : {}),
+          thinking_level: 'low',
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error('AI_API_ERROR:' + response.status + ' ' + detail.slice(0, 500));
+    }
+
+    const data = await response.json();
+    const outputText = typeof data?.output_text === 'string' ? data.output_text : '';
+    const collectText = (value: any): string => {
+      if (typeof value === 'string') return value;
+      if (Array.isArray(value)) return value.map(collectText).join('');
+      if (!value || typeof value !== 'object') return '';
+      if (typeof value.text === 'string') return value.text;
+      if (typeof value.content === 'string') return value.content;
+      if (Array.isArray(value.content)) return collectText(value.content);
+      return '';
+    };
+    const modelOutputSteps = Array.isArray(data?.steps)
+      ? data.steps.filter((step: any) => step?.type === 'model_output').map((step: any) => step.content)
+      : [];
+    const content = outputText || collectText(modelOutputSteps) || collectText(data?.output);
+    if (!content.trim()) {
+      const status = typeof data?.status === 'string' ? data.status : 'unknown';
+      throw new Error('AI ไม่ส่งข้อความกลับมา (Interactions status: ' + status + ')');
+    }
+    return {
+      content: content.trim(),
+      finishReason: typeof data?.status === 'string' ? data.status : null,
+    };
+  }
+
   const response = await fetch(settings.baseUrl.replace(/\/$/, '') + '/chat/completions', {
     method: 'POST',
     headers: {
@@ -102,8 +161,18 @@ async function requestChatCompletion(
       ? raw.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('')
       : '';
   if (!content.trim()) throw new Error('AI ไม่ส่งข้อความกลับมา');
-  // finish_reason is metadata only. Never discard content already returned by a provider.
   return { content: content.trim(), finishReason: typeof choice?.finish_reason === 'string' ? choice.finish_reason : null };
+}
+
+/** ทดสอบการเชื่อมต่อผ่าน adapter ของ Provider ที่เลือก */
+export async function testAiConnection(settings: AiDetectSettings): Promise<string> {
+  const result = await requestChatCompletion(
+    settings,
+    [{ role: 'user', content: 'Reply with exactly: OK' }],
+    64,
+    0,
+  );
+  return result.content;
 }
 
 function estimateOutputTokens(text: string): number {
@@ -137,29 +206,16 @@ export async function detectNamedTerms(text: string, settings?: AiDetectSettings
     'Maximum 30 items. Respond ONLY with JSON: {"items":[{"zh":"...","th":"..."}]}',
   ].join(' ');
 
-  const res = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${cfg.apiKey.trim()}`,
-    },
-    body: JSON.stringify({
-      model: cfg.model,
-      temperature: 0,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content },
-      ],
-    }),
-  });
-
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new Error(`AI_API_ERROR:${res.status} ${detail.slice(0, 200)}`);
-  }
-
-  const data = await res.json();
-  const message: string = data?.choices?.[0]?.message?.content ?? '';
+  const result = await requestChatCompletion(
+    cfg,
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content },
+    ],
+    2048,
+    0,
+  );
+  const message = result.content;
   const raw = message.slice(message.indexOf('{'), message.lastIndexOf('}') + 1);
   if (!raw) return [];
 
