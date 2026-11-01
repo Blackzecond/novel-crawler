@@ -372,7 +372,7 @@ export default function ProjectClient({ id }: { id: string }) {
   const addManualTerm = async () => {
     const zh = addZh.trim();
     const th = addTh.trim();
-    if (!zh || !th) return;
+    if (!zh) return;
     const latest = await getStore().getProject(id);
     if (!latest) return;
     const glossary = { ...latest.glossary, [zh]: th };
@@ -380,7 +380,7 @@ export default function ProjectClient({ id }: { id: string }) {
     const updated = await getStore().updateProject(id, { glossary, glossaryTypes });
     if (updated) {
       setProject(updated);
-      setGlossaryNotice(`เพิ่มและบันทึกแล้ว: ${zh} → ${th} (${addTermType === 'character' ? 'ตัวละคร' : 'ศัพท์เฉพาะ'})`);
+      setGlossaryNotice(`เพิ่มและบันทึกแล้ว: ${zh}${th ? ' → ' + th : ' (ยังไม่ระบุคำแปล)'} (${addTermType === 'character' ? 'ตัวละคร' : 'ศัพท์เฉพาะ'})`);
     }
     setAddZh('');
     setAddTh('');
@@ -718,7 +718,7 @@ export default function ProjectClient({ id }: { id: string }) {
                   className="h-9 rounded-lg border border-line bg-bg px-2 text-xs text-fg">
                   <option value="character">ตัวละคร</option><option value="term">ศัพท์เฉพาะ</option>
                 </select>
-                <button disabled={!addZh.trim() || !addTh.trim()} onClick={() => void addManualTerm()}
+                <button disabled={!addZh.trim()} onClick={() => void addManualTerm()}
                   className="inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-40">
                   <Plus className="h-3.5 w-3.5" /> เพิ่ม
                 </button>
