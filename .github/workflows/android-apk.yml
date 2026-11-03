@@ -9,7 +9,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -31,16 +31,6 @@ jobs:
 
       - name: Install dependencies
         run: npm install
-
-      - name: Commit updated dependency lockfile
-        run: |
-          if ! git diff --quiet -- package-lock.json; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add package-lock.json
-            git commit -m "chore: sync npm lockfile for Android wrapper"
-            git push
-          fi
 
       - name: Validate app URL
         run: |
