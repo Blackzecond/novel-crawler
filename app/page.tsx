@@ -238,7 +238,7 @@ export default function ProjectsHomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       });
-      let data = await res.json();
+      let data = await res.json().catch(() => ({}));
       if (!res.ok) {
         const nativePage = await fetchWithNativeBrowser(url);
         if (!nativePage) throw new Error(data.error || 'เกิดข้อผิดพลาด');
@@ -248,7 +248,7 @@ export default function ProjectsHomePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url, pageUrl: nativePage.url, html: nativePage.html }),
         });
-        data = await fallbackRes.json();
+        data = await fallbackRes.json().catch(() => ({}));
         if (!fallbackRes.ok) throw new Error(data.error || 'อ่านสารบัญจากหน้าเว็บไม่สำเร็จ');
       }
 
