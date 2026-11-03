@@ -1,5 +1,13 @@
-// ชุดกลยุทธ์การดึงหน้าเว็บนิยาย (ใช้ร่วมกันทั้ง /api/parse และ /api/toc)
-// ลำดับ: direct fetch (เร็ว) → ScraperAPI fast proxy → ScraperAPI full render
+// Server-side fetch strategies shared by /api/parse and /api/toc.
+// A detected anti-bot challenge is returned immediately so Android can switch to WebView
+// instead of spending up to 60 seconds on a renderer that cannot solve the CAPTCHA.
+
+export class FetchChallengeError extends Error {
+  constructor(message = 'เว็บไซต์กำลังแสดงหน้า Cloudflare/CAPTCHA') {
+    super(message);
+    this.name = 'FetchChallengeError';
+  }
+}
 
 function getDomainSessionId(urlStr: string): number {
   try {
@@ -16,7 +24,27 @@ function getDomainSessionId(urlStr: string): number {
 }
 
 export function isChallengePage(html: string): boolean {
-  return html.includes('正在验证浏览器') || html.includes('cf-challenge');
+  const value = html.toLowerCase();
+  return (
+    value.includes('正在验证浏览器') ||
+    value.includes('安全验证') ||
+    value.includes('just a moment') ||
+    value.includes('verify you are human') ||
+    value.includes('performing security verification') ||
+    value.includes('checking your browser') ||
+    value.includes('checking if the site connection is secure') ||
+    value.includes('cf-challenge') ||
+    value.includes('cf-chl-') ||
+    value.includes('challenge-platform') ||
+    value.includes('/cdn-cgi/challenge-platform/')
+  );
+}
+
+function isChallengeResponse(response: Response, html: string): boolean {
+  // Cloudflare's explicit mitigation header is a strong signal. Do not treat
+  // the ordinary "server: cloudflare" header alone as a challenge.
+  return response.headers.get('cf-mitigated')?.toLowerCase() === 'challenge'
+    || isChallengePage(html);
 }
 
 export async function fetchArticleHtml(targetUrl: string, forceRender = false): Promise<string> {
@@ -27,7 +55,8 @@ export async function fetchArticleHtml(targetUrl: string, forceRender = false): 
   const startedAt = Date.now();
   let html = '';
 
-  // 1) direct fetch — เร็วสุด แต่รับได้เฉพาะเว็บที่ไม่มี anti-bot
+  // 1) Direct fetch. Read the response body even on 403/503 because challenge
+  // pages commonly arrive with those statuses (or HTTP 200).
   if (!forceRender) {
     const stageStartedAt = Date.now();
     try {
@@ -38,43 +67,55 @@ export async function fetchArticleHtml(targetUrl: string, forceRender = false): 
           'Accept-Language': 'zh-CN,zh;q=0.9,th;q=0.8,en;q=0.7',
         },
         signal: AbortSignal.timeout(3000),
+        redirect: 'follow',
       });
-      if (res.ok) {
-        const text = await res.text();
-        if (!isChallengePage(text)) html = text;
+      const text = await res.text();
+      if (isChallengeResponse(res, text)) {
+        throw new FetchChallengeError();
       }
-    } catch (e) {
-      // Fallbacks are expected for sites that block direct requests.
+      if (res.ok) html = text;
+    } catch (error) {
+      if (error instanceof FetchChallengeError) throw error;
+      // Other network errors may still succeed through the configured proxy.
     } finally {
       timings.direct = Date.now() - stageStartedAt;
     }
   }
 
-  // 2) ScraperAPI fast proxy (ไม่ render JS) — สำหรับเว็บกัน UA หรือ rate-limit ปกติ
+  // 2) ScraperAPI fast proxy. A challenge here also means the next renderer
+  // cannot reliably solve it; hand off to the user's authenticated WebView.
   if (!html && !forceRender && apiKey) {
     const stageStartedAt = Date.now();
     try {
       const fastProxyUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&session_number=${sessionId}&keep_headers=true`;
       const res = await fetch(fastProxyUrl, { signal: AbortSignal.timeout(7000) });
-      if (res.ok) {
-        const text = await res.text();
-        if (!isChallengePage(text)) html = text;
+      const text = await res.text();
+      if (isChallengeResponse(res, text)) {
+        throw new FetchChallengeError();
       }
-    } catch (e) {
-      // Continue to the full-render fallback.
+      if (res.ok) html = text;
+    } catch (error) {
+      if (error instanceof FetchChallengeError) throw error;
+      // Continue to full-render only for non-challenge failures.
     } finally {
       timings.fastProxy = Date.now() - stageStartedAt;
     }
   }
 
-  // 3) ScraperAPI full render — สำหรับเว็บที่สารบัญ/เนื้อหาวาดด้วย JS หรือติด Cloudflare
+  // 3) ScraperAPI full render is reserved for JS-rendered pages and transient
+  // failures. It is intentionally skipped as soon as a challenge is detected.
   if (!html && apiKey) {
     const stageStartedAt = Date.now();
     try {
       const renderUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&session_number=${sessionId}&render=true`;
       const res = await fetch(renderUrl, { signal: AbortSignal.timeout(60000) });
-      if (res.ok) html = await res.text();
-    } catch (e) {
+      const text = await res.text();
+      if (isChallengeResponse(res, text)) {
+        throw new FetchChallengeError();
+      }
+      if (res.ok) html = text;
+    } catch (error) {
+      if (error instanceof FetchChallengeError) throw error;
       // Return an empty result when all configured strategies fail.
     } finally {
       timings.fullRender = Date.now() - stageStartedAt;
