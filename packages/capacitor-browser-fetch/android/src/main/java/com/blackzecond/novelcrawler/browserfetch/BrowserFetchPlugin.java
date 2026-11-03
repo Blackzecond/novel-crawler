@@ -115,6 +115,7 @@ public class BrowserFetchPlugin extends Plugin {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                CookieManager.getInstance().flush();
                 status.setText("โหลดหน้าเว็บแล้ว — หากเนื้อหาปรากฏครบ ระบบจะดึงให้อัตโนมัติ หรือกดปุ่มด้านล่าง");
                 sendButton.setEnabled(true);
                 if (!autoAttempted[0]) {
