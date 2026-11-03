@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feat/cloud-storage-foundation
+      - feature/browser-fetch-fallback
 
 jobs:
   build:
