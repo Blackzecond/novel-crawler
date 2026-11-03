@@ -1,6 +1,5 @@
 // Server-side fetch strategies shared by /api/parse and /api/toc.
-// A detected anti-bot challenge is returned immediately so Android can switch to WebView
-// instead of spending up to 60 seconds on a renderer that cannot solve the CAPTCHA.
+// Detected anti-bot challenges are handed to Android WebView immediately.
 
 export class FetchChallengeError extends Error {
   constructor(message = 'เว็บไซต์กำลังแสดงหน้า Cloudflare/CAPTCHA') {
@@ -41,10 +40,11 @@ export function isChallengePage(html: string): boolean {
 }
 
 function isChallengeResponse(response: Response, html: string): boolean {
-  // Cloudflare's explicit mitigation header is a strong signal. Do not treat
-  // the ordinary "server: cloudflare" header alone as a challenge.
+  const statusLooksBlocked = [403, 429, 503].includes(response.status);
+  const hasCloudflareRay = Boolean(response.headers.get('cf-ray'));
   return response.headers.get('cf-mitigated')?.toLowerCase() === 'challenge'
-    || isChallengePage(html);
+    || isChallengePage(html)
+    || (statusLooksBlocked && hasCloudflareRay);
 }
 
 export async function fetchArticleHtml(targetUrl: string, forceRender = false): Promise<string> {
@@ -55,8 +55,7 @@ export async function fetchArticleHtml(targetUrl: string, forceRender = false): 
   const startedAt = Date.now();
   let html = '';
 
-  // 1) Direct fetch. Read the response body even on 403/503 because challenge
-  // pages commonly arrive with those statuses (or HTTP 200).
+  // 1) Direct fetch: detect challenge responses even when the status is not 2xx.
   if (!forceRender) {
     const stageStartedAt = Date.now();
     try {
@@ -70,53 +69,42 @@ export async function fetchArticleHtml(targetUrl: string, forceRender = false): 
         redirect: 'follow',
       });
       const text = await res.text();
-      if (isChallengeResponse(res, text)) {
-        throw new FetchChallengeError();
-      }
+      if (isChallengeResponse(res, text)) throw new FetchChallengeError();
       if (res.ok) html = text;
     } catch (error) {
       if (error instanceof FetchChallengeError) throw error;
-      // Other network errors may still succeed through the configured proxy.
     } finally {
       timings.direct = Date.now() - stageStartedAt;
     }
   }
 
-  // 2) ScraperAPI fast proxy. A challenge here also means the next renderer
-  // cannot reliably solve it; hand off to the user's authenticated WebView.
+  // 2) Fast proxy: if it also returns a challenge, skip browserless rendering.
   if (!html && !forceRender && apiKey) {
     const stageStartedAt = Date.now();
     try {
       const fastProxyUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&session_number=${sessionId}&keep_headers=true`;
-      const res = await fetch(fastProxyUrl, { signal: AbortSignal.timeout(7000) });
+      const res = await fetch(fastProxyUrl, { signal: AbortSignal.timeout(5000) });
       const text = await res.text();
-      if (isChallengeResponse(res, text)) {
-        throw new FetchChallengeError();
-      }
+      if (isChallengeResponse(res, text)) throw new FetchChallengeError();
       if (res.ok) html = text;
     } catch (error) {
       if (error instanceof FetchChallengeError) throw error;
-      // Continue to full-render only for non-challenge failures.
     } finally {
       timings.fastProxy = Date.now() - stageStartedAt;
     }
   }
 
-  // 3) ScraperAPI full render is reserved for JS-rendered pages and transient
-  // failures. It is intentionally skipped as soon as a challenge is detected.
+  // 3) Full render is only for JS-rendered/transient failures, with a bounded wait.
   if (!html && apiKey) {
     const stageStartedAt = Date.now();
     try {
       const renderUrl = `https://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}&session_number=${sessionId}&render=true`;
-      const res = await fetch(renderUrl, { signal: AbortSignal.timeout(60000) });
+      const res = await fetch(renderUrl, { signal: AbortSignal.timeout(15000) });
       const text = await res.text();
-      if (isChallengeResponse(res, text)) {
-        throw new FetchChallengeError();
-      }
+      if (isChallengeResponse(res, text)) throw new FetchChallengeError();
       if (res.ok) html = text;
     } catch (error) {
       if (error instanceof FetchChallengeError) throw error;
-      // Return an empty result when all configured strategies fail.
     } finally {
       timings.fullRender = Date.now() - stageStartedAt;
     }
