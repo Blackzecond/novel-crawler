@@ -105,6 +105,7 @@ public class BrowserFetchPlugin extends Plugin {
         closeButton.setOnClickListener(v -> {
             if (!finished[0]) {
                 finished[0] = true;
+                call.setKeepAlive(false);
                 call.reject("ยกเลิกการอ่านหน้าเว็บ");
             }
             dialog.dismiss();
@@ -132,6 +133,7 @@ public class BrowserFetchPlugin extends Plugin {
         dialog.setOnDismissListener(ignored -> {
             if (!finished[0]) {
                 finished[0] = true;
+                call.setKeepAlive(false);
                 call.reject("ปิดหน้าต่างอ่านเว็บก่อนส่งเนื้อหา");
             }
             webView.destroy();
@@ -179,6 +181,7 @@ public class BrowserFetchPlugin extends Plugin {
                 }
 
                 finished[0] = true;
+                call.setKeepAlive(false);
                 JSObject result = new JSObject();
                 result.put("url", page.optString("url", ""));
                 result.put("title", page.optString("title", ""));
