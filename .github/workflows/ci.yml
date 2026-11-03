@@ -20,3 +20,27 @@ jobs:
       - run: npm install
       - run: npx tsc --noEmit
       - run: npm run build
+
+      - name: Set up Java for Android validation
+        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback'
+        uses: android-actions/setup-android@v3
+
+      - name: Generate Android project and sync native plugin
+        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback'
+        env:
+          CAPACITOR_SERVER_URL: https://example.invalid
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Compile Android debug APK
+        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback'
+        working-directory: android
+        run: ./gradlew assembleDebug --stacktrace
