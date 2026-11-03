@@ -14,7 +14,7 @@ import {
 } from '@/lib/ai';
 import { loadCloudAiSettings, saveCloudAiSettings } from '@/lib/cloudPreferences';
 import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
-import { fetchWithNativeBrowser } from '@/lib/nativeBrowserFetch';
+import { fetchWithNativeBrowser, prefersNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -161,15 +161,9 @@ export default function ProjectClient({ id }: { id: string }) {
   const fetchChapter = async (chapter: NovelChapter, forceRender = false): Promise<boolean> => {
     setBusyIds((prev) => new Set(prev).add(chapter.id));
     try {
-      const res = await fetch('/api/parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: chapter.url, forceRender }),
-      });
-      let data = await res.json();
-      if (!res.ok) {
+      const parseNativePage = async () => {
         const nativePage = await fetchWithNativeBrowser(chapter.url);
-        if (!nativePage) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+        if (!nativePage) return null;
         const fallbackRes = await fetch('/api/parse', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -179,8 +173,24 @@ export default function ProjectClient({ id }: { id: string }) {
             html: nativePage.html,
           }),
         });
-        data = await fallbackRes.json();
-        if (!fallbackRes.ok) throw new Error(data.error || 'อ่านเนื้อหาจากหน้าเว็บไม่สำเร็จ');
+        const fallbackData = await fallbackRes.json();
+        if (!fallbackRes.ok) throw new Error(fallbackData.error || 'อ่านเนื้อหาจากหน้าเว็บไม่สำเร็จ');
+        rememberNativeBrowser(id);
+        return fallbackData;
+      };
+
+      let data = prefersNativeBrowser(id) ? await parseNativePage() : null;
+      if (!data) {
+        const res = await fetch('/api/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: chapter.url, forceRender }),
+        });
+        data = await res.json();
+        if (!res.ok) {
+          data = await parseNativePage();
+          if (!data) throw new Error('ไม่สามารถดึงข้อมูลได้ และอุปกรณ์นี้ไม่รองรับ WebView สำรอง');
+        }
       }
 
       const updated = await getStore().updateChapter(id, chapter.id, {
