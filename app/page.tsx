@@ -10,7 +10,7 @@ import { getLocalProjectsForMigration, getStore, NovelProject } from '@/lib/stor
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { applySavedTheme, loadReaderSettings, saveReaderSettings } from '@/lib/readerPrefs';
 import { loadCloudReaderSettings, saveCloudReaderSettings } from '@/lib/cloudPreferences';
-import { fetchWithNativeBrowser } from '@/lib/nativeBrowserFetch';
+import { fetchWithNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 
 // เว็บต้นฉบับจีนยอดนิยม — กดเพื่อใส่โดเมนต้นทางในช่อง URL
 // (วางเฉพาะลิงก์หน้าสารบัญ/目录 เช่น https://www.uukanshu.cc/b/123/ จึงจะจับรายการบทได้)
@@ -232,6 +232,7 @@ export default function ProjectsHomePage() {
     setError('');
     setChapterNotice('');
     try {
+      let usedNativeBrowser = false;
       const res = await fetch('/api/toc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -241,6 +242,7 @@ export default function ProjectsHomePage() {
       if (!res.ok) {
         const nativePage = await fetchWithNativeBrowser(url);
         if (!nativePage) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+        usedNativeBrowser = true;
         const fallbackRes = await fetch('/api/toc', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -257,6 +259,7 @@ export default function ProjectsHomePage() {
           host: data.host,
           chapters: data.chapters,
         });
+        if (usedNativeBrowser) rememberNativeBrowser(project.id);
         router.push(`/project/${project.id}`);
         return;
       }
