@@ -158,7 +158,7 @@ public class BrowserFetchPlugin extends Plugin {
         boolean[] finished
     ) {
         if (finished[0]) return;
-        String script = "(()=>JSON.stringify({title:document.title||'',url:location.href,html:document.documentElement?document.documentElement.outerHTML:'' ,bodyText:document.body?document.body.innerText:''}))()";
+        String script = "(()=>{const root=document.documentElement?document.documentElement.cloneNode(true):null;if(root)root.querySelectorAll('script,style,noscript').forEach(node=>node.remove());return JSON.stringify({title:document.title||'',url:location.href,html:root?('<!doctype html>'+root.outerHTML):'',bodyText:document.body?document.body.innerText:''})})()";
         webView.evaluateJavascript(script, value -> {
             if (finished[0] || value == null || "null".equals(value)) return;
             try {
