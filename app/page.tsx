@@ -252,6 +252,22 @@ export default function ProjectsHomePage() {
         if (!fallbackRes.ok) throw new Error(data.error || 'อ่านสารบัญจากหน้าเว็บไม่สำเร็จ');
       }
 
+      // A server response may be successful but contain only a JS shell with no TOC.
+      // Give the native WebView one chance before treating it as a chapter page.
+      if (data.type !== 'directory' && !usedNativeBrowser) {
+        const nativePage = await fetchWithNativeBrowser(url);
+        if (nativePage) {
+          usedNativeBrowser = true;
+          const fallbackRes = await fetch('/api/toc', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, pageUrl: nativePage.url, html: nativePage.html }),
+          });
+          data = await fallbackRes.json().catch(() => ({}));
+          if (!fallbackRes.ok) throw new Error(data.error || 'อ่านสารบัญจากหน้าเว็บไม่สำเร็จ');
+        }
+      }
+
       if (data.type === 'directory') {
         const project = await getStore().createProject({
           title: data.novelTitle || data.host,
