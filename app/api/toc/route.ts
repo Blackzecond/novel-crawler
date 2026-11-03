@@ -13,8 +13,13 @@ export async function POST(req: NextRequest) {
 
     const targetUrl: string = body.url;
     const forceRender: boolean = body.forceRender || false;
+    const suppliedHtml = typeof body.html === 'string' ? body.html : '';
+    if (suppliedHtml.length > 8_000_000) {
+      return NextResponse.json({ error: 'หน้าเว็บมีขนาดใหญ่เกินไป' }, { status: 413 });
+    }
 
-    const html = await fetchArticleHtml(targetUrl, forceRender);
+    const html = suppliedHtml || await fetchArticleHtml(targetUrl, forceRender);
+    const pageUrl = typeof body.pageUrl === 'string' ? body.pageUrl : targetUrl;
     if (!html) {
       return NextResponse.json(
         {
@@ -25,7 +30,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const toc = extractChapterList(html, targetUrl);
+    const toc = extractChapterList(html, pageUrl);
 
     // พบรายการบทจำนวนมาก → เป็นหน้าสารบัญ (目录)
     if (toc.chapters.length >= 6) {
@@ -40,7 +45,7 @@ export async function POST(req: NextRequest) {
 
     // ไม่พบสารบัญ — มีโอกาสเป็นหน้าบท แนะนำทางให้ผู้ใช้
     const { document } = parseHTML(html);
-    const nav = findNavigationUrls(document, targetUrl);
+    const nav = findNavigationUrls(document, pageUrl);
     return NextResponse.json({
       type: 'chapter',
       novelTitle: toc.novelTitle,
