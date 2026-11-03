@@ -36,8 +36,13 @@ export async function POST(req: NextRequest) {
 
     const targetUrl = body.url;
     const forceRender = body.forceRender || false;
+    const suppliedHtml = typeof body.html === 'string' ? body.html : '';
+    if (suppliedHtml.length > 8_000_000) {
+      return NextResponse.json({ error: 'หน้าเว็บมีขนาดใหญ่เกินไป' }, { status: 413 });
+    }
 
-    const html = await fetchArticleHtml(targetUrl, forceRender);
+    const html = suppliedHtml || await fetchArticleHtml(targetUrl, forceRender);
+    const pageUrl = typeof body.pageUrl === 'string' ? body.pageUrl : targetUrl;
 
     if (!html) {
       return NextResponse.json(
@@ -47,7 +52,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { document } = parseHTML(html);
-    const navUrls = findNavigationUrls(document, targetUrl);
+    const navUrls = findNavigationUrls(document, pageUrl);
     const reader = new Readability(document);
     const article = reader.parse();
 
