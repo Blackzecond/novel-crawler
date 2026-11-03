@@ -2,10 +2,7 @@ package com.blackzecond.novelcrawler.browserfetch;
 
 import android.app.Dialog;
 import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
-import android.view.View;
 import android.view.Window;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
@@ -111,7 +108,6 @@ public class BrowserFetchPlugin extends Plugin {
                 call.reject("ยกเลิกการอ่านหน้าเว็บ");
             }
             dialog.dismiss();
-            webView.destroy();
         });
 
         webView.setWebViewClient(new WebViewClient() {
@@ -171,6 +167,8 @@ public class BrowserFetchPlugin extends Plugin {
                 boolean challenge = bodyText.toLowerCase().contains("just a moment")
                     || bodyText.contains("正在验证浏览器")
                     || bodyText.toLowerCase().contains("verify you are human")
+                    || bodyText.toLowerCase().contains("performing security verification")
+                    || bodyText.toLowerCase().contains("checking your browser")
                     || html.contains("cf-challenge");
 
                 if (html.length() < 300 || (challenge && !manual)) {
