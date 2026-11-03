@@ -44,6 +44,8 @@ jobs:
       - name: Set up Android SDK
         if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback'
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools;platforms;android-36;build-tools;36.0.0'
 
       - name: Generate Android project and sync native plugin
         if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback'
