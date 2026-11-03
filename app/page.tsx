@@ -10,6 +10,7 @@ import { getLocalProjectsForMigration, getStore, NovelProject } from '@/lib/stor
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { applySavedTheme, loadReaderSettings, saveReaderSettings } from '@/lib/readerPrefs';
 import { loadCloudReaderSettings, saveCloudReaderSettings } from '@/lib/cloudPreferences';
+import { fetchWithNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 
 // เว็บต้นฉบับจีนยอดนิยม — กดเพื่อใส่โดเมนต้นทางในช่อง URL
 // (วางเฉพาะลิงก์หน้าสารบัญ/目录 เช่น https://www.uukanshu.cc/b/123/ จึงจะจับรายการบทได้)
@@ -231,13 +232,41 @@ export default function ProjectsHomePage() {
     setError('');
     setChapterNotice('');
     try {
+      let usedNativeBrowser = false;
       const res = await fetch('/api/toc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+      let data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const nativePage = await fetchWithNativeBrowser(url);
+        if (!nativePage) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+        usedNativeBrowser = true;
+        const fallbackRes = await fetch('/api/toc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, pageUrl: nativePage.url, html: nativePage.html }),
+        });
+        data = await fallbackRes.json().catch(() => ({}));
+        if (!fallbackRes.ok) throw new Error(data.error || 'อ่านสารบัญจากหน้าเว็บไม่สำเร็จ');
+      }
+
+      // A server response may be successful but contain only a JS shell with no TOC.
+      // Give the native WebView one chance before treating it as a chapter page.
+      if (data.type !== 'directory' && !usedNativeBrowser) {
+        const nativePage = await fetchWithNativeBrowser(url);
+        if (nativePage) {
+          usedNativeBrowser = true;
+          const fallbackRes = await fetch('/api/toc', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, pageUrl: nativePage.url, html: nativePage.html }),
+          });
+          data = await fallbackRes.json().catch(() => ({}));
+          if (!fallbackRes.ok) throw new Error(data.error || 'อ่านสารบัญจากหน้าเว็บไม่สำเร็จ');
+        }
+      }
 
       if (data.type === 'directory') {
         const project = await getStore().createProject({
@@ -246,6 +275,7 @@ export default function ProjectsHomePage() {
           host: data.host,
           chapters: data.chapters,
         });
+        if (usedNativeBrowser) rememberNativeBrowser(project.id);
         router.push(`/project/${project.id}`);
         return;
       }

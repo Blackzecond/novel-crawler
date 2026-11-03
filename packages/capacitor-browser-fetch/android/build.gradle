@@ -1,0 +1,15 @@
+apply plugin: 'com.android.library'
+
+android {
+    namespace = 'com.blackzecond.novelcrawler.browserfetch'
+    compileSdk = rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        minSdkVersion = rootProject.ext.minSdkVersion
+    }
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+}

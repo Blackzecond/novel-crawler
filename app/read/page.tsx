@@ -17,6 +17,7 @@ import {
   loadCloudReadingHistory, saveCloudReadingHistory,
 } from '@/lib/cloudPreferences';
 import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
+import { fetchWithNativeBrowser, prefersNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 
 interface ArticleData {
   title: string;
@@ -265,14 +266,43 @@ export default function ReaderPage() {
           window.scrollTo({ top: 0, behavior: 'smooth' }); return;
         }
       }
-      const res = await fetch('/api/parse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: targetUrl, forceRender }) });
-      const contentType = res.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const rawText = await res.text().catch(() => '');
-        throw new Error(`Server ตอบกลับผิดพลาด (${res.status}): ${rawText.slice(0, 100)}...`);
+      const parseNativePage = async () => {
+        const nativePage = await fetchWithNativeBrowser(targetUrl);
+        if (!nativePage) return null;
+        const fallbackRes = await fetch('/api/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: targetUrl, pageUrl: nativePage.url, html: nativePage.html }),
+        });
+        const fallbackData = await fallbackRes.json();
+        if (!fallbackRes.ok) throw new Error(fallbackData.error || 'อ่านเนื้อหาจากหน้าเว็บไม่สำเร็จ');
+        if (activeProjectId) rememberNativeBrowser(activeProjectId);
+        return fallbackData;
+      };
+
+      let data = !forceRender && activeProjectId && prefersNativeBrowser(activeProjectId)
+        ? await parseNativePage()
+        : null;
+      if (!data) {
+        try {
+          const res = await fetch('/api/parse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: targetUrl, forceRender }),
+          });
+          const contentType = res.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            const rawText = await res.text().catch(() => '');
+            throw new Error(`Server ตอบกลับผิดพลาด (${res.status}): ${rawText.slice(0, 100)}...`);
+          }
+          data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+        } catch (serverError) {
+          const nativeData = await parseNativePage();
+          if (!nativeData) throw serverError;
+          data = nativeData;
+        }
       }
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
       let articleData: ArticleData = data;
       if (activeProjectId && project && chapter) {
         const index = project.chapters.findIndex((item) => item.url === targetUrl);

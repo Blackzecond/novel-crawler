@@ -1,11 +1,15 @@
 name: CI
 
+permissions:
+  contents: write
+
 on:
   pull_request:
   push:
     branches:
       - main
       - feat/cloud-storage-foundation
+      - feature/browser-fetch-fallback
 
 jobs:
   build:
@@ -17,5 +21,41 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm install
+      - name: Commit dependency lockfile on this feature branch
+        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback'
+        run: |
+          if ! git diff --quiet -- package-lock.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "chore: sync npm lockfile for Android plugin"
+            git push origin "HEAD:${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          fi
       - run: npx tsc --noEmit
       - run: npm run build
+
+      - name: Set up Java for Android validation
+        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback'
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - name: Generate Android project and sync native plugin
+        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback'
+        env:
+          CAPACITOR_SERVER_URL: https://example.invalid
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Compile Android debug APK
+        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback'
+        working-directory: android
+        run: ./gradlew assembleDebug --stacktrace
