@@ -63,7 +63,7 @@ public class BrowserFetchPlugin extends Plugin {
         webView.getSettings().setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
-        cookies.setAcceptThirdPartyCookies(webView, true);
+        cookies.setAcceptThirdPartyCookies(webView, false);
         webView.setWebChromeClient(new WebChromeClient());
 
         final boolean[] finished = { false };
@@ -171,6 +171,7 @@ public class BrowserFetchPlugin extends Plugin {
                     || bodyText.toLowerCase().contains("verify you are human")
                     || bodyText.toLowerCase().contains("performing security verification")
                     || bodyText.toLowerCase().contains("checking your browser")
+                    || bodyText.toLowerCase().contains("checking if the site connection is secure")
                     || html.contains("cf-challenge");
 
                 if (html.length() < 300 || (challenge && !manual)) {
@@ -180,6 +181,7 @@ public class BrowserFetchPlugin extends Plugin {
                     return;
                 }
 
+                CookieManager.getInstance().flush();
                 finished[0] = true;
                 call.setKeepAlive(false);
                 JSObject result = new JSObject();
