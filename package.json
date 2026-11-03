@@ -20,7 +20,8 @@
     "react-dom": "19.3.0",
     "@supabase/supabase-js": "2.57.4",
     "@capacitor/core": "8.5.3",
-    "@capacitor/android": "8.5.3"
+    "@capacitor/android": "8.5.3",
+    "@blackzecond/capacitor-browser-fetch": "file:packages/capacitor-browser-fetch"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
