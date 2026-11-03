@@ -173,7 +173,7 @@ export default function ProjectClient({ id }: { id: string }) {
             html: nativePage.html,
           }),
         });
-        const fallbackData = await fallbackRes.json();
+        const fallbackData = await fallbackRes.json().catch(() => ({}));
         if (!fallbackRes.ok) throw new Error(fallbackData.error || 'อ่านเนื้อหาจากหน้าเว็บไม่สำเร็จ');
         rememberNativeBrowser(id);
         return fallbackData;
@@ -186,7 +186,7 @@ export default function ProjectClient({ id }: { id: string }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: chapter.url, forceRender }),
         });
-        data = await res.json();
+        data = await res.json().catch(() => ({}));
         if (!res.ok) {
           data = await parseNativePage();
           if (!data) throw new Error('ไม่สามารถดึงข้อมูลได้ และอุปกรณ์นี้ไม่รองรับ WebView สำรอง');
