@@ -14,6 +14,7 @@ import {
 } from '@/lib/ai';
 import { loadCloudAiSettings, saveCloudAiSettings } from '@/lib/cloudPreferences';
 import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
+import { fetchWithNativeBrowser } from '@/lib/nativeBrowserFetch';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -165,8 +166,22 @@ export default function ProjectClient({ id }: { id: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: chapter.url, forceRender }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+      let data = await res.json();
+      if (!res.ok) {
+        const nativePage = await fetchWithNativeBrowser(chapter.url);
+        if (!nativePage) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+        const fallbackRes = await fetch('/api/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: chapter.url,
+            pageUrl: nativePage.url,
+            html: nativePage.html,
+          }),
+        });
+        data = await fallbackRes.json();
+        if (!fallbackRes.ok) throw new Error(data.error || 'อ่านเนื้อหาจากหน้าเว็บไม่สำเร็จ');
+      }
 
       const updated = await getStore().updateChapter(id, chapter.id, {
         url: chapter.url,
