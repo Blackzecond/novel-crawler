@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     const targetUrl = body.url;
     const forceRender = body.forceRender || false;
     const suppliedHtml = typeof body.html === 'string' ? body.html : '';
-    if (suppliedHtml.length > 8_000_000) {
+    if (suppliedHtml.length > 4_000_000) {
       return NextResponse.json({ error: 'หน้าเว็บมีขนาดใหญ่เกินไป' }, { status: 413 });
     }
 
