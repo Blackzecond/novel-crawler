@@ -1,0 +1,16 @@
+{
+  "name": "@blackzecond/capacitor-browser-fetch",
+  "version": "0.1.0",
+  "description": "In-app Android WebView bridge for Novel Crawler source fetching",
+  "main": "dist/plugin.cjs.js",
+  "types": "dist/definitions.d.ts",
+  "files": ["android", "dist"],
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": "^8.0.0"
+  }
+}
