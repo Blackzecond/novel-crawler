@@ -31,16 +31,17 @@ public class BrowserFetchPlugin extends Plugin {
     @PluginMethod
     public void open(PluginCall call) {
         String targetUrl = call.getString("url");
+        boolean expandToc = call.getBoolean("expandToc", false);
         if (targetUrl == null || !(targetUrl.startsWith("https://") || targetUrl.startsWith("http://"))) {
             call.reject("URL ไม่ถูกต้อง");
             return;
         }
 
         call.setKeepAlive(true);
-        getActivity().runOnUiThread(() -> showBrowser(call, targetUrl));
+        getActivity().runOnUiThread(() -> showBrowser(call, targetUrl, expandToc));
     }
 
-    private void showBrowser(PluginCall call, String targetUrl) {
+    private void showBrowser(PluginCall call, String targetUrl, boolean expandToc) {
         Dialog dialog = new Dialog(getActivity());
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
 
@@ -124,7 +125,7 @@ public class BrowserFetchPlugin extends Plugin {
             public void run() {
                 if (finished[0] || captureInProgress[0] || !dialog.isShowing()) return;
                 final int currentNavigation = navigationId[0];
-                String probeScript = "(()=>{const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const l=b.toLowerCase();const challenge=l.includes('just a moment')||l.includes('verify you are human')||l.includes('performing security verification')||l.includes('checking your browser')||l.includes('checking if the site connection is secure')||t.toLowerCase().includes('just a moment')||b.includes('正在验证浏览器')||u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-180);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig})})()";
+                String probeScript = "(()=>{const expandToc=\"+expandToc+\";let moreLoading=false;if(expandToc){const nodes=[...document.querySelectorAll('button,a,[role=button],.more,.show-all,.all-chapters')];for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!txt||el.dataset.ncExpandedOnce==='1')continue;if(/全部章节|查看全部章节|展开全部|显示全部|全部展开|展开目录|查看目录/.test(txt)){el.dataset.ncExpandedOnce='1';el.click();break;}}for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!/加载更多|显示更多|展开更多|更多章节/.test(txt))continue;const rect=el.getBoundingClientRect();if(rect.width>0&&rect.height>0&&getComputedStyle(el).display!=='none'){moreLoading=true;const count=Number(el.dataset.ncLoadMoreCount||'0');if(count<30){el.dataset.ncLoadMoreCount=String(count+1);el.click();}break;}}}const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const l=b.toLowerCase();const challenge=l.includes('just a moment')||l.includes('verify you are human')||l.includes('performing security verification')||l.includes('checking your browser')||l.includes('checking if the site connection is secure')||t.toLowerCase().includes('just a moment')||b.includes('正在验证浏览器')||u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-180);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig,moreLoading:moreLoading})})()";
                 webView.evaluateJavascript(probeScript, value -> {
                     if (finished[0] || captureInProgress[0] || currentNavigation != navigationId[0]) return;
                     try {
@@ -134,10 +135,10 @@ public class BrowserFetchPlugin extends Plugin {
                             stablePolls[0] = 0;
                             lastSignature[0] = "";
                             status.setText("พบหรือกำลังตรวจสอบ CAPTCHA — หากมีหน้าตรวจสอบ กรุณาทำให้ผ่าน ระบบจะดึงเนื้อหาให้อัตโนมัติ");
-                        } else if (!probe.optBoolean("ready") || probe.optInt("bodyLength") < 180 || probe.optInt("htmlLength") < 1000) {
+                        } else if (probe.optBoolean("moreLoading") || !probe.optBoolean("ready") || probe.optInt("bodyLength") < 180 || probe.optInt("htmlLength") < 1000) {
                             stablePolls[0] = 0;
                             lastSignature[0] = "";
-                            status.setText("ผ่านหน้าตรวจสอบแล้ว — กำลังรอเนื้อหาบทโหลดให้ครบ…");
+                            status.setText(expandToc ? "กำลังขยายรายการตอนทั้งหมดและรอให้โหลดครบ…" : "ผ่านหน้าตรวจสอบแล้ว — กำลังรอเนื้อหาบทโหลดให้ครบ…");
                         } else {
                             String signature = probe.optString("signature", "");
                             if (signature.equals(lastSignature[0])) {
