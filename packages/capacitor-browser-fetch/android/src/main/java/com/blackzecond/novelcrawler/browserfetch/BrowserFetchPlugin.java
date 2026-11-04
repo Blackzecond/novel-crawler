@@ -196,6 +196,9 @@ public class BrowserFetchPlugin extends Plugin {
                 call.reject("ปิดหน้าต่างอ่านเว็บก่อนส่งเนื้อหา");
             }
             handler.removeCallbacks(pollTask[0]);
+            // Android WebView's CookieManager keeps cookies isolated by domain and persists them
+            // in the app's WebView profile. Flush on close as well as after page loads/capture.
+            CookieManager.getInstance().flush();
             webView.destroy();
         });
 
