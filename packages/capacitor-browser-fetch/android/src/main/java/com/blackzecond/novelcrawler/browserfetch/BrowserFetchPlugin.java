@@ -109,7 +109,7 @@ public class BrowserFetchPlugin extends Plugin {
             window.setBackgroundDrawableResource(android.R.color.white);
         }
 
-        sendButton.setOnClickListener(v -> extractPage(call, webView, dialog, status, finished, captureInProgress));
+        sendButton.setOnClickListener(v -> extractPage(call, webView, dialog, status, finished, captureInProgress, handler, pollTask[0]));
         closeButton.setOnClickListener(v -> {
             if (!finished[0]) {
                 finished[0] = true;
@@ -215,7 +215,9 @@ public class BrowserFetchPlugin extends Plugin {
         Dialog dialog,
         TextView status,
         boolean[] finished,
-        boolean[] captureInProgress
+        boolean[] captureInProgress,
+        Handler handler,
+        Runnable pollRunnable
     ) {
         if (finished[0] || captureInProgress[0]) return;
         captureInProgress[0] = true;
@@ -225,7 +227,8 @@ public class BrowserFetchPlugin extends Plugin {
             if (finished[0]) return;
             if (value == null || "null".equals(value)) {
                 captureInProgress[0] = false;
-                status.setText("ยังอ่านหน้าเว็บไม่ได้ ลองรอให้โหลดเสร็จแล้วกดอีกครั้ง");
+                status.setText("ยังอ่านหน้าเว็บไม่ได้ กำลังลองตรวจสอบอีกครั้ง…");
+                handler.postDelayed(pollRunnable, 1200);
                 return;
             }
             try {
@@ -255,11 +258,13 @@ public class BrowserFetchPlugin extends Plugin {
                 if (challenge) {
                     captureInProgress[0] = false;
                     status.setText("ยังเป็นหน้าตรวจสอบของเว็บไซต์ — กรุณาทำ CAPTCHA ให้ผ่าน ระบบจะลองดึงเนื้อหาให้อัตโนมัติ");
+                    handler.postDelayed(pollRunnable, 1200);
                     return;
                 }
                 if (html.length() < 300 || bodyText.trim().length() < 80) {
                     captureInProgress[0] = false;
                     status.setText("ยังไม่พบเนื้อหาบทที่สมบูรณ์ ลองรอให้หน้าเว็บโหลดเพิ่ม หรือกดส่งเนื้อหาเอง");
+                    handler.postDelayed(pollRunnable, 1200);
                     return;
                 }
 
@@ -275,6 +280,7 @@ public class BrowserFetchPlugin extends Plugin {
             } catch (Exception error) {
                 captureInProgress[0] = false;
                 status.setText("อ่านหน้าเว็บไม่สำเร็จ — ระบบจะลองอีกครั้ง หรือกดส่งเนื้อหาเองได้");
+                handler.postDelayed(pollRunnable, 1200);
             }
         });
     }
