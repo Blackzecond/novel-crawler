@@ -246,7 +246,7 @@ export default function ProjectsHomePage() {
         const fallbackRes = await fetch('/api/toc', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, pageUrl: nativePage.url, html: nativePage.html }),
+          body: JSON.stringify({ url, pageUrl: nativePage.url, html: nativePage.html, pages: nativePage.pages }),
         });
         data = await fallbackRes.json().catch(() => ({}));
         if (!fallbackRes.ok) throw new Error(data.error || 'อ่านสารบัญจากหน้าเว็บไม่สำเร็จ');
@@ -261,7 +261,7 @@ export default function ProjectsHomePage() {
           const fallbackRes = await fetch('/api/toc', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, pageUrl: nativePage.url, html: nativePage.html }),
+            body: JSON.stringify({ url, pageUrl: nativePage.url, html: nativePage.html, pages: nativePage.pages }),
           });
           data = await fallbackRes.json().catch(() => ({}));
           if (!fallbackRes.ok) throw new Error(data.error || 'อ่านสารบัญจากหน้าเว็บไม่สำเร็จ');
