@@ -22,6 +22,8 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
+import java.util.Locale;
+
 @CapacitorPlugin(name = "BrowserFetch")
 public class BrowserFetchPlugin extends Plugin {
     @PluginMethod
@@ -45,7 +47,7 @@ public class BrowserFetchPlugin extends Plugin {
         root.setBackgroundColor(Color.WHITE);
 
         TextView status = new TextView(getActivity());
-        status.setText("กำลังเปิดเว็บไซต์ต้นทาง… หากพบ CAPTCHA ให้ยืนยันในหน้านี้");
+        status.setText("กำลังเปิดเว็บไซต์ต้นทาง… หากพบ CAPTCHA ให้ยืนยันในหน้านี้ เมื่อเห็นเนื้อหาบทแล้วจึงกดส่งเนื้อหา");
         status.setTextColor(Color.DKGRAY);
         status.setTextSize(13);
         status.setPadding(16, 12, 16, 12);
@@ -67,7 +69,6 @@ public class BrowserFetchPlugin extends Plugin {
         webView.setWebChromeClient(new WebChromeClient());
 
         final boolean[] finished = { false };
-        final boolean[] autoAttempted = { false };
 
         LinearLayout actions = new LinearLayout(getActivity());
         actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -100,8 +101,7 @@ public class BrowserFetchPlugin extends Plugin {
             window.setBackgroundDrawableResource(android.R.color.white);
         }
 
-        Runnable manualExtract = () -> extractPage(call, webView, dialog, status, true, finished);
-        sendButton.setOnClickListener(v -> manualExtract.run());
+        sendButton.setOnClickListener(v -> extractPage(call, webView, dialog, status, finished));
         closeButton.setOnClickListener(v -> {
             if (!finished[0]) {
                 finished[0] = true;
@@ -116,12 +116,8 @@ public class BrowserFetchPlugin extends Plugin {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 CookieManager.getInstance().flush();
-                status.setText("โหลดหน้าเว็บแล้ว — หากเนื้อหาปรากฏครบ ระบบจะดึงให้อัตโนมัติ หรือกดปุ่มด้านล่าง");
+                status.setText("หน้าเว็บโหลดแล้ว — ตรวจสอบ CAPTCHA ให้ผ่านและรอจนเห็นเนื้อหาบท จากนั้นกดส่งเนื้อหา");
                 sendButton.setEnabled(true);
-                if (!autoAttempted[0]) {
-                    autoAttempted[0] = true;
-                    view.postDelayed(() -> extractPage(call, webView, dialog, status, false, finished), 1400);
-                }
             }
 
             @Override
@@ -155,30 +151,46 @@ public class BrowserFetchPlugin extends Plugin {
         WebView webView,
         Dialog dialog,
         TextView status,
-        boolean manual,
         boolean[] finished
     ) {
         if (finished[0]) return;
+        status.setText("กำลังตรวจสอบหน้าเว็บ…");
         String script = "(()=>{const root=document.documentElement?document.documentElement.cloneNode(true):null;if(root)root.querySelectorAll('script,style,noscript').forEach(node=>node.remove());return JSON.stringify({title:document.title||'',url:location.href,html:root?('<!doctype html>'+root.outerHTML):'',bodyText:document.body?document.body.innerText:''})})()";
         webView.evaluateJavascript(script, value -> {
-            if (finished[0] || value == null || "null".equals(value)) return;
+            if (finished[0] || value == null || "null".equals(value)) {
+                status.setText("ยังอ่านหน้าเว็บไม่ได้ ลองรอให้โหลดเสร็จแล้วกดอีกครั้ง");
+                return;
+            }
             try {
                 Object decoded = new JSONTokener(value).nextValue();
                 JSONObject page = new JSONObject(String.valueOf(decoded));
                 String html = page.optString("html", "");
                 String bodyText = page.optString("bodyText", "");
-                boolean challenge = bodyText.toLowerCase().contains("just a moment")
-                    || bodyText.contains("正在验证浏览器")
-                    || bodyText.toLowerCase().contains("verify you are human")
-                    || bodyText.toLowerCase().contains("performing security verification")
-                    || bodyText.toLowerCase().contains("checking your browser")
-                    || bodyText.toLowerCase().contains("checking if the site connection is secure")
-                    || html.contains("cf-challenge");
+                String title = page.optString("title", "");
+                String pageUrl = page.optString("url", "");
+                String lowerText = bodyText.toLowerCase(Locale.ROOT);
+                String lowerHtml = html.toLowerCase(Locale.ROOT);
+                String lowerTitle = title.toLowerCase(Locale.ROOT);
+                String lowerUrl = pageUrl.toLowerCase(Locale.ROOT);
 
-                if (html.length() < 300 || (challenge && !manual)) {
-                    status.setText(challenge
-                        ? "เว็บไซต์กำลังตรวจสอบ — ยืนยัน CAPTCHA/รอให้หน้าเว็บแสดงเนื้อหาก่อน แล้วกดส่งเนื้อหา"
-                        : "ยังไม่พบเนื้อหา ลองรอให้หน้าเว็บโหลดเสร็จแล้วกดส่งเนื้อหา");
+                boolean challenge = lowerText.contains("just a moment")
+                    || bodyText.contains("正在验证浏览器")
+                    || lowerText.contains("verify you are human")
+                    || lowerText.contains("performing security verification")
+                    || lowerText.contains("checking your browser")
+                    || lowerText.contains("checking if the site connection is secure")
+                    || lowerTitle.contains("just a moment")
+                    || lowerHtml.contains("cf-challenge")
+                    || lowerHtml.contains("cf-chl-")
+                    || lowerHtml.contains("challenge-platform")
+                    || lowerUrl.contains("/cdn-cgi/challenge-platform/");
+
+                if (challenge) {
+                    status.setText("ยังเป็นหน้าตรวจสอบของเว็บไซต์ — กรุณาทำ CAPTCHA ให้ผ่านและรอจนเห็นเนื้อหาบทจริง แล้วค่อยกดส่งอีกครั้ง");
+                    return;
+                }
+                if (html.length() < 300 || bodyText.trim().length() < 80) {
+                    status.setText("ยังไม่พบเนื้อหาบทที่สมบูรณ์ ลองรอให้หน้าเว็บโหลดเพิ่มแล้วกดส่งอีกครั้ง");
                     return;
                 }
 
@@ -186,8 +198,8 @@ public class BrowserFetchPlugin extends Plugin {
                 finished[0] = true;
                 call.setKeepAlive(false);
                 JSObject result = new JSObject();
-                result.put("url", page.optString("url", ""));
-                result.put("title", page.optString("title", ""));
+                result.put("url", pageUrl);
+                result.put("title", title);
                 result.put("html", html);
                 call.resolve(result);
                 dialog.dismiss();

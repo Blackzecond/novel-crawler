@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseHTML } from 'linkedom';
-import { fetchArticleHtml } from '@/lib/fetchHtml';
+import { fetchArticleHtml, FetchChallengeError, isChallengePage } from '@/lib/fetchHtml';
 import { extractChapterList, findNavigationUrls } from '@/lib/sites';
 
-// วิเคราะห์ว่า URL ที่วางมาเป็นหน้าสารบัญ (directory) หรือหน้าบท (chapter)
+// Analyze whether the supplied URL is a novel directory (目录) or a chapter page.
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
@@ -20,6 +20,13 @@ export async function POST(req: NextRequest) {
 
     const html = suppliedHtml || await fetchArticleHtml(targetUrl, forceRender);
     const pageUrl = typeof body.pageUrl === 'string' ? body.pageUrl : targetUrl;
+
+    if (html && isChallengePage(html)) {
+      return NextResponse.json(
+        { code: 'WEBVIEW_REQUIRED', error: 'เว็บไซต์กำลังแสดงหน้า Cloudflare/CAPTCHA กรุณายืนยันผ่าน WebView' },
+        { status: 428 }
+      );
+    }
     if (!html) {
       return NextResponse.json(
         {
@@ -32,7 +39,6 @@ export async function POST(req: NextRequest) {
 
     const toc = extractChapterList(html, pageUrl);
 
-    // พบรายการบทจำนวนมาก → เป็นหน้าสารบัญ (目录)
     if (toc.chapters.length >= 6) {
       return NextResponse.json({
         type: 'directory',
@@ -43,7 +49,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ไม่พบสารบัญ — มีโอกาสเป็นหน้าบท แนะนำทางให้ผู้ใช้
     const { document } = parseHTML(html);
     const nav = findNavigationUrls(document, pageUrl);
     return NextResponse.json({
@@ -55,6 +60,12 @@ export async function POST(req: NextRequest) {
         'หน้านี้เป็นหน้าบทหรือไม่พบรายการบท — ให้วางลิงก์หน้าสารบัญ (目录/章节列表) ของเรื่อง หรือกดอ่านด่วนต่อจากนี้',
     });
   } catch (error: any) {
+    if (error instanceof FetchChallengeError) {
+      return NextResponse.json(
+        { code: 'WEBVIEW_REQUIRED', error: error.message },
+        { status: 428 }
+      );
+    }
     return NextResponse.json(
       { error: `API Error: ${error.message || String(error)}` },
       { status: 500 }
