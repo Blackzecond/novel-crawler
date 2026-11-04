@@ -179,18 +179,17 @@ export default function ProjectClient({ id }: { id: string }) {
         return fallbackData;
       };
 
-      let data = prefersNativeBrowser(id) ? await parseNativePage() : null;
-      if (!data) {
-        const res = await fetch('/api/parse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: chapter.url, forceRender }),
-        });
-        data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          data = await parseNativePage();
-          if (!data) throw new Error('ไม่สามารถดึงข้อมูลได้ และอุปกรณ์นี้ไม่รองรับ WebView สำรอง');
-        }
+      // Fast path: always try the server fetch first. Only open WebView when the
+      // response indicates a challenge or the server cannot retrieve the chapter.
+      const res = await fetch('/api/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: chapter.url, forceRender, fastOnly: !forceRender && prefersNativeBrowser(id) }),
+      });
+      let data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        data = await parseNativePage();
+        if (!data) throw new Error(data?.error || 'ไม่สามารถดึงข้อมูลได้ และอุปกรณ์นี้ไม่รองรับ WebView สำรอง');
       }
 
       const updated = await getStore().updateChapter(id, chapter.id, {

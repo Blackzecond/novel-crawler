@@ -2,6 +2,8 @@ package com.blackzecond.novelcrawler.browserfetch;
 
 import android.app.Dialog;
 import android.graphics.Color;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.Window;
 import android.webkit.CookieManager;
@@ -29,16 +31,17 @@ public class BrowserFetchPlugin extends Plugin {
     @PluginMethod
     public void open(PluginCall call) {
         String targetUrl = call.getString("url");
+        boolean expandToc = call.getBoolean("expandToc", false);
         if (targetUrl == null || !(targetUrl.startsWith("https://") || targetUrl.startsWith("http://"))) {
             call.reject("URL ไม่ถูกต้อง");
             return;
         }
 
         call.setKeepAlive(true);
-        getActivity().runOnUiThread(() -> showBrowser(call, targetUrl));
+        getActivity().runOnUiThread(() -> showBrowser(call, targetUrl, expandToc));
     }
 
-    private void showBrowser(PluginCall call, String targetUrl) {
+    private void showBrowser(PluginCall call, String targetUrl, boolean expandToc) {
         Dialog dialog = new Dialog(getActivity());
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
 
@@ -69,6 +72,12 @@ public class BrowserFetchPlugin extends Plugin {
         webView.setWebChromeClient(new WebChromeClient());
 
         final boolean[] finished = { false };
+        final boolean[] captureInProgress = { false };
+        final Handler handler = new Handler(Looper.getMainLooper());
+        final String[] lastSignature = { "" };
+        final int[] stablePolls = { 0 };
+        final int[] navigationId = { 0 };
+        final Runnable[] pollTask = { null };
 
         LinearLayout actions = new LinearLayout(getActivity());
         actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -101,7 +110,7 @@ public class BrowserFetchPlugin extends Plugin {
             window.setBackgroundDrawableResource(android.R.color.white);
         }
 
-        sendButton.setOnClickListener(v -> extractPage(call, webView, dialog, status, finished));
+        sendButton.setOnClickListener(v -> extractPage(call, webView, dialog, status, finished, captureInProgress, handler, pollTask[0]));
         closeButton.setOnClickListener(v -> {
             if (!finished[0]) {
                 finished[0] = true;
@@ -111,13 +120,67 @@ public class BrowserFetchPlugin extends Plugin {
             dialog.dismiss();
         });
 
+        pollTask[0] = new Runnable() {
+            @Override
+            public void run() {
+                if (finished[0] || captureInProgress[0] || !dialog.isShowing()) return;
+                final int currentNavigation = navigationId[0];
+                String probeScript = "(()=>{const expandToc="+expandToc+";let moreLoading=false;if(expandToc){const nodes=[...document.querySelectorAll('button,a,[role=button],.more,.show-all,.all-chapters')];for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!txt||el.dataset.ncExpandedOnce==='1')continue;if(/全部章节|查看全部章节|展开全部|显示全部|全部展开|展开目录|查看目录/.test(txt)){el.dataset.ncExpandedOnce='1';el.click();break;}}for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!/加载更多|显示更多|展开更多|更多章节/.test(txt))continue;const rect=el.getBoundingClientRect();if(rect.width>0&&rect.height>0&&getComputedStyle(el).display!=='none'){const count=Number(el.dataset.ncLoadMoreCount||'0');if(count<30){moreLoading=true;el.dataset.ncLoadMoreCount=String(count+1);el.click();}break;}}}const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const l=b.toLowerCase();const challenge=l.includes('just a moment')||l.includes('verify you are human')||l.includes('performing security verification')||l.includes('checking your browser')||l.includes('checking if the site connection is secure')||t.toLowerCase().includes('just a moment')||b.includes('正在验证浏览器')||u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-180);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig,moreLoading:moreLoading})})()";
+                webView.evaluateJavascript(probeScript, value -> {
+                    if (finished[0] || captureInProgress[0] || currentNavigation != navigationId[0]) return;
+                    try {
+                        Object decoded = new JSONTokener(value).nextValue();
+                        JSONObject probe = new JSONObject(String.valueOf(decoded));
+                        if (probe.optBoolean("challenge", true)) {
+                            stablePolls[0] = 0;
+                            lastSignature[0] = "";
+                            status.setText("พบหรือกำลังตรวจสอบ CAPTCHA — หากมีหน้าตรวจสอบ กรุณาทำให้ผ่าน ระบบจะดึงเนื้อหาให้อัตโนมัติ");
+                        } else if (probe.optBoolean("moreLoading") || !probe.optBoolean("ready") || probe.optInt("bodyLength") < 180 || probe.optInt("htmlLength") < 1000) {
+                            stablePolls[0] = 0;
+                            lastSignature[0] = "";
+                            status.setText(expandToc ? "กำลังขยายรายการตอนทั้งหมดและรอให้โหลดครบ…" : "ผ่านหน้าตรวจสอบแล้ว — กำลังรอเนื้อหาบทโหลดให้ครบ…");
+                        } else {
+                            String signature = probe.optString("signature", "");
+                            if (signature.equals(lastSignature[0])) {
+                                stablePolls[0]++;
+                            } else {
+                                lastSignature[0] = signature;
+                                stablePolls[0] = 1;
+                            }
+                            if (stablePolls[0] >= 3) {
+                                status.setText("ตรวจพบหน้าเว็บปกติและเนื้อหานิ่งแล้ว — กำลังดึงเนื้อหาอัตโนมัติ…");
+                                extractPage(call, webView, dialog, status, finished, captureInProgress, handler, pollTask[0]);
+                                return;
+                            }
+                            status.setText("หน้าเว็บปกติ — กำลังตรวจสอบความสมบูรณ์ของเนื้อหา (" + stablePolls[0] + "/3)");
+                        }
+                    } catch (Exception ignored) {
+                        stablePolls[0] = 0;
+                    }
+                    handler.postDelayed(this, 1200);
+                });
+            }
+        };
+
         webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                navigationId[0]++;
+                stablePolls[0] = 0;
+                lastSignature[0] = "";
+                handler.removeCallbacks(pollTask[0]);
+                status.setText("กำลังโหลดหน้าเว็บและตรวจสอบ CAPTCHA…");
+            }
+
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 CookieManager.getInstance().flush();
-                status.setText("หน้าเว็บโหลดแล้ว — ตรวจสอบ CAPTCHA ให้ผ่านและรอจนเห็นเนื้อหาบท จากนั้นกดส่งเนื้อหา");
+                status.setText("กำลังตรวจสอบหน้าเว็บ — หากไม่มี CAPTCHA ระบบจะดึงเนื้อหาให้อัตโนมัติ");
                 sendButton.setEnabled(true);
+                handler.removeCallbacks(pollTask[0]);
+                handler.postDelayed(pollTask[0], 1200);
             }
 
             @Override
@@ -133,6 +196,10 @@ public class BrowserFetchPlugin extends Plugin {
                 call.setKeepAlive(false);
                 call.reject("ปิดหน้าต่างอ่านเว็บก่อนส่งเนื้อหา");
             }
+            handler.removeCallbacks(pollTask[0]);
+            // Android WebView's CookieManager keeps cookies isolated by domain and persists them
+            // in the app's WebView profile. Flush on close as well as after page loads/capture.
+            CookieManager.getInstance().flush();
             webView.destroy();
         });
 
@@ -151,14 +218,21 @@ public class BrowserFetchPlugin extends Plugin {
         WebView webView,
         Dialog dialog,
         TextView status,
-        boolean[] finished
+        boolean[] finished,
+        boolean[] captureInProgress,
+        Handler handler,
+        Runnable pollRunnable
     ) {
-        if (finished[0]) return;
+        if (finished[0] || captureInProgress[0]) return;
+        captureInProgress[0] = true;
         status.setText("กำลังตรวจสอบหน้าเว็บ…");
         String script = "(()=>{const root=document.documentElement?document.documentElement.cloneNode(true):null;if(root)root.querySelectorAll('script,style,noscript').forEach(node=>node.remove());return JSON.stringify({title:document.title||'',url:location.href,html:root?('<!doctype html>'+root.outerHTML):'',bodyText:document.body?document.body.innerText:''})})()";
         webView.evaluateJavascript(script, value -> {
-            if (finished[0] || value == null || "null".equals(value)) {
-                status.setText("ยังอ่านหน้าเว็บไม่ได้ ลองรอให้โหลดเสร็จแล้วกดอีกครั้ง");
+            if (finished[0]) return;
+            if (value == null || "null".equals(value)) {
+                captureInProgress[0] = false;
+                status.setText("ยังอ่านหน้าเว็บไม่ได้ กำลังลองตรวจสอบอีกครั้ง…");
+                handler.postDelayed(pollRunnable, 1200);
                 return;
             }
             try {
@@ -186,11 +260,15 @@ public class BrowserFetchPlugin extends Plugin {
                     || lowerUrl.contains("/cdn-cgi/challenge-platform/");
 
                 if (challenge) {
-                    status.setText("ยังเป็นหน้าตรวจสอบของเว็บไซต์ — กรุณาทำ CAPTCHA ให้ผ่านและรอจนเห็นเนื้อหาบทจริง แล้วค่อยกดส่งอีกครั้ง");
+                    captureInProgress[0] = false;
+                    status.setText("ยังเป็นหน้าตรวจสอบของเว็บไซต์ — กรุณาทำ CAPTCHA ให้ผ่าน ระบบจะลองดึงเนื้อหาให้อัตโนมัติ");
+                    handler.postDelayed(pollRunnable, 1200);
                     return;
                 }
                 if (html.length() < 300 || bodyText.trim().length() < 80) {
-                    status.setText("ยังไม่พบเนื้อหาบทที่สมบูรณ์ ลองรอให้หน้าเว็บโหลดเพิ่มแล้วกดส่งอีกครั้ง");
+                    captureInProgress[0] = false;
+                    status.setText("ยังไม่พบเนื้อหาบทที่สมบูรณ์ ลองรอให้หน้าเว็บโหลดเพิ่ม หรือกดส่งเนื้อหาเอง");
+                    handler.postDelayed(pollRunnable, 1200);
                     return;
                 }
 
@@ -204,7 +282,9 @@ public class BrowserFetchPlugin extends Plugin {
                 call.resolve(result);
                 dialog.dismiss();
             } catch (Exception error) {
-                status.setText("อ่านหน้าเว็บไม่สำเร็จ — ลองกดส่งเนื้อหาอีกครั้ง");
+                captureInProgress[0] = false;
+                status.setText("อ่านหน้าเว็บไม่สำเร็จ — ระบบจะลองอีกครั้ง หรือกดส่งเนื้อหาเองได้");
+                handler.postDelayed(pollRunnable, 1200);
             }
         });
     }

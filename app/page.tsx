@@ -34,14 +34,14 @@ function ProjectCard({
   const translatedPct = total ? Math.round((translated / total) * 100) : 0;
 
   return (
-    <article className="group rounded-2xl border border-line bg-card shadow-sm hover:-translate-y-0.5 hover:shadow-lg hover:border-accent-line transition-all duration-200">
+    <article className="group min-w-0 overflow-hidden rounded-2xl border border-line bg-card shadow-sm hover:-translate-y-0.5 hover:shadow-lg hover:border-accent-line transition-all duration-200">
       <div className="p-4 sm:p-5 space-y-4">
         <div className="flex items-start gap-3">
           <span className="h-10 w-10 rounded-xl bg-accent-soft text-accent-soft-fg inline-flex items-center justify-center shrink-0">
             <BookOpen className="w-4.5 h-4.5" />
           </span>
           <a href={`/project/${project.id}`} className="flex-1 min-w-0 block cursor-pointer">
-            <span className="block font-semibold text-sm leading-snug truncate group-hover:text-accent-soft-fg transition-colors">{project.title}</span>
+            <span className="block min-w-0 font-semibold text-sm leading-snug line-clamp-2 break-words group-hover:text-accent-soft-fg transition-colors" title={project.title}>{project.title}</span>
             <span className="text-xs text-muted mt-1 inline-flex items-center gap-1 max-w-full">
               <Globe className="w-3 h-3 shrink-0" />
               <span className="truncate">{project.host}</span>
@@ -240,7 +240,7 @@ export default function ProjectsHomePage() {
       });
       let data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const nativePage = await fetchWithNativeBrowser(url);
+        const nativePage = await fetchWithNativeBrowser(url, { expandToc: true });
         if (!nativePage) throw new Error(data.error || 'เกิดข้อผิดพลาด');
         usedNativeBrowser = true;
         const fallbackRes = await fetch('/api/toc', {
@@ -255,7 +255,7 @@ export default function ProjectsHomePage() {
       // A server response may be successful but contain only a JS shell with no TOC.
       // Give the native WebView one chance before treating it as a chapter page.
       if (data.type !== 'directory' && !usedNativeBrowser) {
-        const nativePage = await fetchWithNativeBrowser(url);
+        const nativePage = await fetchWithNativeBrowser(url, { expandToc: true });
         if (nativePage) {
           usedNativeBrowser = true;
           const fallbackRes = await fetch('/api/toc', {

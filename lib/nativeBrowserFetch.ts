@@ -31,10 +31,10 @@ export function rememberNativeBrowser(projectId: string): void {
  * Opens the source page in the app-private Android WebView.
  * Returns null on web/PWA so callers can preserve the server-only flow.
  */
-export async function fetchWithNativeBrowser(url: string): Promise<NativeBrowserPage | null> {
+export async function fetchWithNativeBrowser(url: string, options: { expandToc?: boolean } = {}): Promise<NativeBrowserPage | null> {
   if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') {
     return null;
   }
 
-  return BrowserFetch.open({ url });
+  return BrowserFetch.open({ url, expandToc: options.expandToc ?? false });
 }

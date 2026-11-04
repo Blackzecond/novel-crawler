@@ -280,28 +280,26 @@ export default function ReaderPage() {
         return fallbackData;
       };
 
-      let data = !forceRender && activeProjectId && prefersNativeBrowser(activeProjectId)
-        ? await parseNativePage()
-        : null;
-      if (!data) {
-        try {
-          const res = await fetch('/api/parse', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: targetUrl, forceRender }),
-          });
-          const contentType = res.headers.get('content-type');
-          if (!contentType || !contentType.includes('application/json')) {
-            const rawText = await res.text().catch(() => '');
-            throw new Error(`Server ตอบกลับผิดพลาด (${res.status}): ${rawText.slice(0, 100)}...`);
-          }
-          data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
-        } catch (serverError) {
-          const nativeData = await parseNativePage();
-          if (!nativeData) throw serverError;
-          data = nativeData;
+      // Fast path: try the server directly on every chapter. Use the persisted WebView
+      // session only when the server reports a challenge or cannot retrieve the page.
+      let data = null;
+      try {
+        const res = await fetch('/api/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: targetUrl, forceRender, fastOnly: !forceRender && !!activeProjectId && prefersNativeBrowser(activeProjectId) }),
+        });
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const rawText = await res.text().catch(() => '');
+          throw new Error(`Server ตอบกลับผิดพลาด (${res.status}): ${rawText.slice(0, 100)}...`);
         }
+        data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+      } catch (serverError) {
+        const nativeData = await parseNativePage();
+        if (!nativeData) throw serverError;
+        data = nativeData;
       }
       let articleData: ArticleData = data;
       if (activeProjectId && project && chapter) {

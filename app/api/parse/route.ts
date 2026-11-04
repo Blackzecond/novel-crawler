@@ -36,12 +36,13 @@ export async function POST(req: NextRequest) {
 
     const targetUrl = body.url;
     const forceRender = body.forceRender || false;
+    const fastOnly = body.fastOnly === true && !forceRender;
     const suppliedHtml = typeof body.html === 'string' ? body.html : '';
     if (new TextEncoder().encode(suppliedHtml).byteLength > 3_500_000) {
       return NextResponse.json({ error: 'หน้าเว็บมีขนาดใหญ่เกินไป' }, { status: 413 });
     }
 
-    const html = suppliedHtml || await fetchArticleHtml(targetUrl, forceRender);
+    const html = suppliedHtml || await fetchArticleHtml(targetUrl, forceRender, fastOnly);
     const pageUrl = typeof body.pageUrl === 'string' ? body.pageUrl : targetUrl;
 
     if (html && isChallengePage(html)) {
