@@ -240,7 +240,7 @@ export default function ProjectsHomePage() {
       });
       let data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const nativePage = await fetchWithNativeBrowser(url);
+        const nativePage = await fetchWithNativeBrowser(url, { expandToc: true });
         if (!nativePage) throw new Error(data.error || 'เกิดข้อผิดพลาด');
         usedNativeBrowser = true;
         const fallbackRes = await fetch('/api/toc', {
@@ -255,7 +255,7 @@ export default function ProjectsHomePage() {
       // A server response may be successful but contain only a JS shell with no TOC.
       // Give the native WebView one chance before treating it as a chapter page.
       if (data.type !== 'directory' && !usedNativeBrowser) {
-        const nativePage = await fetchWithNativeBrowser(url);
+        const nativePage = await fetchWithNativeBrowser(url, { expandToc: true });
         if (nativePage) {
           usedNativeBrowser = true;
           const fallbackRes = await fetch('/api/toc', {
