@@ -179,7 +179,16 @@ export default function ProjectClient({ id }: { id: string }) {
         return fallbackData;
       };
 
-      let data = prefersNativeBrowser(id) ? await parseNativePage() : null;
+      let data = null;
+      // Reuse the WebView's persisted per-domain cookies when this project has used it successfully.
+      // If the session expired, fall back to server fetch before opening WebView again.
+      if (!forceRender && prefersNativeBrowser(id)) {
+        try {
+          data = await parseNativePage();
+        } catch (nativeError) {
+          console.warn('Saved WebView strategy failed; retrying server fetch:', nativeError);
+        }
+      }
       if (!data) {
         const res = await fetch('/api/parse', {
           method: 'POST',
