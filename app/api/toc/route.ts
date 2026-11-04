@@ -23,9 +23,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'หน้าเว็บมีขนาดใหญ่เกินไป' }, { status: 413 });
     }
 
-    const targetHost = new URL(targetUrl).hostname;
+    const targetHost = new URL(targetUrl).hostname.replace(/^www\\d?\\./, '');
     const pages = suppliedPages.filter((page: any) => {
-      try { return new URL(page.url).hostname === targetHost; } catch { return false; }
+      try {
+        const pageHost = new URL(page.url).hostname.replace(/^www\\d?\\./, '');
+        return pageHost === targetHost || pageHost.endsWith('.' + targetHost) || targetHost.endsWith('.' + pageHost);
+      } catch { return false; }
     });
     const html = pages.length ? pages[0].html : (suppliedHtml || await fetchArticleHtml(targetUrl, forceRender));
     const pageUrl = pages.length ? pages[0].url : (typeof body.pageUrl === 'string' ? body.pageUrl : targetUrl);
