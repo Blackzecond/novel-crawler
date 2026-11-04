@@ -5,7 +5,7 @@ export interface BrowserFetchResult {
 }
 
 export interface BrowserFetchPlugin {
-  open(options: { url: string }): Promise<BrowserFetchResult>;
+  open(options: { url: string; expandToc?: boolean }): Promise<BrowserFetchResult>;
 }
 
 export declare const BrowserFetch: BrowserFetchPlugin;
