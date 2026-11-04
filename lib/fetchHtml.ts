@@ -47,7 +47,7 @@ function isChallengeResponse(response: Response, html: string): boolean {
     || (statusLooksBlocked && hasCloudflareRay);
 }
 
-export async function fetchArticleHtml(targetUrl: string, forceRender = false): Promise<string> {
+export async function fetchArticleHtml(targetUrl: string, forceRender = false, fastOnly = false): Promise<string> {
   const apiKey = process.env.SCRAPER_API_KEY || '';
   const sessionId = getDomainSessionId(targetUrl);
   const hostname = (() => { try { return new URL(targetUrl).hostname; } catch { return 'invalid-url'; } })();
@@ -78,7 +78,7 @@ export async function fetchArticleHtml(targetUrl: string, forceRender = false): 
     }
   }
 
-  // 2) Fast proxy: if it also returns a challenge, skip browserless rendering.
+  // A project with a previously successful WebView session uses a short direct-only probe.\n  // If direct access is unavailable, the caller immediately falls back to that WebView session.\n  if (!html && fastOnly) {\n    console.info('[fetchArticleHtml]', { host: hostname, totalMs: Date.now() - startedAt, stages: timings, result: 'fast-miss', forceRender });\n    return '';\n  }\n\n  // 2) Fast proxy: if it also returns a challenge, skip browserless rendering.
   if (!html && !forceRender && apiKey) {
     const stageStartedAt = Date.now();
     try {
