@@ -78,7 +78,14 @@ export async function fetchArticleHtml(targetUrl: string, forceRender = false, f
     }
   }
 
-  // A project with a previously successful WebView session uses a short direct-only probe.\n  // If direct access is unavailable, the caller immediately falls back to that WebView session.\n  if (!html && fastOnly) {\n    console.info('[fetchArticleHtml]', { host: hostname, totalMs: Date.now() - startedAt, stages: timings, result: 'fast-miss', forceRender });\n    return '';\n  }\n\n  // 2) Fast proxy: if it also returns a challenge, skip browserless rendering.
+  // A project with a previously successful WebView session uses a short direct-only probe.
+  // If direct access is unavailable, the caller immediately falls back to that WebView session.
+  if (!html && fastOnly) {
+    console.info('[fetchArticleHtml]', { host: hostname, totalMs: Date.now() - startedAt, stages: timings, result: 'fast-miss', forceRender });
+    return '';
+  }
+
+  // 2) Fast proxy: if it also returns a challenge, skip browserless rendering.
   if (!html && !forceRender && apiKey) {
     const stageStartedAt = Date.now();
     try {
