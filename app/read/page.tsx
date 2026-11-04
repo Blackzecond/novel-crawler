@@ -280,9 +280,16 @@ export default function ReaderPage() {
         return fallbackData;
       };
 
-      let data = !forceRender && activeProjectId && prefersNativeBrowser(activeProjectId)
-        ? await parseNativePage()
-        : null;
+      let data = null;
+      // If this project previously succeeded through WebView, try its persisted site session first.
+      // A stale/expired session must not prevent the normal server strategies from running.
+      if (!forceRender && activeProjectId && prefersNativeBrowser(activeProjectId)) {
+        try {
+          data = await parseNativePage();
+        } catch (nativeError) {
+          console.warn('Saved WebView strategy failed; retrying server fetch:', nativeError);
+        }
+      }
       if (!data) {
         try {
           const res = await fetch('/api/parse', {
