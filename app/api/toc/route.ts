@@ -14,14 +14,23 @@ export async function POST(req: NextRequest) {
     const targetUrl: string = body.url;
     const forceRender: boolean = body.forceRender || false;
     const suppliedHtml = typeof body.html === 'string' ? body.html : '';
-    if (new TextEncoder().encode(suppliedHtml).byteLength > 3_500_000) {
+    const suppliedPages = Array.isArray(body.pages) ? body.pages.slice(0, 50).filter((page: any) =>
+      page && typeof page.html === 'string' && typeof page.url === 'string'
+    ) : [];
+    const encoder = new TextEncoder();
+    const totalPageBytes = suppliedPages.reduce((sum: number, page: any) => sum + encoder.encode(page.html).byteLength, 0);
+    if (encoder.encode(suppliedHtml).byteLength > 3_500_000 || totalPageBytes > 12_000_000) {
       return NextResponse.json({ error: 'หน้าเว็บมีขนาดใหญ่เกินไป' }, { status: 413 });
     }
 
-    const html = suppliedHtml || await fetchArticleHtml(targetUrl, forceRender);
-    const pageUrl = typeof body.pageUrl === 'string' ? body.pageUrl : targetUrl;
+    const targetHost = new URL(targetUrl).hostname;
+    const pages = suppliedPages.filter((page: any) => {
+      try { return new URL(page.url).hostname === targetHost; } catch { return false; }
+    });
+    const html = pages.length ? pages[0].html : (suppliedHtml || await fetchArticleHtml(targetUrl, forceRender));
+    const pageUrl = pages.length ? pages[0].url : (typeof body.pageUrl === 'string' ? body.pageUrl : targetUrl);
 
-    if (html && isChallengePage(html)) {
+    if ((pages.length && pages.some((page: any) => isChallengePage(page.html))) || (html && isChallengePage(html))) {
       return NextResponse.json(
         { code: 'WEBVIEW_REQUIRED', error: 'เว็บไซต์กำลังแสดงหน้า Cloudflare/CAPTCHA กรุณายืนยันผ่าน WebView' },
         { status: 428 }
@@ -37,7 +46,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const toc = extractChapterList(html, pageUrl);
+    const pageSources = pages.length ? pages : [{ html, url: pageUrl }];
+    const seenChapterUrls = new Set<string>();
+    const mergedChapters: { url: string; title: string; order: number }[] = [];
+    let novelTitle: string | null = null;
+    for (const page of pageSources) {
+      const result = extractChapterList(page.html, page.url, pageSources.length > 1 ? 2 : 6);
+      novelTitle = novelTitle || result.novelTitle;
+      for (const chapter of result.chapters) {
+        if (seenChapterUrls.has(chapter.url)) continue;
+        seenChapterUrls.add(chapter.url);
+        mergedChapters.push({ ...chapter, order: mergedChapters.length });
+      }
+    }
+    const toc = { novelTitle, chapters: mergedChapters };
 
     if (toc.chapters.length >= 6) {
       return NextResponse.json({
