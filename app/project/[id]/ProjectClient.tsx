@@ -14,7 +14,7 @@ import {
 } from '@/lib/ai';
 import { loadCloudAiSettings, saveCloudAiSettings } from '@/lib/cloudPreferences';
 import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
-import { fetchWithNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
+import { fetchWithNativeBrowser, prefersNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -184,7 +184,7 @@ export default function ProjectClient({ id }: { id: string }) {
       const res = await fetch('/api/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: chapter.url, forceRender }),
+        body: JSON.stringify({ url: chapter.url, forceRender, fastOnly: !forceRender && prefersNativeBrowser(id) }),
       });
       let data = await res.json().catch(() => ({}));
       if (!res.ok) {
