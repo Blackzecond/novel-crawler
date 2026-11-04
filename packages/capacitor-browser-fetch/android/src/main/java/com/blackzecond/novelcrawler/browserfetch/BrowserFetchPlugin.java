@@ -148,7 +148,7 @@ public class BrowserFetchPlugin extends Plugin {
                             }
                             if (stablePolls[0] >= 3) {
                                 status.setText("ตรวจพบหน้าเว็บปกติและเนื้อหานิ่งแล้ว — กำลังดึงเนื้อหาอัตโนมัติ…");
-                                extractPage(call, webView, dialog, status, finished, captureInProgress);
+                                extractPage(call, webView, dialog, status, finished, captureInProgress, handler, pollTask[0]);
                                 return;
                             }
                             status.setText("หน้าเว็บปกติ — กำลังตรวจสอบความสมบูรณ์ของเนื้อหา (" + stablePolls[0] + "/3)");
