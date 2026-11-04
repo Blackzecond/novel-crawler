@@ -14,7 +14,7 @@ import {
 } from '@/lib/ai';
 import { loadCloudAiSettings, saveCloudAiSettings } from '@/lib/cloudPreferences';
 import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
-import { fetchWithNativeBrowser, prefersNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
+import { fetchWithNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -179,27 +179,17 @@ export default function ProjectClient({ id }: { id: string }) {
         return fallbackData;
       };
 
-      let data = null;
-      // Reuse the WebView's persisted per-domain cookies when this project has used it successfully.
-      // If the session expired, fall back to server fetch before opening WebView again.
-      if (!forceRender && prefersNativeBrowser(id)) {
-        try {
-          data = await parseNativePage();
-        } catch (nativeError) {
-          console.warn('Saved WebView strategy failed; retrying server fetch:', nativeError);
-        }
-      }
-      if (!data) {
-        const res = await fetch('/api/parse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: chapter.url, forceRender }),
-        });
-        data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          data = await parseNativePage();
-          if (!data) throw new Error('ไม่สามารถดึงข้อมูลได้ และอุปกรณ์นี้ไม่รองรับ WebView สำรอง');
-        }
+      // Fast path: always try the server fetch first. Only open WebView when the
+      // response indicates a challenge or the server cannot retrieve the chapter.
+      const res = await fetch('/api/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: chapter.url, forceRender }),
+      });
+      let data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        data = await parseNativePage();
+        if (!data) throw new Error(data?.error || 'ไม่สามารถดึงข้อมูลได้ และอุปกรณ์นี้ไม่รองรับ WebView สำรอง');
       }
 
       const updated = await getStore().updateChapter(id, chapter.id, {
