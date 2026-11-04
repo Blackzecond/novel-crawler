@@ -5,6 +5,7 @@ export interface NativeBrowserPage {
   url: string;
   title: string;
   html: string;
+  pages?: { url: string; title: string; html: string }[];
 }
 
 const strategyKey = (projectId: string) => `novel-fetch-strategy-v1:${projectId}`;
