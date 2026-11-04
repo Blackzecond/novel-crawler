@@ -53,6 +53,12 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
+      - name: Restore stable debug signing key
+        run: |
+          mkdir -p "$HOME/.android"
+          base64 --decode .github/debug-signing/debug.keystore.b64 > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug --stacktrace
