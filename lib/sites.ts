@@ -28,7 +28,7 @@ function sameSite(abs: URL, base: URL): boolean {
   return a === b || a.endsWith('.' + b) || b.endsWith('.' + a);
 }
 
-export function extractChapterList(html: string, baseUrl: string): TocResult {
+export function extractChapterList(html: string, baseUrl: string, minGroupSize = 6): TocResult {
   const empty: TocResult = { novelTitle: null, chapters: [] };
   let base: URL;
   try {
@@ -76,9 +76,9 @@ export function extractChapterList(html: string, baseUrl: string): TocResult {
   // เลือกกลุ่มที่คะแนนดีสุด: ใหญ่ที่สุด + เหลื่อมเพราะ ratio ชื่อบทแบบจีน
   let best: { items: { url: string; title: string }[]; score: number } | null = null;
   for (const [, items] of groups) {
-    if (items.length < 6) continue;
+    if (items.length < minGroupSize) continue;
     const uniqueUrls = new Set(items.map((i) => i.url)).size;
-    if (uniqueUrls < Math.max(5, Math.floor(items.length * 0.7))) continue;
+    if (uniqueUrls < Math.max(minGroupSize, Math.floor(items.length * 0.7))) continue;
     const ratio = items.filter((i) => CHAPTER_TITLE_RE.test(i.title)).length / items.length;
     const score = items.length * (0.5 + ratio);
     if (!best || score > best.score) best = { items, score };

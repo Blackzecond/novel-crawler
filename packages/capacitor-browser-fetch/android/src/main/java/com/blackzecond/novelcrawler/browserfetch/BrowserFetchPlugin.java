@@ -22,9 +22,12 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import org.json.JSONObject;
+import org.json.JSONArray;
 import org.json.JSONTokener;
 
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 
 @CapacitorPlugin(name = "BrowserFetch")
 public class BrowserFetchPlugin extends Plugin {
@@ -77,6 +80,9 @@ public class BrowserFetchPlugin extends Plugin {
         final String[] lastSignature = { "" };
         final int[] stablePolls = { 0 };
         final int[] navigationId = { 0 };
+        final JSONArray capturedTocPages = new JSONArray();
+        final Set<String> visitedTocPages = new HashSet<>();
+        visitedTocPages.add(targetUrl);
         final Runnable[] pollTask = { null };
 
         LinearLayout actions = new LinearLayout(getActivity());
@@ -110,7 +116,7 @@ public class BrowserFetchPlugin extends Plugin {
             window.setBackgroundDrawableResource(android.R.color.white);
         }
 
-        sendButton.setOnClickListener(v -> extractPage(call, webView, dialog, status, finished, captureInProgress, handler, pollTask[0]));
+        sendButton.setOnClickListener(v -> extractPage(call, webView, dialog, status, finished, captureInProgress, handler, pollTask[0], expandToc, capturedTocPages, visitedTocPages));
         closeButton.setOnClickListener(v -> {
             if (!finished[0]) {
                 finished[0] = true;
@@ -149,7 +155,7 @@ public class BrowserFetchPlugin extends Plugin {
                             }
                             if (stablePolls[0] >= 3) {
                                 status.setText("ตรวจพบหน้าเว็บปกติและเนื้อหานิ่งแล้ว — กำลังดึงเนื้อหาอัตโนมัติ…");
-                                extractPage(call, webView, dialog, status, finished, captureInProgress, handler, pollTask[0]);
+                                extractPage(call, webView, dialog, status, finished, captureInProgress, handler, pollTask[0], expandToc, capturedTocPages, visitedTocPages);
                                 return;
                             }
                             status.setText("หน้าเว็บปกติ — กำลังตรวจสอบความสมบูรณ์ของเนื้อหา (" + stablePolls[0] + "/3)");
@@ -221,12 +227,15 @@ public class BrowserFetchPlugin extends Plugin {
         boolean[] finished,
         boolean[] captureInProgress,
         Handler handler,
-        Runnable pollRunnable
+        Runnable pollRunnable,
+        boolean expandToc,
+        JSONArray capturedTocPages,
+        Set<String> visitedTocPages
     ) {
         if (finished[0] || captureInProgress[0]) return;
         captureInProgress[0] = true;
         status.setText("กำลังตรวจสอบหน้าเว็บ…");
-        String script = "(()=>{const root=document.documentElement?document.documentElement.cloneNode(true):null;if(root)root.querySelectorAll('script,style,noscript').forEach(node=>node.remove());return JSON.stringify({title:document.title||'',url:location.href,html:root?('<!doctype html>'+root.outerHTML):'',bodyText:document.body?document.body.innerText:''})})()";
+        String script = "(()=>{const root=document.documentElement?document.documentElement.cloneNode(true):null;if(root)root.querySelectorAll('script,style,noscript').forEach(node=>node.remove());let nextUrl='';if("+expandToc+"){const norm=s=>(s||'').replace(/\\s+/g,'').trim().toLowerCase();const pagerSelectors='[class*=pagination],[id*=pagination],[class*=pager],[id*=pager],[class*=pages],[id*=pages],[class*=page-list],[id*=page-list]';const pagers=[...document.querySelectorAll(pagerSelectors)];for(const box of pagers){const current=box.querySelector('.active,.current,.on,[aria-current=page]');if(current){let sibling=current.nextElementSibling;while(sibling&&!sibling.querySelector('a')&&sibling.tagName!=='A')sibling=sibling.nextElementSibling;const a=sibling?(sibling.matches('a')?sibling:sibling.querySelector('a')):null;if(a&&a.href){nextUrl=a.href;break;}}}if(!nextUrl){const links=[...document.querySelectorAll('a[href]')];const a=links.find(el=>{const t=norm(el.innerText||el.textContent);const rel=norm(el.getAttribute('rel'));const inPager=!!el.closest(pagerSelectors);return rel==='next'||(inPager&&/^(下一页|下页|下一頁|後頁|后页|next|›|»|>)$/.test(t));});if(a)nextUrl=a.href;}if(nextUrl){try{const n=new URL(nextUrl,location.href);if(n.origin!==location.origin||n.href===location.href)nextUrl='';else nextUrl=n.href;}catch(e){nextUrl='';}}}return JSON.stringify({title:document.title||'',url:location.href,html:root?('<!doctype html>'+root.outerHTML):'',bodyText:document.body?document.body.innerText:'',nextUrl:nextUrl})})()";
         webView.evaluateJavascript(script, value -> {
             if (finished[0]) return;
             if (value == null || "null".equals(value)) {
@@ -242,6 +251,7 @@ public class BrowserFetchPlugin extends Plugin {
                 String bodyText = page.optString("bodyText", "");
                 String title = page.optString("title", "");
                 String pageUrl = page.optString("url", "");
+                String nextUrl = page.optString("nextUrl", "");
                 String lowerText = bodyText.toLowerCase(Locale.ROOT);
                 String lowerHtml = html.toLowerCase(Locale.ROOT);
                 String lowerTitle = title.toLowerCase(Locale.ROOT);
@@ -273,12 +283,30 @@ public class BrowserFetchPlugin extends Plugin {
                 }
 
                 CookieManager.getInstance().flush();
+                if (expandToc) {
+                    capturedTocPages.put(new JSONObject().put("url", pageUrl).put("title", title).put("html", html));
+                    if (!nextUrl.isEmpty() && !visitedTocPages.contains(nextUrl) && capturedTocPages.length() < 50) {
+                        visitedTocPages.add(nextUrl);
+                        captureInProgress[0] = false;
+                        status.setText("เก็บสารบัญแล้ว " + capturedTocPages.length() + " หน้า — กำลังเปิดหน้าถัดไปอัตโนมัติ…");
+                        webView.loadUrl(nextUrl);
+                        return;
+                    }
+                }
                 finished[0] = true;
                 call.setKeepAlive(false);
                 JSObject result = new JSObject();
-                result.put("url", pageUrl);
-                result.put("title", title);
-                result.put("html", html);
+                if (expandToc && capturedTocPages.length() > 0) {
+                    JSONObject firstPage = capturedTocPages.optJSONObject(0);
+                    result.put("url", firstPage != null ? firstPage.optString("url", pageUrl) : pageUrl);
+                    result.put("title", firstPage != null ? firstPage.optString("title", title) : title);
+                    result.put("html", firstPage != null ? firstPage.optString("html", html) : html);
+                    result.put("pages", capturedTocPages);
+                } else {
+                    result.put("url", pageUrl);
+                    result.put("title", title);
+                    result.put("html", html);
+                }
                 call.resolve(result);
                 dialog.dismiss();
             } catch (Exception error) {
