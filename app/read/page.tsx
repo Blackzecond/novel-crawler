@@ -17,7 +17,7 @@ import {
   loadCloudReadingHistory, saveCloudReadingHistory,
 } from '@/lib/cloudPreferences';
 import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
-import { fetchWithNativeBrowser, prefersNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
+import { fetchWithNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 
 interface ArticleData {
   title: string;
@@ -280,35 +280,26 @@ export default function ReaderPage() {
         return fallbackData;
       };
 
+      // Fast path: try the server directly on every chapter. Use the persisted WebView
+      // session only when the server reports a challenge or cannot retrieve the page.
       let data = null;
-      // If this project previously succeeded through WebView, try its persisted site session first.
-      // A stale/expired session must not prevent the normal server strategies from running.
-      if (!forceRender && activeProjectId && prefersNativeBrowser(activeProjectId)) {
-        try {
-          data = await parseNativePage();
-        } catch (nativeError) {
-          console.warn('Saved WebView strategy failed; retrying server fetch:', nativeError);
+      try {
+        const res = await fetch('/api/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: targetUrl, forceRender }),
+        });
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const rawText = await res.text().catch(() => '');
+          throw new Error(`Server ตอบกลับผิดพลาด (${res.status}): ${rawText.slice(0, 100)}...`);
         }
-      }
-      if (!data) {
-        try {
-          const res = await fetch('/api/parse', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: targetUrl, forceRender }),
-          });
-          const contentType = res.headers.get('content-type');
-          if (!contentType || !contentType.includes('application/json')) {
-            const rawText = await res.text().catch(() => '');
-            throw new Error(`Server ตอบกลับผิดพลาด (${res.status}): ${rawText.slice(0, 100)}...`);
-          }
-          data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
-        } catch (serverError) {
-          const nativeData = await parseNativePage();
-          if (!nativeData) throw serverError;
-          data = nativeData;
-        }
+        data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+      } catch (serverError) {
+        const nativeData = await parseNativePage();
+        if (!nativeData) throw serverError;
+        data = nativeData;
       }
       let articleData: ArticleData = data;
       if (activeProjectId && project && chapter) {
