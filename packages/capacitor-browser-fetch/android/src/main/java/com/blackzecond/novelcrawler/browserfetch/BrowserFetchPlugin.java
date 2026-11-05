@@ -153,17 +153,17 @@ public class BrowserFetchPlugin extends Plugin {
                                 lastSignature[0] = signature;
                                 stablePolls[0] = 1;
                             }
-                            if (stablePolls[0] >= 3) {
+                            if (stablePolls[0] >= (expandToc ? 3 : 1)) {
                                 status.setText("ตรวจพบหน้าเว็บปกติและเนื้อหานิ่งแล้ว — กำลังดึงเนื้อหาอัตโนมัติ…");
                                 extractPage(call, webView, dialog, status, finished, captureInProgress, handler, pollTask[0], expandToc, capturedTocPages, visitedTocPages);
                                 return;
                             }
-                            status.setText("หน้าเว็บปกติ — กำลังตรวจสอบความสมบูรณ์ของเนื้อหา (" + stablePolls[0] + "/3)");
+                            status.setText(expandToc ? "หน้าเว็บปกติ — กำลังตรวจสอบความสมบูรณ์ของสารบัญ (" + stablePolls[0] + "/3)" : "หน้าเว็บปกติ — กำลังเตรียมดึงเนื้อหา…");
                         }
                     } catch (Exception ignored) {
                         stablePolls[0] = 0;
                     }
-                    handler.postDelayed(this, 1200);
+                    handler.postDelayed(this, expandToc ? 1200 : 350);
                 });
             }
         };
@@ -186,7 +186,7 @@ public class BrowserFetchPlugin extends Plugin {
                 status.setText("กำลังตรวจสอบหน้าเว็บ — หากไม่มี CAPTCHA ระบบจะดึงเนื้อหาให้อัตโนมัติ");
                 sendButton.setEnabled(true);
                 handler.removeCallbacks(pollTask[0]);
-                handler.postDelayed(pollTask[0], 1200);
+                handler.postDelayed(pollTask[0], expandToc ? 1200 : 300);
             }
 
             @Override
