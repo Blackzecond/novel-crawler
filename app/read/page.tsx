@@ -403,7 +403,6 @@ export default function ReaderPage() {
         // and will use the normal WebView fallback only when the reader opens that chapter.
         body: JSON.stringify({
           url: targetUrl,
-          fastOnly: !!activeProjectId && prefersNativeBrowser(activeProjectId),
         }),
       });
       if (!res.ok) return;
