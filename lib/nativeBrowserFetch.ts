@@ -39,3 +39,16 @@ export async function fetchWithNativeBrowser(url: string, options: { expandToc?:
 
   return BrowserFetch.open({ url, expandToc: options.expandToc ?? false });
 }
+
+
+/**
+ * Fetches a chapter through a hidden Android WebView using the same
+ * app-private CookieManager session as the interactive browser.
+ * Returns null on web/PWA; rejects when the page cannot be captured safely.
+ */
+export async function prefetchWithNativeBrowser(url: string): Promise<NativeBrowserPage | null> {
+  if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') {
+    return null;
+  }
+  return BrowserFetch.prefetch({ url });
+}
