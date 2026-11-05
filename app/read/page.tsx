@@ -17,7 +17,7 @@ import {
   loadCloudReadingHistory, saveCloudReadingHistory,
 } from '@/lib/cloudPreferences';
 import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
-import { fetchWithNativeBrowser, prefersNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
+import { fetchWithNativeBrowser, prefetchWithNativeBrowser, prefersNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 
 interface ArticleData {
   title: string;
@@ -396,20 +396,51 @@ export default function ReaderPage() {
 
     prefetchingRef.current.add(cacheKey);
     try {
-      const res = await fetch('/api/parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // Background prefetch must stay server-only: CAPTCHA/fetch failures are skipped
-        // and will use the normal WebView fallback only when the reader opens that chapter.
-        body: JSON.stringify({
-          url: targetUrl,
-        }),
-      });
-      if (!res.ok) return;
-      const contentType = res.headers.get('content-type');
-      if (!contentType?.includes('application/json')) return;
-      const data = await res.json();
-      if (!data?.content || !data?.textContent) return;
+      let data: any = null;
+      let serverError: unknown = null;
+      try {
+        const res = await fetch('/api/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: targetUrl }),
+        });
+        const contentType = res.headers.get('content-type');
+        if (!res.ok || !contentType?.includes('application/json')) {
+          const detail = contentType?.includes('application/json')
+            ? (await res.json().catch(() => ({}))).error
+            : `HTTP ${res.status}`;
+          throw new Error(detail || `Server fetch failed: ${res.status}`);
+        }
+        data = await res.json();
+        if (!data?.content || !data?.textContent) {
+          throw new Error('Server returned an empty chapter');
+        }
+      } catch (error) {
+        serverError = error;
+      }
+
+      // If server fetch is blocked (e.g. Cloudflare on twkan), use the
+      // app's existing WebView session in a hidden, non-interactive WebView.
+      if (!data) {
+        const nativePage = await prefetchWithNativeBrowser(targetUrl);
+        if (!nativePage) {
+          if (serverError) console.info('Next chapter prefetch skipped:', serverError);
+          return;
+        }
+        const nativeRes = await fetch('/api/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: targetUrl,
+            pageUrl: nativePage.url,
+            html: nativePage.html,
+          }),
+        });
+        if (!nativeRes.ok || !nativeRes.headers.get('content-type')?.includes('application/json')) return;
+        data = await nativeRes.json();
+        if (!data?.content || !data?.textContent) return;
+        if (activeProjectId) rememberNativeBrowser(activeProjectId);
+      }
 
       const chapterIndex = project?.chapters.findIndex((item) => item.url === targetUrl) ?? -1;
       const prefetchedArticle: ArticleData = {
