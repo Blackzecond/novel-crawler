@@ -72,6 +72,8 @@ public class BrowserFetchPlugin extends Plugin {
         ViewGroup host = (ViewGroup) content;
         WebView webView = new WebView(getActivity());
         webView.setAlpha(0f);
+        webView.setClickable(false);
+        webView.setFocusable(false);
         webView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         webView.setBackgroundColor(Color.TRANSPARENT);
         webView.setLayoutParams(new ViewGroup.LayoutParams(1, 1));
