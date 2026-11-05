@@ -44,6 +44,7 @@ export default function ReaderPage() {
   const [showTranslation, setShowTranslation] = useState(false);
   const [readerProject, setReaderProject] = useState<NovelProject | null>(null);
   const chapterCacheRef = useRef<Map<string, ArticleData>>(new Map());
+  const prefetchingRef = useRef<Set<string>>(new Set());
   const [showToc, setShowToc] = useState(false);
   const [showGlossary, setShowGlossary] = useState(false);
   const [glossaryNotice, setGlossaryNotice] = useState('');
@@ -375,6 +376,83 @@ export default function ReaderPage() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) { setError(err.message); } finally { setLoading(false); }
   };
+
+  // Quietly fetch one chapter ahead. This path never opens WebView or blocks the reader.
+  const prefetchNextChapter = async (
+    targetUrl: string,
+    activeProjectId: string | null,
+    projectSnapshot: NovelProject | null,
+  ) => {
+    if (!targetUrl) return;
+    const cacheKey = `${activeProjectId ?? 'standalone'}:${targetUrl}`;
+    if (chapterCacheRef.current.has(cacheKey) || prefetchingRef.current.has(cacheKey)) return;
+
+    let project = projectSnapshot;
+    if (activeProjectId && (!project || project.id !== activeProjectId)) {
+      try { project = await getStore().getProject(activeProjectId); } catch { return; }
+    }
+    const chapter = project?.chapters.find((item) => item.url === targetUrl) ?? null;
+    if (chapter && chapter.status !== 'pending') return;
+
+    prefetchingRef.current.add(cacheKey);
+    try {
+      const res = await fetch('/api/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // Background prefetch must stay server-only: CAPTCHA/fetch failures are skipped
+        // and will use the normal WebView fallback only when the reader opens that chapter.
+        body: JSON.stringify({
+          url: targetUrl,
+          fastOnly: !!activeProjectId && prefersNativeBrowser(activeProjectId),
+        }),
+      });
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type');
+      if (!contentType?.includes('application/json')) return;
+      const data = await res.json();
+      if (!data?.content || !data?.textContent) return;
+
+      const chapterIndex = project?.chapters.findIndex((item) => item.url === targetUrl) ?? -1;
+      const prefetchedArticle: ArticleData = {
+        ...data,
+        prevUrl: chapterIndex > 0 ? project!.chapters[chapterIndex - 1].url : data.prevUrl ?? null,
+        nextUrl: chapterIndex >= 0 && chapterIndex < (project?.chapters.length ?? 0) - 1
+          ? project!.chapters[chapterIndex + 1].url
+          : data.nextUrl ?? null,
+      };
+      chapterCacheRef.current.set(cacheKey, prefetchedArticle);
+
+      if (activeProjectId && project && chapter) {
+        const saved = await getStore().updateChapter(activeProjectId, chapter.id, {
+          url: chapter.url,
+          title: chapter.title || data.title,
+          order: chapter.order,
+          originalText: data.textContent,
+          readerContent: data.content,
+          status: 'fetched',
+          error: undefined,
+        });
+        if (saved) {
+          setReaderProject((current) => current?.id === activeProjectId ? {
+            ...current,
+            chapters: current.chapters.map((item) => item.url === targetUrl
+              ? { ...item, id: saved.id, status: saved.status }
+              : item),
+          } : current);
+        }
+      }
+    } catch (prefetchError) {
+      console.info('Next chapter prefetch skipped:', prefetchError);
+    } finally {
+      prefetchingRef.current.delete(cacheKey);
+    }
+  };
+
+  // Start fetching the next chapter as soon as the current chapter is available.
+  useEffect(() => {
+    if (!article?.nextUrl) return;
+    void prefetchNextChapter(article.nextUrl, projectId, readerProject);
+  }, [article?.nextUrl, projectId, readerProject, url]);
 
   const handleTranslate = async () => {
     if (!article || translationBusy || editorBusy) return;
