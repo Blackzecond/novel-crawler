@@ -890,57 +890,7 @@ export default function ReaderPage() {
           )}
         </div>
       )}
-      {showGlossary && projectId && (
-        <section className="border-b border-line bg-card">
-          <div className="mx-auto max-w-3xl space-y-3 px-4 py-4 sm:px-6">
-            <div className="flex items-center justify-between gap-2">
-              <div><h2 className="flex items-center gap-2 text-sm font-bold"><BookMarked className="h-4 w-4 text-accent" />คลังศัพท์ของเรื่องนี้</h2>
-                <p className="mt-1 text-[11px] text-muted">แยกตัวละครกับศัพท์เฉพาะ · แก้ไขแล้วบันทึกลงโปรเจกต์ทันที</p></div>
-              <button type="button" onClick={() => setShowGlossary(false)} aria-label="ปิดคลังศัพท์" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface"><X className="h-4 w-4" /></button>
-            </div>
-            {!readerProject ? <p className="text-xs text-muted">กำลังโหลดคลังศัพท์…</p> : (
-              <>
-                {([
-                  { type: 'character' as const, title: 'ตัวละคร' },
-                  { type: 'term' as const, title: 'ศัพท์เฉพาะ' },
-                ]).map((group) => {
-                  const entries = Object.entries(readerProject.glossary).filter(([source]) =>
-                    (readerProject.glossaryTypes?.[source] === 'character' ? 'character' : 'term') === group.type);
-                  return <div key={group.type} className="space-y-1.5">
-                    <h3 className="text-xs font-semibold">{group.title} ({entries.length})</h3>
-                    {entries.length ? entries.map(([source, translated]) => (
-                      <div key={source} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[minmax(0,0.8fr)_auto_minmax(0,1.5fr)_5rem_auto]">
-                        <span lang="zh-CN" className="col-span-2 min-w-0 truncate text-xs font-medium sm:col-span-1">{source}</span>
-                        <span className="hidden text-muted sm:inline">→</span>
-                        <input key={source + ':' + translated} defaultValue={translated}
-                          aria-label={`คำแปลของ ${source}`}
-                          onBlur={(event) => { if (event.target.value.trim() !== translated) void updateReaderGlossaryTerm(source, event.target.value); }}
-                          className="col-span-3 h-8 min-w-0 w-full rounded-lg border border-line bg-bg px-2 text-xs sm:col-span-1" />
-                        <select value={readerProject.glossaryTypes?.[source] === 'character' ? 'character' : 'term'}
-                          onChange={(event) => void updateReaderGlossaryTerm(source, translated, event.target.value as 'character' | 'term')}
-                          aria-label={`ประเภทของ ${source}`} className="col-start-2 h-8 w-full min-w-0 rounded-lg border border-line bg-bg px-1 text-[11px] sm:col-auto sm:w-20">
-                          <option value="character">ตัวละคร</option><option value="term">ศัพท์</option>
-                        </select>
-                        <button type="button" onClick={() => void updateReaderGlossaryTerm(source, '')} title="ลบศัพท์"
-                          className="col-start-3 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-bg hover:text-danger-fg sm:col-auto"><Trash2 className="h-3.5 w-3.5" /></button>
-                      </div>
-                    )) : <p className="text-[11px] text-muted">ยังไม่มีรายการ</p>}
-                  </div>;
-                })}
-                <div className="grid gap-2 sm:grid-cols-[1fr_1fr_7rem_auto]">
-                  <input value={readerGlossaryZh} onChange={(event) => setReaderGlossaryZh(event.target.value)} placeholder="คำต้นฉบับจีน" className="h-9 min-w-0 rounded-lg border border-line bg-bg px-2 text-xs" />
-                  <input value={readerGlossaryTh} onChange={(event) => setReaderGlossaryTh(event.target.value)} placeholder="คำแปลไทย" className="h-9 min-w-0 rounded-lg border border-line bg-bg px-2 text-xs" />
-                  <select value={readerGlossaryType} onChange={(event) => setReaderGlossaryType(event.target.value as 'character' | 'term')} className="h-9 rounded-lg border border-line bg-bg px-2 text-xs">
-                    <option value="character">ตัวละคร</option><option value="term">ศัพท์เฉพาะ</option>
-                  </select>
-                  <button type="button" disabled={!readerGlossaryZh.trim() || !readerGlossaryTh.trim()} onClick={() => void addReaderGlossaryTerm()}
-                    className="inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-40"><Plus className="h-3.5 w-3.5" />เพิ่ม</button>
-                </div>
-              </>
-            )}
-          </div>
-        </section>
-      )}
+      {showGlossary && projectId && null}
 
       {/* แผงการตั้งค่า — วางนอก <header> เพราะ backdrop-blur ทำ fixed คำนวณผิดที่:
           ยึดขอบล่างจอบนมือถือ, ปรากฏใต้ header มุมขวาบนเดสก์ท็อป */}
