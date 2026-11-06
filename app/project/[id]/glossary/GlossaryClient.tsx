@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowDownUp, ArrowLeft, BookOpen, Download, FileUp, Pencil, Plus, Search, Trash2, Users, X } from 'lucide-react';
+import { ArrowDownUp, ArrowLeft, Download, FileUp, Pencil, Plus, Search, Trash2, X, MapPin, Landmark, Building2, Package, Sparkles, Swords, Boxes } from 'lucide-react';
 import { createId, getStore, NovelProject, WordReplacement } from '@/lib/storage';
 
 type EntryType = 'character' | 'term';
-type Entry = { source: string; translated: string; type: EntryType };
+type Entry = { source: string; translated: string; type: EntryType; gender: string; category: string; notes: string };
+const TERM_CATEGORIES = [{value:'place',label:'สถานที่',icon:MapPin},{value:'sect',label:'สำนัก',icon:Landmark},{value:'organization',label:'องค์กร',icon:Building2},{value:'item',label:'สิ่งของ',icon:Package},{value:'technique',label:'วิชา/เคล็ดวิชา',icon:Swords},{value:'cultivation',label:'การบำเพ็ญ',icon:Sparkles},{value:'other',label:'อื่น ๆ',icon:Boxes}];
 
 function csvCell(value: string) {
   return '"' + value.replace(/"/g, '""') + '"';
@@ -53,6 +54,9 @@ export default function GlossaryPage({ id }: { id: string }) {
     if (!project) return [];
     return Object.entries(project.glossary).map(([source, translated]) => ({
       source, translated, type: project.glossaryTypes?.[source] === 'character' ? 'character' : 'term',
+      gender: project.glossaryMetadata?.[source]?.gender ?? 'unknown',
+      category: project.glossaryMetadata?.[source]?.category ?? 'other',
+      notes: project.glossaryMetadata?.[source]?.notes ?? '',
     }));
   }, [project]);
   const visible = entries.filter(e => tab === 'characters' ? e.type === 'character' : tab === 'terms' ? e.type === 'term' : false)
@@ -64,10 +68,12 @@ export default function GlossaryPage({ id }: { id: string }) {
     try {
       const glossary = { ...project.glossary };
       const glossaryTypes = { ...project.glossaryTypes };
-      if (editing?.source && editing.source !== entry.source) { delete glossary[editing.source]; delete glossaryTypes[editing.source]; }
+      const glossaryMetadata = { ...(project.glossaryMetadata ?? {}) };
+      if (editing?.source && editing.source !== entry.source) { delete glossary[editing.source]; delete glossaryTypes[editing.source]; delete glossaryMetadata[editing.source]; }
       glossary[entry.source.trim()] = entry.translated.trim();
       glossaryTypes[entry.source.trim()] = entry.type;
-      const updated = await getStore().updateProject(id, { glossary, glossaryTypes });
+      glossaryMetadata[entry.source.trim()] = entry.type === 'character' ? { gender: entry.gender || 'unknown', notes: entry.notes } : { category: entry.category || 'other', notes: entry.notes };
+      const updated = await getStore().updateProject(id, { glossary, glossaryTypes, glossaryMetadata });
       if (!updated) throw new Error('บันทึกไม่สำเร็จ');
       setProject(updated); setEditing(null); setNotice('บันทึกแล้ว');
     } catch (e) { setNotice(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ'); }
@@ -115,7 +121,7 @@ export default function GlossaryPage({ id }: { id: string }) {
   };
 
   const exportCsv = () => {
-    const rows = [['source', 'translated', 'type'], ...entries.map(e => [e.source, e.translated, e.type])];
+    const rows = [['source', 'translated', 'type', 'gender', 'category', 'notes'], ...entries.map(e => [e.source, e.translated, e.type, e.gender, e.category, e.notes])];
     const csv = '\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const a = document.createElement('a'); a.href = url; a.download = (project?.title || 'glossary') + '-glossary.csv'; a.click();
@@ -130,6 +136,7 @@ export default function GlossaryPage({ id }: { id: string }) {
       const start = rows[0]?.[0]?.toLowerCase() === 'source' ? 1 : 0;
       const glossary = { ...project.glossary };
       const glossaryTypes = { ...project.glossaryTypes };
+      const glossaryMetadata = { ...(project.glossaryMetadata ?? {}) };
       let added = 0, updatedCount = 0, skipped = 0;
       for (const row of rows.slice(start)) {
         const source = (row[0] || '').trim(), translated = (row[1] || '').trim();
@@ -137,8 +144,9 @@ export default function GlossaryPage({ id }: { id: string }) {
         if (!source) { skipped++; continue; }
         if (glossary[source] === undefined) added++; else updatedCount++;
         glossary[source] = translated; glossaryTypes[source] = type;
+        glossaryMetadata[source] = type === 'character' ? { gender: row[3] || 'unknown', notes: row[5] || '' } : { category: row[4] || 'other', notes: row[5] || '' };
       }
-      const updated = await getStore().updateProject(id, { glossary, glossaryTypes });
+      const updated = await getStore().updateProject(id, { glossary, glossaryTypes, glossaryMetadata });
       if (!updated) throw new Error('นำเข้าไม่สำเร็จ');
       setProject(updated); setSelected([]);
       setNotice('นำเข้าสำเร็จ เพิ่ม ' + added + ' / ปรับปรุง ' + updatedCount + ' / ข้าม ' + skipped + ' รายการ');
@@ -171,7 +179,7 @@ export default function GlossaryPage({ id }: { id: string }) {
     <section className="mx-auto max-w-4xl px-4 pb-12">
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[180px] flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={`Search ${tab}...`} className="h-11 w-full rounded-xl border border-line bg-card pl-10 pr-3 text-sm outline-none"/></div>
-        <button onClick={()=>tab==='replacements' ? setEditingReplacement({id:createId(),variants:[''],replacement:'',useRegex:false}) : setEditing({source:'',translated:'',type:tab==='characters'?'character':'term'})} className="inline-flex h-11 items-center gap-2 rounded-full bg-accent px-5 text-sm font-medium text-accent-fg"><Plus className="h-4 w-4"/> Add</button>
+        <button onClick={()=>tab==='replacements' ? setEditingReplacement({id:createId(),variants:[''],replacement:'',useRegex:false}) : setEditing({source:'',translated:'',type:tab==='characters'?'character':'term',gender:'unknown',category:'other',notes:''})} className="inline-flex h-11 items-center gap-2 rounded-full bg-accent px-5 text-sm font-medium text-accent-fg"><Plus className="h-4 w-4"/> Add</button>
       </div>
       <div className="mt-4 flex items-center justify-between text-xs text-muted">
         <span>{tab==='replacements'?(project.wordReplacements??[]).length:visible.length} รายการ</span>
@@ -206,7 +214,8 @@ export default function GlossaryPage({ id }: { id: string }) {
         <div className="flex items-center justify-between"><h2 className="font-semibold">{editing.source?'Edit entry':'Add entry'}</h2><button onClick={()=>setEditing(null)}><X className="h-5 w-5"/></button></div>
         <label className="block text-xs text-muted">RAW<input value={editing.source} onChange={e=>setEditing({...editing,source:e.target.value})} className="mt-1 h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm"/></label>
         <label className="block text-xs text-muted">TRANSLATED<input value={editing.translated} onChange={e=>setEditing({...editing,translated:e.target.value})} className="mt-1 h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm"/></label>
-        <label className="block text-xs text-muted">TYPE<select value={editing.type} onChange={e=>setEditing({...editing,type:e.target.value as EntryType})} className="mt-1 h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm"><option value="character">Character</option><option value="term">Term</option></select></label>
+        {editing.type==='character' ? <label className="block text-xs text-muted">GENDER<select value={editing.gender} onChange={e=>setEditing({...editing,gender:e.target.value})} className="mt-1 h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm"><option value="unknown">ไม่ระบุ</option><option value="male">ชาย</option><option value="female">หญิง</option></select></label> : <label className="block text-xs text-muted">CATEGORY<select value={editing.category} onChange={e=>setEditing({...editing,category:e.target.value})} className="mt-1 h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm">{TERM_CATEGORIES.map(item=><option key={item.value} value={item.value}>{item.label}</option>)}</select></label>}
+        <label className="block text-xs text-muted">NOTES<textarea value={editing.notes} onChange={e=>setEditing({...editing,notes:e.target.value})} rows={3} className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-sm"/></label>
         <div className="flex justify-end gap-2"><button onClick={()=>setEditing(null)} className="rounded-lg border border-line px-4 py-2 text-sm">Cancel</button><button disabled={busy||!editing.source.trim()} onClick={()=>void saveEntry(editing)} className="rounded-lg bg-accent px-4 py-2 text-sm text-accent-fg disabled:opacity-50">Save</button></div>
       </div>
     </div>}
