@@ -17,3 +17,10 @@ export function applyWordReplacements(input: string, rules: WordReplacement[] = 
   }
   return output;
 }
+
+/** Keep HTML tags and attributes intact; replace only rendered text nodes. */
+export function applyWordReplacementsToHtml(input: string, rules: WordReplacement[] = []): string {
+  return input.split(/(<[^>]*>)/g).map((part) =>
+    part.startsWith('<') && part.endsWith('>') ? part : applyWordReplacements(part, rules)
+  ).join('');
+}
