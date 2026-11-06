@@ -188,6 +188,7 @@ export const localStorageStore: NovelStore = {
     if (patch.glossaryTypes !== undefined) target.glossaryTypes = patch.glossaryTypes;
     if (patch.wordReplacements !== undefined) target.wordReplacements = patch.wordReplacements;
     if (patch.glossaryMode !== undefined) target.glossaryMode = patch.glossaryMode;
+    if (patch.wordReplacements !== undefined) target.wordReplacements = patch.wordReplacements;
     if (patch.lastReadChapterId !== undefined) target.lastReadChapterId = patch.lastReadChapterId;
     target.updatedAt = Date.now();
     saveAll(projects);
