@@ -333,6 +333,30 @@ export const supabaseStore: NovelStore = {
     return { imported, skipped };
   },
 
+  async renameChapter(projectId, chapterId, title) {
+    const userId = await currentUserId();
+    const supabase = getSupabase();
+    const { data: projectRow, error: projectError } = await supabase.from('novel_projects')
+      .select('chapter_catalog').eq('id', projectId).eq('user_id', userId).single();
+    if (projectError) throw projectError;
+    const catalog = Array.isArray(projectRow.chapter_catalog) ? projectRow.chapter_catalog : [];
+    const target = await loadOneProject(projectId);
+    const chapter = target?.chapters.find((item) => item.id === chapterId);
+    if (!chapter) return target;
+    const nextCatalog = catalog.map((item: { url: string; title: string; order: number }) =>
+      item.url === chapter.url ? { ...item, title } : item
+    );
+    const { error: catalogError } = await supabase.from('novel_projects')
+      .update({ chapter_catalog: nextCatalog, updated_at: new Date().toISOString() })
+      .eq('id', projectId).eq('user_id', userId);
+    if (catalogError) throw catalogError;
+    const { error: chapterError } = await supabase.from('novel_chapters')
+      .update({ title, updated_at: new Date().toISOString() })
+      .eq('project_id', projectId).eq('user_id', userId).eq('source_url', chapter.url);
+    if (chapterError) throw chapterError;
+    return loadOneProject(projectId);
+  },
+
   async deleteChapters(projectId, chapterIds) {
     if (!chapterIds.length) return loadOneProject(projectId);
     const userId = await currentUserId();
