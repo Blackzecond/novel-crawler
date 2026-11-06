@@ -433,6 +433,7 @@ export default function ReaderPage() {
     targetUrl: string,
     activeProjectId: string | null,
     projectSnapshot: NovelProject | null,
+    previousUrl: string,
   ) => {
     if (!targetUrl) return;
     const cacheKey = `${activeProjectId ?? 'standalone'}:${targetUrl}`;
@@ -442,7 +443,7 @@ export default function ReaderPage() {
     if (activeProjectId && (!project || project.id !== activeProjectId)) {
       try { project = await getStore().getProject(activeProjectId); } catch { return; }
     }
-    const chapter = project?.chapters.find((item) => item.url === targetUrl) ?? null;
+    let chapter = project?.chapters.find((item) => item.url === targetUrl) ?? null;
     if (chapter && chapter.status !== 'pending') return;
 
     prefetchingRef.current.add(cacheKey);
@@ -456,13 +457,17 @@ export default function ReaderPage() {
           body: JSON.stringify({ url: targetUrl }),
         });
         const contentType = res.headers.get('content-type');
-        if (!res.ok || !contentType?.includes('application/json')) {
-          const detail = contentType?.includes('application/json')
-            ? (await res.json().catch(() => ({}))).error
-            : `HTTP ${res.status}`;
-          throw new Error(detail || `Server fetch failed: ${res.status}`);
+        if (!contentType?.includes('application/json')) {
+          throw new Error(`Server fetch failed: HTTP ${res.status}`);
         }
-        data = await res.json();
+        const payload = await res.json();
+        if (!res.ok) {
+          const apiError = new Error(payload.error || `Server fetch failed: ${res.status}`) as Error & { status?: number; code?: string };
+          apiError.status = res.status;
+          apiError.code = payload.code;
+          throw apiError;
+        }
+        data = payload;
         if (!data?.content || !data?.textContent) {
           throw new Error('Server returned an empty chapter');
         }
@@ -473,6 +478,11 @@ export default function ReaderPage() {
       // If server fetch is blocked (e.g. Cloudflare on twkan), use the
       // app's existing WebView session in a hidden, non-interactive WebView.
       if (!data) {
+        const failure = serverError as Error & { status?: number; code?: string };
+        if (failure.code !== 'WEBVIEW_REQUIRED' && failure.code !== 'DIRECT_FETCH_FAILED') {
+          if (serverError) console.info('Next chapter prefetch skipped:', serverError);
+          return;
+        }
         const nativePage = await prefetchWithNativeBrowser(targetUrl);
         if (!nativePage) {
           if (serverError) console.info('Next chapter prefetch skipped:', serverError);
@@ -493,9 +503,31 @@ export default function ReaderPage() {
         if (activeProjectId) rememberNativeBrowser(activeProjectId);
       }
 
+      if (activeProjectId && project) {
+        const previousChapter = project.chapters.find((item) => item.url === previousUrl)
+          ?? (data.prevUrl ? project.chapters.find((item) => item.url === data.prevUrl) : undefined);
+        const followingChapter = data.nextUrl
+          ? project.chapters.find((item) => item.url === data.nextUrl)
+          : undefined;
+        const nextOrder = previousChapter
+          ? previousChapter.order + 1
+          : followingChapter
+            ? followingChapter.order - 1
+            : Math.max(-1, ...project.chapters.map((item) => item.order)) + 1;
+        const ensured = await getStore().ensureChapter(activeProjectId, {
+          url: targetUrl,
+          title: chapter?.title || data.title || 'ไม่มีชื่อบท',
+          order: chapter?.order ?? nextOrder,
+        });
+        if (!ensured) throw new Error('ไม่สามารถเพิ่มบทที่ดึงล่วงหน้าเข้าโปรเจกต์ได้');
+        chapter = ensured;
+        project = await getStore().getProject(activeProjectId) ?? project;
+      }
+
       const chapterIndex = project?.chapters.findIndex((item) => item.url === targetUrl) ?? -1;
       const prefetchedArticle: ArticleData = {
         ...data,
+        title: chapter?.title || data.title,
         prevUrl: chapterIndex > 0 ? project!.chapters[chapterIndex - 1].url : data.prevUrl ?? null,
         nextUrl: chapterIndex >= 0 && chapterIndex < (project?.chapters.length ?? 0) - 1
           ? project!.chapters[chapterIndex + 1].url
@@ -516,9 +548,10 @@ export default function ReaderPage() {
         if (saved) {
           setReaderProject((current) => current?.id === activeProjectId ? {
             ...current,
-            chapters: current.chapters.map((item) => item.url === targetUrl
-              ? { ...item, id: saved.id, status: saved.status }
-              : item),
+            chapters: [
+              ...current.chapters.filter((item) => item.url !== targetUrl),
+              saved,
+            ].sort((a, b) => a.order - b.order),
           } : current);
         }
       }
@@ -532,7 +565,7 @@ export default function ReaderPage() {
   // Start fetching the next chapter as soon as the current chapter is available.
   useEffect(() => {
     if (!article?.nextUrl) return;
-    void prefetchNextChapter(article.nextUrl, projectId, readerProject);
+    void prefetchNextChapter(article.nextUrl, projectId, readerProject, url);
   }, [article?.nextUrl, projectId, readerProject, url]);
 
   const handleTranslate = async () => {
