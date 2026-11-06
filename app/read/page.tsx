@@ -403,27 +403,29 @@ export default function ReaderPage() {
             await getStore().updateProject(activeProjectId, { lastReadChapterId: savedChapter.id });
 
             // In auto mode, detect glossary entries for chapters fetched directly in Reader too.
-            if (project!.glossaryMode === 'auto' && hasAiKey() && data.textContent) {
+            if ((project!.glossaryDetection?.characters || project!.glossaryDetection?.terms) && hasAiKey() && data.textContent) {
               try {
-                const pairs = await detectNamedTerms(data.textContent);
+                const pairs = await detectNamedTerms(data.textContent, undefined, project!.glossaryDetection);
                 const latest = await getStore().getProject(activeProjectId);
                 if (latest) {
                   const glossary = { ...latest.glossary };
                   const glossaryTypes = { ...latest.glossaryTypes };
+                  const glossaryMetadata = { ...(latest.glossaryMetadata ?? {}) };
                   const added: typeof pairs = [];
                   for (const pair of pairs) {
                     if (!pair.zh || !pair.th || glossary[pair.zh] !== undefined) continue;
                     glossary[pair.zh] = pair.th;
                     glossaryTypes[pair.zh] = pair.type;
+                    glossaryMetadata[pair.zh] = pair.type === 'character' ? { gender: pair.gender ?? 'unknown', notes: '' } : { category: pair.category ?? 'other', notes: '' };
                     added.push(pair);
                   }
                   if (added.length) {
-                    const updatedProject = await getStore().updateProject(activeProjectId, { glossary, glossaryTypes });
+                    const updatedProject = await getStore().updateProject(activeProjectId, { glossary, glossaryTypes, glossaryMetadata });
                     if (!updatedProject) throw new Error('บันทึกคลังศัพท์ไม่สำเร็จ');
                     setReaderProject(updatedProject);
                     const names = added.map((pair) => pair.zh + ' → ' + pair.th).join(', ');
                     setGlossaryNotice(`จับศัพท์อัตโนมัติและบันทึกแล้ว ${added.length} รายการจากบท “${savedChapter.title}”: ${names}`);
-                    setDetectedGlossary({ items: added.map((pair) => ({ zh: pair.zh, th: pair.th, type: pair.type })), sourceLabel: savedChapter.title });
+                    setDetectedGlossary({ items: added.map((pair) => ({ zh: pair.zh, th: pair.th, type: pair.type, gender: pair.gender ?? 'unknown', category: pair.category ?? 'other', notes: '' })), sourceLabel: savedChapter.title });
                   } else {
                     setGlossaryNotice(pairs.length ? 'จับศัพท์อัตโนมัติแล้ว แต่ไม่มีรายการใหม่ (คำเดิมไม่ถูกเพิ่มซ้ำ)' : 'จับศัพท์อัตโนมัติแล้ว — ไม่พบคำใหม่ในบทนี้');
                   }
@@ -704,20 +706,23 @@ export default function ReaderPage() {
     if (!latest) throw new Error('ไม่พบโปรเจกต์');
     const glossary = { ...latest.glossary };
     const glossaryTypes = { ...latest.glossaryTypes };
+    const glossaryMetadata = { ...(latest.glossaryMetadata ?? {}) };
     const validItems = items.filter((item) => item.zh.trim() && item.th.trim());
     const retainedSources = new Set(validItems.map((item) => item.zh.trim()));
     for (const original of detectedGlossary?.items ?? []) {
       if (!retainedSources.has(original.zh)) {
         delete glossary[original.zh];
         delete glossaryTypes[original.zh];
+        delete glossaryMetadata[original.zh];
       }
     }
     for (const item of validItems) {
       const zh = item.zh.trim(); const th = item.th.trim();
       glossary[zh] = th;
       glossaryTypes[zh] = item.type;
+      glossaryMetadata[zh] = item.type === 'character' ? { gender: item.gender ?? 'unknown', notes: item.notes ?? '' } : { category: item.category ?? 'other', notes: item.notes ?? '' };
     }
-    const updated = await getStore().updateProject(projectId, { glossary, glossaryTypes });
+    const updated = await getStore().updateProject(projectId, { glossary, glossaryTypes, glossaryMetadata });
     if (!updated) throw new Error('บันทึกการแก้ไขคลังศัพท์ไม่สำเร็จ');
     setReaderProject(updated);
     setGlossaryNotice(`บันทึกการแก้ไขศัพท์แล้ว ${items.filter((item) => item.zh.trim() && item.th.trim()).length} รายการ`);
@@ -745,16 +750,8 @@ export default function ReaderPage() {
     }
   };
 
-  const toggleReaderGlossary = async () => {
-    const next = !showGlossary;
-    setShowGlossary(next);
-    if (next && projectId && !readerProject) {
-      try {
-        setReaderProject(await getStore().getProject(projectId));
-      } catch (err) {
-        setGlossaryNotice(err instanceof Error ? err.message : 'โหลดคลังศัพท์ไม่สำเร็จ');
-      }
-    }
+  const toggleReaderGlossary = () => {
+    if (projectId) window.location.href = `/project/${encodeURIComponent(projectId)}/glossary`;
   };
 
   const handleFormSubmit = (e: React.FormEvent) => {
