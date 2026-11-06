@@ -10,6 +10,7 @@ on:
       - main
       - feat/cloud-storage-foundation
       - feature/browser-fetch-fallback
+      - feat/reader-prefetch-next-and-faster-webview
 
 jobs:
   build:
@@ -22,7 +23,7 @@ jobs:
           cache: npm
       - run: npm install
       - name: Commit dependency lockfile on this feature branch
-        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback' || github.head_ref == 'feat/webview-auto-capture-after-challenge' || github.ref == 'refs/heads/feat/webview-auto-capture-after-challenge' || github.head_ref == 'feat/automatic-toc-pagination' || github.ref == 'refs/heads/feat/automatic-toc-pagination'
+        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback' || github.head_ref == 'feat/webview-auto-capture-after-challenge' || github.ref == 'refs/heads/feat/webview-auto-capture-after-challenge' || github.head_ref == 'feat/automatic-toc-pagination' || github.ref == 'refs/heads/feat/automatic-toc-pagination' || github.head_ref == 'feat/background-webview-prefetch' || github.ref == 'refs/heads/feat/background-webview-prefetch' || github.head_ref == 'feat/reader-prefetch-next-and-faster-webview' || github.ref == 'refs/heads/feat/reader-prefetch-next-and-faster-webview'
         run: |
           if ! git diff --quiet -- package-lock.json; then
             git config user.name "github-actions[bot]"
@@ -35,20 +36,20 @@ jobs:
       - run: npm run build
 
       - name: Set up Java for Android validation
-        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback' || github.head_ref == 'feat/webview-auto-capture-after-challenge' || github.ref == 'refs/heads/feat/webview-auto-capture-after-challenge' || github.head_ref == 'feat/automatic-toc-pagination' || github.ref == 'refs/heads/feat/automatic-toc-pagination'
+        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback' || github.head_ref == 'feat/webview-auto-capture-after-challenge' || github.ref == 'refs/heads/feat/webview-auto-capture-after-challenge' || github.head_ref == 'feat/automatic-toc-pagination' || github.ref == 'refs/heads/feat/automatic-toc-pagination' || github.head_ref == 'feat/background-webview-prefetch' || github.ref == 'refs/heads/feat/background-webview-prefetch' || github.head_ref == 'feat/reader-prefetch-next-and-faster-webview' || github.ref == 'refs/heads/feat/reader-prefetch-next-and-faster-webview'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Set up Android SDK
-        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback' || github.head_ref == 'feat/webview-auto-capture-after-challenge' || github.ref == 'refs/heads/feat/webview-auto-capture-after-challenge' || github.head_ref == 'feat/automatic-toc-pagination' || github.ref == 'refs/heads/feat/automatic-toc-pagination'
+        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback' || github.head_ref == 'feat/webview-auto-capture-after-challenge' || github.ref == 'refs/heads/feat/webview-auto-capture-after-challenge' || github.head_ref == 'feat/automatic-toc-pagination' || github.ref == 'refs/heads/feat/automatic-toc-pagination' || github.head_ref == 'feat/background-webview-prefetch' || github.ref == 'refs/heads/feat/background-webview-prefetch' || github.head_ref == 'feat/reader-prefetch-next-and-faster-webview' || github.ref == 'refs/heads/feat/reader-prefetch-next-and-faster-webview'
         uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
       - name: Generate Android project and sync native plugin
-        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback' || github.head_ref == 'feat/webview-auto-capture-after-challenge' || github.ref == 'refs/heads/feat/webview-auto-capture-after-challenge' || github.head_ref == 'feat/automatic-toc-pagination' || github.ref == 'refs/heads/feat/automatic-toc-pagination'
+        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback' || github.head_ref == 'feat/webview-auto-capture-after-challenge' || github.ref == 'refs/heads/feat/webview-auto-capture-after-challenge' || github.head_ref == 'feat/automatic-toc-pagination' || github.ref == 'refs/heads/feat/automatic-toc-pagination' || github.head_ref == 'feat/background-webview-prefetch' || github.ref == 'refs/heads/feat/background-webview-prefetch' || github.head_ref == 'feat/reader-prefetch-next-and-faster-webview' || github.ref == 'refs/heads/feat/reader-prefetch-next-and-faster-webview'
         env:
           CAPACITOR_SERVER_URL: https://example.invalid
         run: |
@@ -56,6 +57,6 @@ jobs:
           npx cap sync android
 
       - name: Compile Android debug APK
-        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback' || github.head_ref == 'feat/webview-auto-capture-after-challenge' || github.ref == 'refs/heads/feat/webview-auto-capture-after-challenge' || github.head_ref == 'feat/automatic-toc-pagination' || github.ref == 'refs/heads/feat/automatic-toc-pagination'
+        if: github.head_ref == 'feature/browser-fetch-fallback' || github.ref == 'refs/heads/feature/browser-fetch-fallback' || github.head_ref == 'feat/webview-auto-capture-after-challenge' || github.ref == 'refs/heads/feat/webview-auto-capture-after-challenge' || github.head_ref == 'feat/automatic-toc-pagination' || github.ref == 'refs/heads/feat/automatic-toc-pagination' || github.head_ref == 'feat/background-webview-prefetch' || github.ref == 'refs/heads/feat/background-webview-prefetch' || github.head_ref == 'feat/reader-prefetch-next-and-faster-webview' || github.ref == 'refs/heads/feat/reader-prefetch-next-and-faster-webview'
         working-directory: android
         run: ./gradlew assembleDebug --stacktrace

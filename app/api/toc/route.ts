@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error:
-            'ไม่สามารถเปิดหน้าเว็บได้ (เว็บปฏิเสธการเชื่อมต่อหรือติด anti-bot) — เว็บที่ติด Cloudflare ต้องตั้ง SCRAPER_API_KEY บน Vercel',
+            'ไม่สามารถเปิดหน้าเว็บได้ (เว็บปฏิเสธการเชื่อมต่อหรือติด anti-bot) — เว็บที่ติด Cloudflare ต้องยืนยันผ่าน WebView',
         },
         { status: 400 }
       );

@@ -6,6 +6,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
 import android.view.Window;
+import android.view.View;
+import android.view.ViewGroup;
+import android.webkit.WebResourceError;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -42,6 +45,198 @@ public class BrowserFetchPlugin extends Plugin {
 
         call.setKeepAlive(true);
         getActivity().runOnUiThread(() -> showBrowser(call, targetUrl, expandToc));
+    }
+
+    /**
+     * Fetch one chapter in a hidden WebView. It shares Android's app-private
+     * CookieManager with the visible WebView, but never displays UI or solves CAPTCHA.
+     */
+    @PluginMethod
+    public void prefetch(PluginCall call) {
+        String targetUrl = call.getString("url");
+        if (targetUrl == null || !(targetUrl.startsWith("https://") || targetUrl.startsWith("http://"))) {
+            call.reject("URL ไม่ถูกต้อง");
+            return;
+        }
+        call.setKeepAlive(true);
+        getActivity().runOnUiThread(() -> startBackgroundPrefetch(call, targetUrl));
+    }
+
+    private void startBackgroundPrefetch(PluginCall call, String targetUrl) {
+        View content = getActivity().findViewById(android.R.id.content);
+        if (!(content instanceof ViewGroup)) {
+            call.setKeepAlive(false);
+            call.reject("ไม่พบพื้นที่ WebView สำหรับดึงบทล่วงหน้า");
+            return;
+        }
+        ViewGroup host = (ViewGroup) content;
+        WebView webView = new WebView(getActivity());
+        webView.setAlpha(0f);
+        webView.setClickable(false);
+        webView.setFocusable(false);
+        webView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        webView.setBackgroundColor(Color.TRANSPARENT);
+        webView.setLayoutParams(new ViewGroup.LayoutParams(1, 1));
+        webView.getSettings().setJavaScriptEnabled(true);
+        webView.getSettings().setDomStorageEnabled(true);
+        webView.getSettings().setLoadsImagesAutomatically(false);
+        webView.getSettings().setBlockNetworkImage(true);
+        webView.getSettings().setAllowFileAccess(false);
+        webView.getSettings().setAllowContentAccess(false);
+        webView.getSettings().setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        CookieManager cookies = CookieManager.getInstance();
+        cookies.setAcceptCookie(true);
+        cookies.setAcceptThirdPartyCookies(webView, false);
+        webView.setWebChromeClient(new WebChromeClient());
+        host.addView(webView);
+
+        final Handler handler = new Handler(Looper.getMainLooper());
+        final boolean[] finished = { false };
+        final int[] stablePolls = { 0 };
+        final String[] lastSignature = { "" };
+        final Runnable[] pollTask = { null };
+        final Runnable timeoutTask = () -> finishBackgroundPrefetch(
+            call, webView, host, handler, pollTask[0], null, finished,
+            null, "หมดเวลารอดึงบทถัดไป"
+        );
+
+        pollTask[0] = new Runnable() {
+            @Override
+            public void run() {
+                if (finished[0]) return;
+                String probeScript = "(()=>{const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const l=b.toLowerCase();const challenge=l.includes('just a moment')||l.includes('verify you are human')||l.includes('performing security verification')||l.includes('checking your browser')||l.includes('checking if the site connection is secure')||t.toLowerCase().includes('just a moment')||b.includes('正在验证浏览器')||u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-160);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig})})()";
+                webView.evaluateJavascript(probeScript, value -> {
+                    if (finished[0]) return;
+                    try {
+                        Object decoded = new JSONTokener(value).nextValue();
+                        JSONObject probe = new JSONObject(String.valueOf(decoded));
+                        if (probe.optBoolean("challenge", true)) {
+                            // A challenge that requires human interaction cannot be solved in the background.
+                            stablePolls[0] = 0;
+                            lastSignature[0] = "";
+                            handler.postDelayed(this, 800);
+                            return;
+                        }
+                        if (!probe.optBoolean("ready") || probe.optInt("bodyLength") < 180 || probe.optInt("htmlLength") < 1000) {
+                            stablePolls[0] = 0;
+                            lastSignature[0] = "";
+                            handler.postDelayed(this, 500);
+                            return;
+                        }
+                        String signature = probe.optString("signature", "");
+                        if (signature.equals(lastSignature[0])) stablePolls[0]++;
+                        else {
+                            lastSignature[0] = signature;
+                            stablePolls[0] = 1;
+                        }
+                        if (stablePolls[0] < 2) {
+                            handler.postDelayed(this, 500);
+                            return;
+                        }
+
+                        String captureScript = "(()=>{const root=document.documentElement?document.documentElement.cloneNode(true):null;if(root)root.querySelectorAll('script,style,noscript').forEach(n=>n.remove());return JSON.stringify({url:location.href,title:document.title||'',html:root?('<!doctype html>'+root.outerHTML):'',bodyText:document.body?document.body.innerText:''})})()";
+                        webView.evaluateJavascript(captureScript, captured -> {
+                            if (finished[0]) return;
+                            try {
+                                Object capturedDecoded = new JSONTokener(captured).nextValue();
+                                JSONObject resultPage = new JSONObject(String.valueOf(capturedDecoded));
+                                String html = resultPage.optString("html", "");
+                                String bodyText = resultPage.optString("bodyText", "");
+                                String title = resultPage.optString("title", "");
+                                String pageUrl = resultPage.optString("url", "");
+                                String lower = (title + " " + bodyText + " " + html).toLowerCase(Locale.ROOT);
+                                boolean challenge = lower.contains("just a moment")
+                                    || lower.contains("verify you are human")
+                                    || lower.contains("cf-challenge")
+                                    || lower.contains("cf-chl-")
+                                    || lower.contains("challenge-platform")
+                                    || bodyText.contains("正在验证浏览器")
+                                    || pageUrl.toLowerCase(Locale.ROOT).contains("/cdn-cgi/challenge-platform/");
+                                if (challenge || html.length() < 300 || bodyText.trim().length() < 80) {
+                                    finishBackgroundPrefetch(call, webView, host, handler, pollTask[0], timeoutTask, finished,
+                                        null, challenge ? "เว็บไซต์ยังต้องยืนยัน CAPTCHA" : "ไม่พบเนื้อหาบทที่สมบูรณ์");
+                                    return;
+                                }
+                                CookieManager.getInstance().flush();
+                                JSObject result = new JSObject();
+                                result.put("url", pageUrl);
+                                result.put("title", title);
+                                result.put("html", html);
+                                finishBackgroundPrefetch(call, webView, host, handler, pollTask[0], timeoutTask, finished,
+                                    result, null);
+                            } catch (Exception error) {
+                                finishBackgroundPrefetch(call, webView, host, handler, pollTask[0], timeoutTask, finished,
+                                    null, "อ่านเนื้อหาบทถัดไปไม่สำเร็จ");
+                            }
+                        });
+                    } catch (Exception ignored) {
+                        handler.postDelayed(this, 500);
+                    }
+                });
+            }
+        };
+
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                stablePolls[0] = 0;
+                lastSignature[0] = "";
+                handler.removeCallbacks(pollTask[0]);
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                CookieManager.getInstance().flush();
+                handler.removeCallbacks(pollTask[0]);
+                handler.postDelayed(pollTask[0], 400);
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request.isForMainFrame()) {
+                    finishBackgroundPrefetch(call, webView, host, handler, pollTask[0], timeoutTask, finished,
+                        null, "โหลดหน้าเว็บสำหรับดึงบทถัดไปไม่สำเร็จ");
+                }
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                String scheme = request.getUrl().getScheme();
+                return !("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme));
+            }
+        });
+
+        handler.postDelayed(timeoutTask, 25000);
+        webView.loadUrl(targetUrl);
+    }
+
+    private void finishBackgroundPrefetch(
+        PluginCall call,
+        WebView webView,
+        ViewGroup host,
+        Handler handler,
+        Runnable pollTask,
+        Runnable timeoutTask,
+        boolean[] finished,
+        JSObject result,
+        String error
+    ) {
+        if (finished[0]) return;
+        finished[0] = true;
+        handler.removeCallbacks(pollTask);
+        if (timeoutTask != null) handler.removeCallbacks(timeoutTask);
+        CookieManager.getInstance().flush();
+        if (webView.getParent() instanceof ViewGroup) {
+            ((ViewGroup) webView.getParent()).removeView(webView);
+        }
+        webView.stopLoading();
+        webView.destroy();
+        call.setKeepAlive(false);
+        if (error != null) call.reject(error);
+        else call.resolve(result);
     }
 
     private void showBrowser(PluginCall call, String targetUrl, boolean expandToc) {
@@ -153,17 +348,17 @@ public class BrowserFetchPlugin extends Plugin {
                                 lastSignature[0] = signature;
                                 stablePolls[0] = 1;
                             }
-                            if (stablePolls[0] >= 3) {
+                            if (stablePolls[0] >= (expandToc ? 3 : 1)) {
                                 status.setText("ตรวจพบหน้าเว็บปกติและเนื้อหานิ่งแล้ว — กำลังดึงเนื้อหาอัตโนมัติ…");
                                 extractPage(call, webView, dialog, status, finished, captureInProgress, handler, pollTask[0], expandToc, capturedTocPages, visitedTocPages);
                                 return;
                             }
-                            status.setText("หน้าเว็บปกติ — กำลังตรวจสอบความสมบูรณ์ของเนื้อหา (" + stablePolls[0] + "/3)");
+                            status.setText(expandToc ? "หน้าเว็บปกติ — กำลังตรวจสอบความสมบูรณ์ของสารบัญ (" + stablePolls[0] + "/3)" : "หน้าเว็บปกติ — กำลังเตรียมดึงเนื้อหา…");
                         }
                     } catch (Exception ignored) {
                         stablePolls[0] = 0;
                     }
-                    handler.postDelayed(this, 1200);
+                    handler.postDelayed(this, expandToc ? 1200 : 350);
                 });
             }
         };
@@ -186,7 +381,7 @@ public class BrowserFetchPlugin extends Plugin {
                 status.setText("กำลังตรวจสอบหน้าเว็บ — หากไม่มี CAPTCHA ระบบจะดึงเนื้อหาให้อัตโนมัติ");
                 sendButton.setEnabled(true);
                 handler.removeCallbacks(pollTask[0]);
-                handler.postDelayed(pollTask[0], 1200);
+                handler.postDelayed(pollTask[0], expandToc ? 1200 : 300);
             }
 
             @Override
