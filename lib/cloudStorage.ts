@@ -361,15 +361,21 @@ export const supabaseStore: NovelStore = {
     if (!chapterIds.length) return loadOneProject(projectId);
     const userId = await currentUserId();
     const supabase = getSupabase();
-    const { data: rows, error: loadError } = await supabase.from('novel_chapters')
-      .select('id, source_url, original_storage_provider, original_storage_path, reader_storage_path, translated_storage_provider, translated_storage_path')
-      .eq('project_id', projectId).eq('user_id', userId).in('id', chapterIds);
+    const catalogUrls = new Set(chapterIds.filter((id) => id.startsWith('catalog:'))
+      .map((id) => decodeURIComponent(id.slice('catalog:'.length))));
+    const rowIds = chapterIds.filter((id) => !id.startsWith('catalog:'));
+    const { data: rows, error: loadError } = rowIds.length
+      ? await supabase.from('novel_chapters')
+          .select('id, source_url, original_storage_provider, original_storage_path, reader_storage_path, translated_storage_provider, translated_storage_path')
+          .eq('project_id', projectId).eq('user_id', userId).in('id', rowIds)
+      : { data: [], error: null };
     if (loadError) throw loadError;
     const chapterRows = (rows ?? []) as Array<{
       id: string; source_url: string;
       original_storage_provider: string | null; original_storage_path: string | null;
       reader_storage_path: string | null; translated_storage_provider: string | null; translated_storage_path: string | null;
     }>;
+    for (const row of chapterRows) catalogUrls.add(row.source_url);
     const paths = chapterRows.flatMap((row) => [
       row.original_storage_provider === 'supabase' ? row.original_storage_path : null,
       row.reader_storage_path,
@@ -382,17 +388,18 @@ export const supabaseStore: NovelStore = {
     const { data: projectRow, error: projectError } = await supabase.from('novel_projects')
       .select('chapter_catalog').eq('id', projectId).eq('user_id', userId).single();
     if (projectError) throw projectError;
-    const deletedUrls = new Set(chapterRows.map((row) => row.source_url));
     const catalog = Array.isArray(projectRow.chapter_catalog) ? projectRow.chapter_catalog : [];
     const { error: catalogError } = await supabase.from('novel_projects')
       .update({
-        chapter_catalog: catalog.filter((item: { url: string }) => !deletedUrls.has(item.url)),
+        chapter_catalog: catalog.filter((item: { url: string }) => !catalogUrls.has(item.url)),
         updated_at: new Date().toISOString(),
       }).eq('id', projectId).eq('user_id', userId);
     if (catalogError) throw catalogError;
-    const { error: deleteError } = await supabase.from('novel_chapters')
-      .delete().eq('project_id', projectId).eq('user_id', userId).in('id', chapterIds);
-    if (deleteError) throw deleteError;
+    if (chapterRows.length) {
+      const { error: deleteError } = await supabase.from('novel_chapters')
+        .delete().eq('project_id', projectId).eq('user_id', userId).in('id', chapterRows.map((row) => row.id));
+      if (deleteError) throw deleteError;
+    }
     return loadOneProject(projectId);
   },
 
