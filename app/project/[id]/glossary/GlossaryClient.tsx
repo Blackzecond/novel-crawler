@@ -96,7 +96,7 @@ export default function GlossaryPage({ id }: { id: string }) {
     if (!file || !project) return;
     setBusy(true);
     try {
-      const rows = parseCsv(await file.text());
+      const rows = parseCsv((await file.text()).replace(/^\uFEFF/, ''));
       const start = rows[0]?.[0]?.toLowerCase() === 'source' ? 1 : 0;
       const glossary = { ...project.glossary };
       const glossaryTypes = { ...project.glossaryTypes };
@@ -104,7 +104,7 @@ export default function GlossaryPage({ id }: { id: string }) {
       for (const row of rows.slice(start)) {
         const source = (row[0] || '').trim(), translated = (row[1] || '').trim();
         const type: EntryType = row[2]?.trim().toLowerCase() === 'character' ? 'character' : 'term';
-        if (!source || !translated) { skipped++; continue; }
+        if (!source) { skipped++; continue; }
         if (glossary[source] === undefined) added++; else updatedCount++;
         glossary[source] = translated; glossaryTypes[source] = type;
       }
@@ -128,6 +128,12 @@ export default function GlossaryPage({ id }: { id: string }) {
         <button onClick={() => fileRef.current?.click()} disabled={busy} className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-card px-4 text-sm"><FileUp className="h-4 w-4"/> Import CSV</button>
         <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={e => void importCsv(e.target.files?.[0])}/>
       </div>
+      <section className="mt-4 rounded-2xl border border-line bg-card p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div><p className="text-sm font-semibold">Detect before every chapter</p><p className="mt-1 text-xs text-muted">ตรวจจับตัวละครและศัพท์เฉพาะอัตโนมัติเมื่อเปิดบทที่ยังไม่ได้ดึง</p></div>
+          <button type="button" role="switch" aria-checked={project.glossaryMode === 'auto'} onClick={async()=>{const updated=await getStore().updateProject(id,{glossaryMode:project.glossaryMode==='auto'?'manual':'auto'});if(updated)setProject(updated);}} className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${project.glossaryMode==='auto'?'bg-accent':'bg-line'}`}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${project.glossaryMode==='auto'?'translate-x-6':'translate-x-1'}`}/></button>
+        </div>
+      </section>
       <div className="mt-6 rounded-2xl border border-line bg-card p-1.5 flex gap-1">
         {(['characters','terms','replacements'] as const).map(value => <button key={value} onClick={() => {setTab(value);setSelected([]);setQuery('');}} className={`flex-1 rounded-xl py-3 text-sm ${tab===value?'bg-accent-soft text-accent-soft-fg font-semibold':'text-muted'}`}>{value==='characters'?'Characters':value==='terms'?'Terms':'Replacements'}</button>)}
       </div>
