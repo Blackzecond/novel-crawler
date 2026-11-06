@@ -59,6 +59,10 @@ export interface NovelStore {
   // นำเข้าจากไฟล์ส่งออก JSON — id ซ้ำกับข้อมูลในเครื่องจะถูกแทนที่ด้วยข้อมูลไฟล์นำเข้า
   importProjects(projects: NovelProject[]): Promise<{ imported: number; skipped: number }>;
   deleteProject(id: string): Promise<void>;
+  ensureChapter(
+    projectId: string,
+    chapter: { url: string; title: string; order: number }
+  ): Promise<NovelChapter | null>;
   updateChapter(
     projectId: string,
     chapterId: string,
