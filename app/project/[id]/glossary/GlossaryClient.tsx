@@ -166,11 +166,16 @@ export default function GlossaryPage({ id }: { id: string }) {
         <button onClick={() => fileRef.current?.click()} disabled={busy} className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-card px-4 text-sm"><FileUp className="h-4 w-4"/> Import CSV</button>
         <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={e => void importCsv(e.target.files?.[0])}/>
       </div>
-      <section className="mt-4 rounded-2xl border border-line bg-card p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div><p className="text-sm font-semibold">Detect before every chapter</p><p className="mt-1 text-xs text-muted">ตรวจจับตัวละครและศัพท์เฉพาะอัตโนมัติเมื่อเปิดบทที่ยังไม่ได้ดึง</p></div>
-          <button type="button" role="switch" aria-checked={project.glossaryMode === 'auto'} onClick={async()=>{const updated=await getStore().updateProject(id,{glossaryMode:project.glossaryMode==='auto'?'manual':'auto'});if(updated)setProject(updated);}} className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${project.glossaryMode==='auto'?'bg-accent':'bg-line'}`}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${project.glossaryMode==='auto'?'translate-x-6':'translate-x-1'}`}/></button>
-        </div>
+      <section className="mt-4 rounded-2xl border border-line bg-card p-4 space-y-3">
+        <div><p className="text-sm font-semibold">Detect before every chapter</p><p className="mt-1 text-xs text-muted">เลือกประเภทศัพท์ที่ให้ AI ตรวจจับอัตโนมัติเมื่อเปิดบทใหม่</p></div>
+        {([{key:'characters' as const,label:'Characters',hint:'ชื่อตัวละคร',icon:UserRound},{key:'terms' as const,label:'Terms',hint:'สถานที่ สำนัก องค์กร สิ่งของ และศัพท์เฉพาะ',icon:BookOpen}]).map(option=>{
+          const enabled=project.glossaryDetection?.[option.key]===true;
+          const Icon=option.icon;
+          return <div key={option.key} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-bg px-3 py-2.5">
+            <div className="flex min-w-0 items-center gap-2"><Icon className="h-4 w-4 shrink-0 text-muted"/><div><p className="text-sm font-medium">{option.label}</p><p className="text-[11px] text-muted">{option.hint}</p></div></div>
+            <button type="button" role="switch" aria-label={'เปิดตรวจจับ '+option.label} aria-checked={enabled} onClick={async()=>{const next={characters:project.glossaryDetection?.characters===true,terms:project.glossaryDetection?.terms===true,[option.key]:!enabled};const updated=await getStore().updateProject(id,{glossaryDetection:next});if(updated)setProject(updated);}} className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${enabled?'bg-accent':'bg-line'}`}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${enabled?'translate-x-6':'translate-x-1'}`}/></button>
+          </div>;
+        })}
       </section>
       <div className="mt-6 rounded-2xl border border-line bg-card p-1.5 flex gap-1">
         {(['characters','terms','replacements'] as const).map(value => <button key={value} onClick={() => {setTab(value);setSelected([]);setQuery('');}} className={`flex-1 rounded-xl py-3 text-sm ${tab===value?'bg-accent-soft text-accent-soft-fg font-semibold':'text-muted'}`}>{value==='characters'?'Characters':value==='terms'?'Terms':'Replacements'}</button>)}
