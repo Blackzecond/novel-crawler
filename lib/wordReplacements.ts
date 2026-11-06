@@ -9,7 +9,7 @@ export function applyWordReplacements(input: string, rules: WordReplacement[] = 
     for (const variant of variants) {
       try {
         const pattern = rule.useRegex ? new RegExp(variant, 'g') : new RegExp(variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-        output = output.replace(pattern, rule.replacement);
+        output = output.replace(pattern, () => rule.replacement);
       } catch {
         // Ignore invalid regex patterns without breaking Reader rendering.
       }
@@ -20,7 +20,11 @@ export function applyWordReplacements(input: string, rules: WordReplacement[] = 
 
 /** Keep HTML tags and attributes intact; replace only rendered text nodes. */
 export function applyWordReplacementsToHtml(input: string, rules: WordReplacement[] = []): string {
+  const safeRules = rules.map((rule) => ({
+    ...rule,
+    replacement: rule.replacement.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
+  }));
   return input.split(/(<[^>]*>)/g).map((part) =>
-    part.startsWith('<') && part.endsWith('>') ? part : applyWordReplacements(part, rules)
+    part.startsWith('<') && part.endsWith('>') ? part : applyWordReplacements(part, safeRules)
   ).join('');
 }
