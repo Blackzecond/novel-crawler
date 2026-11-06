@@ -256,9 +256,16 @@ export const supabaseStore: NovelStore = {
       if (error) throw error;
     }
     if (patch.wordReplacements !== undefined) {
-      const { error: deleteError } = await supabase.from('glossary_replacements')
-        .delete().eq('project_id', id).eq('user_id', userId);
-      if (deleteError) throw deleteError;
+      const { data: existingRules, error: existingRulesError } = await supabase.from('glossary_replacements')
+        .select('id').eq('project_id', id).eq('user_id', userId);
+      if (existingRulesError) throw existingRulesError;
+      const nextIds = new Set(patch.wordReplacements.map((item) => item.id));
+      const removedIds = ((existingRules ?? []) as Array<{ id: string }>).map((item) => item.id).filter((ruleId) => !nextIds.has(ruleId));
+      if (removedIds.length) {
+        const { error: deleteError } = await supabase.from('glossary_replacements')
+          .delete().eq('project_id', id).eq('user_id', userId).in('id', removedIds);
+        if (deleteError) throw deleteError;
+      }
       if (patch.wordReplacements.length) {
         const rows = patch.wordReplacements.map((item) => ({
           id: item.id,
@@ -267,9 +274,10 @@ export const supabaseStore: NovelStore = {
           variants: item.variants,
           replacement_text: item.replacement,
           use_regex: item.useRegex,
+          updated_at: new Date().toISOString(),
         }));
-        const { error: insertError } = await supabase.from('glossary_replacements').insert(rows);
-        if (insertError) throw insertError;
+        const { error: upsertError } = await supabase.from('glossary_replacements').upsert(rows, { onConflict: 'id' });
+        if (upsertError) throw upsertError;
       }
     }
     if (patch.glossary !== undefined || patch.glossaryTypes !== undefined) {
@@ -355,6 +363,7 @@ export const supabaseStore: NovelStore = {
         const newLastRead = oldLastRead ? refreshed?.chapters.find((chapter) => chapter.url === oldLastRead.url && chapter.status !== 'pending') : undefined;
         await this.updateProject(created.id, {
           glossary,
+          wordReplacements: Array.isArray(raw.wordReplacements) ? raw.wordReplacements : [],
           glossaryMode: raw.glossaryMode === 'auto' ? 'auto' : 'manual',
           lastReadChapterId: newLastRead?.id,
         });
