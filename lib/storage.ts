@@ -56,6 +56,7 @@ export interface NovelStore {
     patch: Partial<Pick<NovelProject, 'title' | 'glossary' | 'glossaryTypes' | 'glossaryMode' | 'lastReadChapterId'>>
   ): Promise<NovelProject | null>;
   deleteGlossaryTerms(projectId: string, sourceTerms: string[]): Promise<NovelProject | null>;
+  deleteChapters(projectId: string, chapterIds: string[]): Promise<NovelProject | null>;
   // นำเข้าจากไฟล์ส่งออก JSON — id ซ้ำกับข้อมูลในเครื่องจะถูกแทนที่ด้วยข้อมูลไฟล์นำเข้า
   importProjects(projects: NovelProject[]): Promise<{ imported: number; skipped: number }>;
   deleteProject(id: string): Promise<void>;
@@ -216,6 +217,18 @@ export const localStorageStore: NovelStore = {
     }
     if (imported > 0) saveAll(projects);
     return { imported, skipped };
+  },
+
+  async deleteChapters(projectId, chapterIds) {
+    const projects = loadAllValid();
+    const target = projects.find((p) => p.id === projectId);
+    if (!target) return null;
+    const ids = new Set(chapterIds);
+    target.chapters = target.chapters.filter((chapter) => !ids.has(chapter.id));
+    if (target.lastReadChapterId && ids.has(target.lastReadChapterId)) target.lastReadChapterId = undefined;
+    target.updatedAt = Date.now();
+    saveAll(projects);
+    return target;
   },
 
   async deleteProject(id) {
