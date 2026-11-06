@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseHTML } from 'linkedom';
-import { fetchArticleHtml, FetchChallengeError, isChallengePage } from '@/lib/fetchHtml';
+import { fetchArticleHtml, FetchChallengeError, FetchTransportError, isChallengePage } from '@/lib/fetchHtml';
 import { extractChapterList, findNavigationUrls } from '@/lib/sites';
 
 // Analyze whether the supplied URL is a novel directory (目录) or a chapter page.
@@ -89,6 +89,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { code: 'WEBVIEW_REQUIRED', error: error.message },
         { status: 428 }
+      );
+    }
+    if (error instanceof FetchTransportError) {
+      return NextResponse.json(
+        { code: 'DIRECT_FETCH_FAILED', error: error.message },
+        { status: 503 }
       );
     }
     return NextResponse.json(
