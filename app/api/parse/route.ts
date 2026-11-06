@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseHTML } from 'linkedom';
 import { Readability } from '@mozilla/readability';
-import { fetchArticleHtml, FetchChallengeError, isChallengePage } from '@/lib/fetchHtml';
+import { fetchArticleHtml, FetchChallengeError, FetchTransportError, isChallengePage } from '@/lib/fetchHtml';
 import { findNavigationUrls } from '@/lib/sites';
 
 function processNovelContent(rawHtml: string) {
@@ -52,8 +52,8 @@ export async function POST(req: NextRequest) {
     }
     if (!html) {
       return NextResponse.json(
-        { error: 'ไม่สามารถดึงข้อมูลได้ (เว็บปฏิเสธการเชื่อมต่อหรือติดระบบป้องกัน)' },
-        { status: 400 }
+        { code: 'DIRECT_FETCH_FAILED', error: 'ไม่สามารถดึงหน้าเว็บจากเซิร์ฟเวอร์ได้' },
+        { status: 503 }
       );
     }
 
@@ -84,6 +84,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { code: 'WEBVIEW_REQUIRED', error: error.message },
         { status: 428 }
+      );
+    }
+    if (error instanceof FetchTransportError) {
+      return NextResponse.json(
+        { code: 'DIRECT_FETCH_FAILED', error: error.message },
+        { status: 503 }
       );
     }
     return NextResponse.json(
