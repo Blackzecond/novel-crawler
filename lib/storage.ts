@@ -212,9 +212,11 @@ export const localStorageStore: NovelStore = {
     if (!target) return null;
     const glossary = { ...target.glossary };
     const glossaryTypes = { ...target.glossaryTypes };
-    for (const term of sourceTerms) { delete glossary[term]; delete glossaryTypes[term]; }
+    const glossaryMetadata = { ...(target.glossaryMetadata ?? {}) };
+    for (const term of sourceTerms) { delete glossary[term]; delete glossaryTypes[term]; delete glossaryMetadata[term]; }
     target.glossary = glossary;
     target.glossaryTypes = glossaryTypes;
+    target.glossaryMetadata = glossaryMetadata;
     target.updatedAt = Date.now();
     saveAll(projects);
     return target;
