@@ -59,6 +59,10 @@ export interface NovelStore {
   // นำเข้าจากไฟล์ส่งออก JSON — id ซ้ำกับข้อมูลในเครื่องจะถูกแทนที่ด้วยข้อมูลไฟล์นำเข้า
   importProjects(projects: NovelProject[]): Promise<{ imported: number; skipped: number }>;
   deleteProject(id: string): Promise<void>;
+  ensureChapter(
+    projectId: string,
+    chapter: { url: string; title: string; order: number }
+  ): Promise<NovelChapter | null>;
   updateChapter(
     projectId: string,
     chapterId: string,
@@ -217,6 +221,32 @@ export const localStorageStore: NovelStore = {
   async deleteProject(id) {
     const projects = loadAllValid();
     saveAll(projects.filter((p) => p.id !== id));
+  },
+
+  async ensureChapter(projectId, chapter) {
+    const projects = loadAllValid();
+    const target = projects.find((p) => p.id === projectId);
+    if (!target) return null;
+    const existing = target.chapters.find((item) => item.url === chapter.url);
+    if (existing) {
+      existing.title = chapter.title || existing.title;
+      existing.order = chapter.order;
+      target.updatedAt = Date.now();
+      saveAll(projects);
+      return existing;
+    }
+    const created: NovelChapter = {
+      id: createId(),
+      url: chapter.url,
+      title: chapter.title || 'ไม่มีชื่อบท',
+      order: chapter.order,
+      status: 'pending',
+    };
+    target.chapters.push(created);
+    target.chapters.sort((a, b) => a.order - b.order);
+    target.updatedAt = Date.now();
+    saveAll(projects);
+    return created;
   },
 
   async updateChapter(projectId, chapterId, patch) {
