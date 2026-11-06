@@ -8,6 +8,13 @@ export class FetchChallengeError extends Error {
   }
 }
 
+export class FetchTransportError extends Error {
+  constructor(message = 'ไม่สามารถเชื่อมต่อเว็บไซต์ต้นทางได้') {
+    super(message);
+    this.name = 'FetchTransportError';
+  }
+}
+
 export function isChallengePage(html: string): boolean {
   const value = html.toLowerCase();
   return (
@@ -59,15 +66,18 @@ export async function fetchArticleHtml(targetUrl: string, _forceRender = false):
       result: response.ok ? (html ? 'html' : 'empty') : 'http-error',
       status: response.status,
     });
-    return response.ok ? html : '';
+    if (!response.ok || !html) {
+      throw new FetchTransportError(`ต้นทางตอบกลับ HTTP ${response.status || 'empty'}`);
+    }
+    return html;
   } catch (error) {
-    if (error instanceof FetchChallengeError) throw error;
+    if (error instanceof FetchChallengeError || error instanceof FetchTransportError) throw error;
     console.info('[fetchArticleHtml]', {
       host: hostname,
       totalMs: Date.now() - startedAt,
       result: 'fetch-error',
       error: error instanceof Error ? error.message : String(error),
     });
-    return '';
+    throw new FetchTransportError(error instanceof Error ? error.message : String(error));
   }
 }
