@@ -17,7 +17,7 @@ import {
   loadCloudReadingHistory, saveCloudReadingHistory,
 } from '@/lib/cloudPreferences';
 import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
-import { fetchWithNativeBrowser, prefetchWithNativeBrowser, prefersNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
+import { fetchWithNativeBrowser, prefetchWithNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 
 interface ArticleData {
   title: string;
@@ -288,7 +288,7 @@ export default function ReaderPage() {
         const res = await fetch('/api/parse', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: targetUrl, forceRender, fastOnly: !forceRender && !!activeProjectId && prefersNativeBrowser(activeProjectId) }),
+          body: JSON.stringify({ url: targetUrl, forceRender }),
         });
         const contentType = res.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
