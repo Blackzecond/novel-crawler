@@ -17,6 +17,13 @@ export interface NovelChapter {
   error?: string;
 }
 
+export interface WordReplacement {
+  id: string;
+  variants: string[];
+  replacement: string;
+  useRegex: boolean;
+}
+
 export interface NovelProject {
   id: string;
   title: string;
@@ -24,6 +31,7 @@ export interface NovelProject {
   host: string;
   glossary: Record<string, string>;
   glossaryTypes: Record<string, 'character' | 'term'>;
+  wordReplacements: WordReplacement[];
   // โหมดตรวจชื่อตัวละคร/ศัพท์เฉพาะด้วย AI: 'manual' = กดเองรายบท, 'auto' = จับหลังดึงเนื้อหาสำเร็จทุกบท
   glossaryMode: 'manual' | 'auto';
   // id บทล่าสุดที่เปิดอ่านจากโปรเจกต์นี้ — ใช้ทำปุ่ม "อ่านต่อ"
@@ -53,7 +61,7 @@ export interface NovelStore {
   renameProject(id: string, title: string): Promise<NovelProject | null>;
   updateProject(
     id: string,
-    patch: Partial<Pick<NovelProject, 'title' | 'glossary' | 'glossaryTypes' | 'glossaryMode' | 'lastReadChapterId'>>
+    patch: Partial<Pick<NovelProject, 'title' | 'glossary' | 'glossaryTypes' | 'glossaryMode' | 'lastReadChapterId' | 'wordReplacements'>>
   ): Promise<NovelProject | null>;
   deleteGlossaryTerms(projectId: string, sourceTerms: string[]): Promise<NovelProject | null>;
   deleteChapters(projectId: string, chapterIds: string[]): Promise<NovelProject | null>;
@@ -97,6 +105,7 @@ function normalizeProject(p: any): NovelProject | null {
     host: String(p.host ?? ''),
     glossary: p.glossary && typeof p.glossary === 'object' ? p.glossary : {},
     glossaryTypes: p.glossaryTypes && typeof p.glossaryTypes === 'object' ? p.glossaryTypes : {},
+    wordReplacements: Array.isArray(p.wordReplacements) ? p.wordReplacements : [],
     glossaryMode: p.glossaryMode === 'auto' ? 'auto' : 'manual',
     lastReadChapterId: typeof p.lastReadChapterId === 'string' ? p.lastReadChapterId : undefined,
     createdAt: Number(p.createdAt) || Date.now(),
@@ -149,6 +158,7 @@ export const localStorageStore: NovelStore = {
       host: data.host,
       glossary: data.glossary ?? {},
       glossaryTypes: {},
+      wordReplacements: [],
       glossaryMode: 'manual',
       createdAt: now,
       updatedAt: now,
@@ -176,6 +186,7 @@ export const localStorageStore: NovelStore = {
     if (patch.title !== undefined) target.title = patch.title;
     if (patch.glossary !== undefined) target.glossary = patch.glossary;
     if (patch.glossaryTypes !== undefined) target.glossaryTypes = patch.glossaryTypes;
+    if (patch.wordReplacements !== undefined) target.wordReplacements = patch.wordReplacements;
     if (patch.glossaryMode !== undefined) target.glossaryMode = patch.glossaryMode;
     if (patch.lastReadChapterId !== undefined) target.lastReadChapterId = patch.lastReadChapterId;
     target.updatedAt = Date.now();
