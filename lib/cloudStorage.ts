@@ -1,11 +1,11 @@
-import type { NewProjectData, NovelChapter, NovelProject, NovelStore, WordReplacement } from '@/lib/storage';
+import type { GlossaryDetection, GlossaryMetadata, NewProjectData, NovelChapter, NovelProject, NovelStore, WordReplacement } from '@/lib/storage';
 import { getSupabase } from '@/lib/supabase';
 
 const BUCKET = 'novel-content';
 
 type ProjectRow = {
   id: string; title: string; source_url: string; host: string;
-  glossary_mode: 'manual' | 'auto'; last_read_chapter_id: string | null;
+  glossary_mode: 'manual' | 'auto'; glossary_metadata?: Record<string, GlossaryMetadata> | null; glossary_detection?: GlossaryDetection | null; last_read_chapter_id: string | null;
   chapter_catalog: { url: string; title: string; order: number }[] | null;
   created_at: string; updated_at: string;
 };
@@ -249,7 +249,7 @@ export const supabaseStore: NovelStore = {
     const supabase = getSupabase();
     const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (patch.title !== undefined) update.title = patch.title;
-    if (patch.glossaryMode !== undefined) update.glossary_mode = patch.glossaryMode;
+    if (patch.glossaryMode !== undefined) update.glossary_mode = patch.glossaryMode;\n    if (patch.glossaryMetadata !== undefined) update.glossary_metadata = patch.glossaryMetadata;\n    if (patch.glossaryDetection !== undefined) { update.glossary_detection = patch.glossaryDetection; update.glossary_mode = patch.glossaryDetection.characters || patch.glossaryDetection.terms ? 'auto' : 'manual'; }
     if (patch.lastReadChapterId !== undefined) update.last_read_chapter_id = patch.lastReadChapterId || null;
     if (Object.keys(update).length > 1 || patch.glossary !== undefined || patch.glossaryTypes !== undefined) {
       const { error } = await supabase.from('novel_projects').update(update).eq('id', id).eq('user_id', userId);
@@ -364,7 +364,7 @@ export const supabaseStore: NovelStore = {
         await this.updateProject(created.id, {
           glossary,
           wordReplacements: Array.isArray(raw.wordReplacements) ? raw.wordReplacements : [],
-          glossaryMode: raw.glossaryMode === 'auto' ? 'auto' : 'manual',
+          glossaryMode: raw.glossaryMode === 'auto' ? 'auto' : 'manual',\n          glossaryMetadata: raw.glossaryMetadata && typeof raw.glossaryMetadata === 'object' ? raw.glossaryMetadata : {},\n          glossaryDetection: raw.glossaryDetection && typeof raw.glossaryDetection === 'object' ? raw.glossaryDetection : { characters: raw.glossaryMode === 'auto', terms: raw.glossaryMode === 'auto' },
           lastReadChapterId: newLastRead?.id,
         });
         imported++;
