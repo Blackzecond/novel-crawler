@@ -247,7 +247,7 @@ export default function ReaderPage() {
           includeOriginalText: true,
           includeTranslatedText: true,
         });
-        if (cached?.readerContent !== undefined) {
+        if (cached?.readerContent !== undefined && project.chapters.findIndex((item) => item.url === targetUrl) < project.chapters.length - 1) {
           const index = project.chapters.findIndex((item) => item.url === targetUrl);
           const cachedArticle: ArticleData = {
             title: chapter.title, content: cached.readerContent,
@@ -267,22 +267,26 @@ export default function ReaderPage() {
           window.scrollTo({ top: 0, behavior: 'smooth' }); return;
         }
       }
-      const parseNativePage = async () => {
-        const nativePage = await fetchWithNativeBrowser(targetUrl);
+      const parseNativePage = async (nativePage: { url: string; html: string } | null) => {
         if (!nativePage) return null;
         const fallbackRes = await fetch('/api/parse', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: targetUrl, pageUrl: nativePage.url, html: nativePage.html }),
         });
-        const fallbackData = await fallbackRes.json();
-        if (!fallbackRes.ok) throw new Error(fallbackData.error || 'อ่านเนื้อหาจากหน้าเว็บไม่สำเร็จ');
+        const fallbackData = await fallbackRes.json().catch(() => ({}));
+        if (!fallbackRes.ok) {
+          const fallbackError = new Error(fallbackData.error || 'อ่านเนื้อหาจากหน้าเว็บไม่สำเร็จ') as Error & { status?: number; code?: string };
+          fallbackError.status = fallbackRes.status;
+          fallbackError.code = fallbackData.code;
+          throw fallbackError;
+        }
         if (activeProjectId) rememberNativeBrowser(activeProjectId);
         return fallbackData;
       };
 
-      // Fast path: try the server directly on every chapter. Use the persisted WebView
-      // session only when the server reports a challenge or cannot retrieve the page.
+      // Direct Fetch is always first. Only a confirmed challenge opens the visible
+      // WebView; transport failures may use the hidden session, while parse errors stop.
       let data = null;
       try {
         const res = await fetch('/api/parse', {
@@ -295,19 +299,43 @@ export default function ReaderPage() {
           const rawText = await res.text().catch(() => '');
           throw new Error(`Server ตอบกลับผิดพลาด (${res.status}): ${rawText.slice(0, 100)}...`);
         }
-        data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+        const payload = await res.json();
+        if (!res.ok) {
+          const apiError = new Error(payload.error || 'เกิดข้อผิดพลาด') as Error & { status?: number; code?: string };
+          apiError.status = res.status;
+          apiError.code = payload.code;
+          throw apiError;
+        }
+        data = payload;
       } catch (serverError) {
-        const nativeData = await parseNativePage();
-        if (!nativeData) throw serverError;
-        data = nativeData;
+        const failure = serverError as Error & { status?: number; code?: string };
+        let nativePage = null;
+        if (failure.code === 'WEBVIEW_REQUIRED' || failure.status === 428) {
+          nativePage = await fetchWithNativeBrowser(targetUrl);
+        } else if (failure.code === 'DIRECT_FETCH_FAILED') {
+          nativePage = await prefetchWithNativeBrowser(targetUrl);
+        } else {
+          throw serverError;
+        }
+        if (!nativePage) throw serverError;
+        try {
+          const nativeData = await parseNativePage(nativePage);
+          if (!nativeData) throw serverError;
+          data = nativeData;
+        } catch (nativeError) {
+          const nativeFailure = nativeError as Error & { status?: number; code?: string };
+          if (nativeFailure.code !== 'WEBVIEW_REQUIRED' && nativeFailure.status !== 428) throw nativeError;
+          const visiblePage = await fetchWithNativeBrowser(targetUrl);
+          if (!visiblePage) throw nativeError;
+          data = await parseNativePage(visiblePage);
+        }
       }
       let articleData: ArticleData = data;
       if (activeProjectId && project && chapter) {
         const index = project.chapters.findIndex((item) => item.url === targetUrl);
         articleData = { ...data, title: chapter.title || data.title,
-          prevUrl: index > 0 ? project.chapters[index - 1].url : null,
-          nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : null };
+          prevUrl: index > 0 ? project.chapters[index - 1].url : data.prevUrl ?? null,
+          nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : data.nextUrl ?? null };
       }
 
       // Render first. Saving to Storage/DB runs in the background so network persistence
@@ -319,52 +347,75 @@ export default function ReaderPage() {
       setArticle(articleData);
       syncReaderUrl(targetUrl, activeProjectId);
 
-      if (activeProjectId && project && chapter) {
+      if (activeProjectId && project) {
         void (async () => {
           try {
-            const savedChapter = await getStore().updateChapter(activeProjectId, chapter.id, {
-              url: chapter.url, title: chapter.title || data.title, order: chapter.order,
-              originalText: data.textContent, readerContent: data.content, status: 'fetched', error: undefined,
+            const previousChapter = data.prevUrl
+              ? project!.chapters.find((item) => item.url === data.prevUrl)
+              : undefined;
+            const followingChapter = data.nextUrl
+              ? project!.chapters.find((item) => item.url === data.nextUrl)
+              : undefined;
+            const nextOrder = previousChapter
+              ? previousChapter.order + 1
+              : followingChapter
+                ? followingChapter.order - 1
+                : Math.max(-1, ...project!.chapters.map((item) => item.order)) + 1;
+            const ensuredChapter = await getStore().ensureChapter(activeProjectId, {
+              url: targetUrl,
+              title: chapter?.title || data.title || 'ไม่มีชื่อบท',
+              order: chapter?.order ?? nextOrder,
             });
-            if (savedChapter) {
-              setReaderProject((current) => current?.id === activeProjectId ? {
-                ...current,
-                lastReadChapterId: savedChapter.id,
-                chapters: current.chapters.map((item) => item.url === targetUrl
-                  ? { ...item, id: savedChapter.id, status: savedChapter.status }
-                  : item),
-              } : current);
-              await getStore().updateProject(activeProjectId, { lastReadChapterId: savedChapter.id });
+            if (!ensuredChapter) throw new Error('ไม่สามารถเพิ่มบทเข้าโปรเจกต์ได้');
+            const savedChapter = await getStore().updateChapter(activeProjectId, ensuredChapter.id, {
+              url: targetUrl,
+              title: chapter?.title || data.title,
+              order: ensuredChapter.order,
+              originalText: data.textContent,
+              readerContent: data.content,
+              status: 'fetched',
+              error: undefined,
+            });
+            if (!savedChapter) throw new Error('บันทึกเนื้อหาบทไม่สำเร็จ');
+            setCurrentChapterId(savedChapter.id);
+            setReaderProject((current) => current?.id === activeProjectId ? {
+              ...current,
+              lastReadChapterId: savedChapter.id,
+              chapters: [
+                ...current.chapters.filter((item) => item.url !== targetUrl),
+                savedChapter,
+              ].sort((a, b) => a.order - b.order),
+            } : current);
+            await getStore().updateProject(activeProjectId, { lastReadChapterId: savedChapter.id });
 
-              // In auto mode, detect glossary entries for chapters fetched directly in Reader too.
-              if (project.glossaryMode === 'auto' && hasAiKey() && data.textContent) {
-                try {
-                  const pairs = await detectNamedTerms(data.textContent);
-                  const latest = await getStore().getProject(activeProjectId);
-                  if (latest) {
-                    const glossary = { ...latest.glossary };
-                    const glossaryTypes = { ...latest.glossaryTypes };
-                    const added: typeof pairs = [];
-                    for (const pair of pairs) {
-                      if (!pair.zh || !pair.th || glossary[pair.zh] !== undefined) continue;
-                      glossary[pair.zh] = pair.th;
-                      glossaryTypes[pair.zh] = pair.type;
-                      added.push(pair);
-                    }
-                    if (added.length) {
-                      const updatedProject = await getStore().updateProject(activeProjectId, { glossary, glossaryTypes });
-                      if (!updatedProject) throw new Error('บันทึกคลังศัพท์ไม่สำเร็จ');
-                      setReaderProject(updatedProject);
-                      const names = added.map((pair) => pair.zh + ' → ' + pair.th).join(', ');
-                      setGlossaryNotice(`จับศัพท์อัตโนมัติและบันทึกแล้ว ${added.length} รายการจากบท “${chapter.title}”: ${names}`);
-                      setDetectedGlossary({ items: added.map((pair) => ({ zh: pair.zh, th: pair.th, type: pair.type })), sourceLabel: chapter.title });
-                    } else {
-                      setGlossaryNotice(pairs.length ? 'จับศัพท์อัตโนมัติแล้ว แต่ไม่มีรายการใหม่ (คำเดิมไม่ถูกเพิ่มซ้ำ)' : 'จับศัพท์อัตโนมัติแล้ว — ไม่พบคำใหม่ในบทนี้');
-                    }
+            // In auto mode, detect glossary entries for chapters fetched directly in Reader too.
+            if (project!.glossaryMode === 'auto' && hasAiKey() && data.textContent) {
+              try {
+                const pairs = await detectNamedTerms(data.textContent);
+                const latest = await getStore().getProject(activeProjectId);
+                if (latest) {
+                  const glossary = { ...latest.glossary };
+                  const glossaryTypes = { ...latest.glossaryTypes };
+                  const added: typeof pairs = [];
+                  for (const pair of pairs) {
+                    if (!pair.zh || !pair.th || glossary[pair.zh] !== undefined) continue;
+                    glossary[pair.zh] = pair.th;
+                    glossaryTypes[pair.zh] = pair.type;
+                    added.push(pair);
                   }
-                } catch (detectError) {
-                  setGlossaryNotice(`จับศัพท์อัตโนมัติไม่สำเร็จ: ${detectError instanceof Error ? detectError.message : String(detectError)}`);
+                  if (added.length) {
+                    const updatedProject = await getStore().updateProject(activeProjectId, { glossary, glossaryTypes });
+                    if (!updatedProject) throw new Error('บันทึกคลังศัพท์ไม่สำเร็จ');
+                    setReaderProject(updatedProject);
+                    const names = added.map((pair) => pair.zh + ' → ' + pair.th).join(', ');
+                    setGlossaryNotice(`จับศัพท์อัตโนมัติและบันทึกแล้ว ${added.length} รายการจากบท “${savedChapter.title}”: ${names}`);
+                    setDetectedGlossary({ items: added.map((pair) => ({ zh: pair.zh, th: pair.th, type: pair.type })), sourceLabel: savedChapter.title });
+                  } else {
+                    setGlossaryNotice(pairs.length ? 'จับศัพท์อัตโนมัติแล้ว แต่ไม่มีรายการใหม่ (คำเดิมไม่ถูกเพิ่มซ้ำ)' : 'จับศัพท์อัตโนมัติแล้ว — ไม่พบคำใหม่ในบทนี้');
+                  }
                 }
+              } catch (detectError) {
+                setGlossaryNotice(`จับศัพท์อัตโนมัติไม่สำเร็จ: ${detectError instanceof Error ? detectError.message : String(detectError)}`);
               }
             }
           } catch (saveError) {
