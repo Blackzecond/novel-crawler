@@ -6,7 +6,7 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, Loader2, Play, Square, Trash2,
   ExternalLink, Search, ArrowUpDown, AlertTriangle, CheckCircle2, Circle,
   Sparkles, Globe, BookOpen, Download, FolderOpen, Pencil, Check, X,
-  BookMarked, Plus, History,
+  BookMarked, Plus, History, MoreVertical,
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 import {
@@ -56,6 +56,11 @@ export default function ProjectClient({ id }: { id: string }) {
   const [sortDesc, setSortDesc] = useState(false);
   const [filter, setFilter] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [chapterMenuId, setChapterMenuId] = useState<string | null>(null);
+  const [editingChapterId, setEditingChapterId] = useState<string | null>(null);
+  const [chapterTitleDraft, setChapterTitleDraft] = useState('');
+  const [bulkDeleteMode, setBulkDeleteMode] = useState(false);
+  const [selectedChapterIds, setSelectedChapterIds] = useState<string[]>([]);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [queue, setQueue] = useState({ running: false, done: 0, total: 0 });
   const abortRef = useRef(false);
@@ -627,49 +632,15 @@ export default function ProjectClient({ id }: { id: string }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => {
-                if (queue.running) {
-                  abortRef.current = true;
-                } else {
-                  void fetchAllPending();
-                }
-              }}
-              disabled={pendingCount === 0 && !queue.running}
-              className={`inline-flex h-9 items-center justify-center gap-1.5 px-3 rounded-lg text-sm font-medium transition-all disabled:opacity-40 cursor-pointer ${
-                queue.running
-                  ? 'bg-danger-fg text-white border border-transparent'
-                  : 'bg-accent text-accent-fg border border-transparent hover:brightness-110'
-              }`}
-            >
-              {queue.running ? (
-                <>
-                  <Square className="w-3.5 h-3.5" /> หยุดดึง ({queue.done}/{queue.total})
-                </>
-              ) : (
-                <>
-                  <Play className="w-3.5 h-3.5" /> ดึงที่ยังไม่ได้ ({pendingCount})
-                </>
-              )}
+            <button onClick={() => setSortDesc(!sortDesc)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-sm hover:bg-card" title={hasOriginalOrderAsc ? 'สารบัญต้นฉบับเรียงบทจากน้อยไปมาก' : 'สารบัญต้นฉบับเรียงบทแบบย้อนกลับ'}>
+              <ArrowUpDown className="h-3.5 w-3.5"/> {sortDesc ? 'ใหม่…เก่า' : 'เก่า…ใหม่'}
             </button>
-            <button
-              onClick={() => setSortDesc(!sortDesc)}
-              className="inline-flex h-9 items-center gap-1.5 px-3 rounded-lg text-sm border border-line bg-surface hover:bg-card hover:border-accent-line transition-colors cursor-pointer"
-              title={hasOriginalOrderAsc ? 'สารบัญต้นฉบับเรียงบทจากน้อยไปมาก' : 'สารบัญต้นฉบับเรียงบทแบบย้อนกลับ'}
-            >
-              <ArrowUpDown className="w-3.5 h-3.5" />
-              {sortDesc ? 'ใหม่…เก่า' : 'เก่า…ใหม่'}
-            </button>
-            <div className="relative flex-1 min-w-[10rem] basis-full sm:basis-auto">
-              <Search className="w-3.5 h-3.5 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                aria-label="ค้นหาชื่อบท"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                placeholder="ค้นหาชื่อบท..."
-                className="w-full h-9 pl-9 pr-3 text-sm bg-bg border border-line rounded-lg text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60 focus:border-accent-line"
-              />
+            <div className="relative min-w-[10rem] flex-1 basis-full sm:basis-auto">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted"/>
+              <input aria-label="ค้นหาชื่อบท" value={filter} onChange={e=>setFilter(e.target.value)} placeholder="ค้นหาชื่อบท..." className="h-9 w-full rounded-lg border border-line bg-bg pl-9 pr-3 text-sm"/>
             </div>
+            <button onClick={() => {setBulkDeleteMode(!bulkDeleteMode);setSelectedChapterIds([]);}} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-sm">{bulkDeleteMode ? 'ยกเลิกเลือกลบ' : 'ลบหลายตอน'}</button>
+            {bulkDeleteMode && <button disabled={!selectedChapterIds.length} onClick={async()=>{if(!window.confirm(`ลบ ${selectedChapterIds.length} ตอนพร้อมไฟล์ทั้งหมดถาวรหรือไม่?`))return;const updated=await getStore().deleteChapters(id,selectedChapterIds);if(updated)setProject(updated);setSelectedChapterIds([]);setBulkDeleteMode(false);}} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-danger-fg px-3 text-sm text-white disabled:opacity-40">ลบที่เลือก ({selectedChapterIds.length})</button>}
           </div>
           {queue.running && (
             <p className="text-[11px] text-muted flex items-center gap-1.5">
@@ -679,117 +650,10 @@ export default function ProjectClient({ id }: { id: string }) {
           )}
         </section>
 
-        {/* แผงศัพท์เฉพาะ / ชื่อตัวละคร (glossary) */}
-        <section className="rounded-xl border border-line bg-card shadow-sm">
-          <button
-            onClick={() => setGlossaryOpen(!glossaryOpen)}
-            className="w-full flex items-center justify-between gap-2 px-4 py-3 cursor-pointer"
-            aria-expanded={glossaryOpen}
-          >
-            <span className="flex items-center gap-2 min-w-0">
-              <BookMarked className="w-4 h-4 text-accent shrink-0" />
-              <span className="text-sm font-semibold truncate">ศัพท์เฉพาะ / ชื่อตัวละคร</span>
-              <span className="inline-flex items-center justify-center px-1.5 h-5 rounded-full text-[10px] bg-accent-soft text-accent-soft-fg border border-accent-line shrink-0">
-                {glossaryEntries.length}
-              </span>
-            </span>
-            <ChevronDown className={`w-4 h-4 text-muted transition-transform shrink-0 ${glossaryOpen ? 'rotate-180' : ''}`} />
-          </button>
-
-          {glossaryOpen && (
-            <div className="px-4 pb-4 pt-3 space-y-3 border-t border-line">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                {/* โหมดตรวจ: กดเอง / อัตโนมัติหลังดึง */}
-                <div className="inline-flex rounded-lg border border-line overflow-hidden text-[11px] font-medium" role="group" aria-label="โหมดตรวจศัพท์เฉพาะ">
-                  <button
-                    onClick={() => void setGlossaryMode('manual')}
-                    className={`px-2.5 h-7 ${project.glossaryMode === 'manual' ? 'bg-accent-soft text-accent-soft-fg' : 'text-muted hover:text-fg'} cursor-pointer`}
-                    aria-pressed={project.glossaryMode === 'manual'}
-                  >
-                    กดตรวจเอง
-                  </button>
-                  <button
-                    onClick={() => void setGlossaryMode('auto')}
-                    className={`px-2.5 h-7 ${project.glossaryMode === 'auto' ? 'bg-accent-soft text-accent-soft-fg' : 'text-muted hover:text-fg'} cursor-pointer`}
-                    aria-pressed={project.glossaryMode === 'auto'}
-                  >
-                    อัตโนมัติหลังดึง
-                  </button>
-                </div>
-              </div>
-
-              <p className="text-[11px] text-muted leading-relaxed">
-                {project.glossaryMode === 'auto'
-                  ? 'โหมดอัตโนมัติ: จับชื่อตัวละคร/ศัพท์เฉพาะทันทีหลังดึงเนื้อหาบทสำเร็จ คำที่มีอยู่แล้วจะไม่ถูกเพิ่มซ้ำ'
-                  : 'โหมดกดเอง: ขยายบทที่ดึงแล้วแล้วกด “จับศัพท์ (AI)” คำที่มีอยู่แล้วจะไม่ถูกเพิ่มซ้ำ'}
-              </p>
-
-              {/* แยกตัวละครและศัพท์เฉพาะ พร้อมเลือกหลายรายการเพื่อลบ */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button type="button" onClick={() => setSelectedGlossaryTerms(glossaryEntries.map(([zh]) => zh))}
-                  disabled={!glossaryEntries.length} className="h-8 rounded-lg border border-line px-2.5 text-xs hover:bg-surface disabled:opacity-40">เลือกทั้งหมด</button>
-                <button type="button" onClick={() => setSelectedGlossaryTerms([])} disabled={!selectedGlossaryTerms.length}
-                  className="h-8 rounded-lg border border-line px-2.5 text-xs hover:bg-surface disabled:opacity-40">ยกเลิกเลือก</button>
-                <span className="text-xs text-muted">เลือกแล้ว {selectedGlossaryTerms.length} / {glossaryEntries.length}</span>
-                <button type="button" onClick={() => void deleteGlossaryTerms(selectedGlossaryTerms)} disabled={!selectedGlossaryTerms.length}
-                  className="ml-auto inline-flex h-8 items-center gap-1 rounded-lg border border-danger-line px-2.5 text-xs text-danger-fg hover:bg-danger-bg disabled:opacity-40">
-                  <Trash2 className="h-3.5 w-3.5" />ลบที่เลือก
-                </button>
-              </div>
-              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                {([
-                  { type: 'character' as const, title: 'ตัวละคร', entries: characterEntries },
-                  { type: 'term' as const, title: 'ศัพท์เฉพาะ', entries: termEntries },
-                ]).map((group) => (
-                  <section key={group.type} className="space-y-1.5">
-                    <h3 className="sticky top-0 z-10 rounded-md bg-surface px-2 py-1.5 text-xs font-semibold">
-                      {group.title} <span className="text-muted font-normal">({group.entries.length})</span>
-                    </h3>
-                    {group.entries.map(([zh, th]) => (
-                      <div key={zh} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-1 py-1 sm:grid-cols-[auto_minmax(0,0.8fr)_auto_minmax(0,1.5fr)_5.5rem_auto]">
-                        <input type="checkbox" aria-label={`เลือก ${zh}`} checked={selectedGlossaryTerms.includes(zh)}
-                          onChange={(event) => setSelectedGlossaryTerms((current) => event.target.checked ? [...current, zh] : current.filter((term) => term !== zh))}
-                          className="h-4 w-4 shrink-0 accent-current" />
-                        <span className="col-span-1 min-w-0 truncate text-sm font-medium" lang="zh-CN">{zh}</span>
-                        <span className="hidden shrink-0 text-muted sm:inline">→</span>
-                        <input key={`${zh}:${th}`} defaultValue={th}
-                          onBlur={(event) => { if (event.target.value.trim() !== th) void updateGlossaryTerm(zh, event.target.value); }}
-                          className="col-span-2 h-8 min-w-0 w-full rounded-lg border border-line bg-bg px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-accent/60 sm:col-span-1"
-                          aria-label={`คำแปลไทยของ ${zh}`} />
-                        <select aria-label={`ประเภทของ ${zh}`} value={group.type}
-                          onChange={(event) => void updateGlossaryTerm(zh, th, event.target.value as 'character' | 'term')}
-                          className="col-start-2 h-8 w-full min-w-0 rounded-lg border border-line bg-bg px-1 text-[11px] text-fg sm:col-auto sm:w-[5.5rem] sm:shrink-0">
-                          <option value="character">ตัวละคร</option><option value="term">ศัพท์</option>
-                        </select>
-                        <button type="button" onClick={() => void deleteGlossaryTerms([zh])}
-                          className="col-start-3 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-bg hover:text-danger-fg sm:col-auto"
-                          aria-label={`ลบศัพท์ ${zh}`} title="ลบศัพท์นี้"><Trash2 className="h-3.5 w-3.5" /></button>
-                      </div>
-                    ))}
-                    {!group.entries.length && <p className="px-2 py-1 text-xs text-muted">ยังไม่มีรายการ</p>}
-                  </section>
-                ))}
-              </div>
-              {/* เพิ่มคำเอง */}
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_auto]">
-                <input value={addZh} onChange={(event) => setAddZh(event.target.value)} placeholder="ศัพท์จีน เช่น 林动"
-                  className="h-9 min-w-0 rounded-lg border border-line bg-bg px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-accent/60" />
-                <input value={addTh} onChange={(event) => setAddTh(event.target.value)} placeholder="คำแปลไทย"
-                  className="h-9 min-w-0 rounded-lg border border-line bg-bg px-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-accent/60" />
-                <select value={addTermType} onChange={(event) => setAddTermType(event.target.value as 'character' | 'term')}
-                  className="h-9 rounded-lg border border-line bg-bg px-2 text-xs text-fg">
-                  <option value="character">ตัวละคร</option><option value="term">ศัพท์เฉพาะ</option>
-                </select>
-                <button disabled={!addZh.trim()} onClick={() => void addManualTerm()}
-                  className="inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-40">
-                  <Plus className="h-3.5 w-3.5" /> เพิ่ม
-                </button>
-              </div>
-
-            </div>
-          )}
+        <section className="flex items-center justify-between rounded-xl border border-line bg-card px-4 py-3">
+          <div><p className="text-sm font-semibold">Glossary</p><p className="mt-0.5 text-xs text-muted">จัดการตัวละครและศัพท์เฉพาะของเรื่องนี้</p></div>
+          <Link href={`/project/${project.id}/glossary`} className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-3 text-sm font-medium text-accent-fg"><BookMarked className="h-4 w-4"/> เปิดคลังศัพท์</Link>
         </section>
-        {glossaryNotice && <div role="status" className="rounded-xl border border-accent-line bg-accent-soft px-3 py-2.5 text-xs leading-relaxed text-accent-soft-fg"><Sparkles className="mr-1.5 inline h-3.5 w-3.5" />{glossaryNotice}</div>}
 
         {/* รายการบท */}
         <section className="rounded-xl border border-line bg-card shadow-sm divide-y divide-line">
@@ -800,127 +664,38 @@ export default function ProjectClient({ id }: { id: string }) {
             </div>
           )}
           {chapters.map((c) => {
-            const busy = busyIds.has(c.id);
-            const detecting = detecBusyIds.has(c.id);
-            const translating = translateBusyIds.has(c.id);
-            const expanded = expandedId === c.id;
             const isLastRead = c.id === project.lastReadChapterId;
+            const selected = selectedChapterIds.includes(c.id);
             return (
-              <div key={c.id}>
-                <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 hover:bg-surface/50 transition-colors">
-                  <span className="hidden sm:block text-xs text-muted w-10 shrink-0 tabular-nums text-right">
-                    {c.order + 1}
-                  </span>
-                  <button
-                    onClick={() => void toggleExpanded(c)}
-                    className="flex-1 min-w-0 text-left cursor-pointer"
-                    aria-expanded={expanded}
-                  >
-                    <span className="text-sm leading-snug line-clamp-2">{c.title}</span>
-                    {c.error && (
-                      <span className="flex items-center gap-1 text-xs text-danger-fg truncate mt-0.5">
-                        <AlertTriangle className="w-3 h-3 shrink-0" /> {c.error}
-                      </span>
-                    )}
-                  </button>
-                  <StatusBadge status={c.status} />
-                  <button
-                    onClick={() => void fetchChapter(c)}
-                    disabled={busy}
-                    className={`hidden md:inline-flex h-7 items-center gap-1 px-2.5 rounded-md text-xs border border-line bg-surface hover:bg-card hover:border-accent-line transition-colors shrink-0 cursor-pointer disabled:opacity-40 ${
-                      c.status !== 'pending' ? 'opacity-60' : ''
-                    }`}
-                    title="ดึงเนื้อหาบทนี้"
-                  >
-                    <ChevronRight className="w-3 h-3" /> ดึง
-                  </button>
-                  {busy && <Loader2 className="animate-spin w-4 h-4 text-accent shrink-0" />}
-                  <ChevronDown
-                    className={`w-4 h-4 text-muted shrink-0 transition-transform cursor-pointer ${expanded ? 'rotate-180' : ''}`}
-                    onClick={() => setExpandedId(expanded ? null : c.id)}
-                  />
+              <div key={c.id} className="flex items-center gap-3 px-3 py-3 hover:bg-surface/50 sm:px-4">
+                {bulkDeleteMode && <input type="checkbox" checked={selected} onChange={(e) => setSelectedChapterIds(current => e.target.checked ? [...current, c.id] : current.filter(value => value !== c.id))} aria-label={`เลือกลบ ${c.title}`} className="h-4 w-4 shrink-0"/>}
+                <span className="hidden w-10 shrink-0 text-right text-xs tabular-nums text-muted sm:block">{c.order + 1}</span>
+                <Link href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(c.url)}`} className="min-w-0 flex-1 text-left">
+                  <span className="line-clamp-2 block text-sm leading-snug">{c.title}</span>
+                  {c.error && <span className="mt-0.5 block truncate text-xs text-danger-fg">{c.error}</span>}
+                  {isLastRead && <span className="mt-0.5 block text-[11px] text-accent-soft-fg">อ่านค้างไว้</span>}
+                </Link>
+                <StatusBadge status={c.status}/>
+                <div className="relative shrink-0">
+                  <button type="button" onClick={() => setChapterMenuId(chapterMenuId === c.id ? null : c.id)} aria-label="เมนูบท" className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface"><MoreVertical className="h-5 w-5"/></button>
+                  {chapterMenuId === c.id && <div className="absolute right-0 top-10 z-30 w-44 rounded-xl border border-line bg-card p-1 shadow-xl">
+                    <button onClick={() => {setEditingChapterId(c.id);setChapterTitleDraft(c.title);setChapterMenuId(null);}} className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-surface">แก้ไขชื่อตอน</button>
+                    <button onClick={async()=>{if(!window.confirm('ลบตอนนี้พร้อมไฟล์เนื้อหาทั้งหมดถาวรหรือไม่?'))return;const updated=await getStore().deleteChapters(id,[c.id]);if(updated)setProject(updated);setChapterMenuId(null);}} className="block w-full rounded-lg px-3 py-2 text-left text-sm text-danger-fg hover:bg-surface">ลบตอน</button>
+                  </div>}
                 </div>
-
-                {expanded && (
-                  <div className="px-3 sm:px-4 pb-4 pt-3 space-y-3 bg-surface/50 border-t border-line/60">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => void fetchChapter(c)}
-                        disabled={busy}
-                        className="md:hidden inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs bg-accent text-accent-fg font-medium cursor-pointer disabled:opacity-50"
-                      >
-                        <ChevronRight className="w-3 h-3" /> ดึงเนื้อหา
-                      </button>
-                      <Link
-                        href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(c.url)}`}
-                        className="inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs bg-accent text-accent-fg font-medium cursor-pointer"
-                      >
-                        <BookOpen className="w-3 h-3" /> เปิดใน Reader
-                      </Link>
-                      <button
-                        onClick={() => void fetchChapter(c, true)}
-                        className="inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs border border-line bg-surface hover:bg-card transition-colors cursor-pointer"
-                      >
-                        ลองใหม่ (Force Render)
-                      </button>
-                      <button
-                        onClick={() => void detectChapter(c)}
-                        disabled={detecting || !aiReady}
-                        title={!aiReady ? 'ยังไม่ได้ตั้ง AI API key — กลับไปหน้าหลักแล้วเลือก “ตั้งค่า AI”' : 'โหลดเนื้อหาจาก Storage/Cache แล้วจับชื่อตัวละครและศัพท์เฉพาะด้วย AI'}
-                        className={`inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs border transition-colors ${
-                          aiReady
-                            ? 'border-accent-line bg-accent-soft text-accent-soft-fg hover:brightness-105'
-                            : 'border-line bg-surface text-muted opacity-60 cursor-not-allowed'
-                        }`}
-                      >
-                        {detecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                        จับศัพท์ (AI)
-                      </button>
-                      <button
-                        onClick={() => void translateChapter(c)}
-                        disabled={translating || !aiReady}
-                        title={!aiReady ? 'ยังไม่ได้ตั้ง AI API key — กลับไปหน้าหลักแล้วเลือก “ตั้งค่า AI”' : 'แปลเนื้อหาที่แคชไว้และบันทึกคำแปลลงคลัง'}
-                        className={`inline-flex items-center gap-1 px-2.5 h-8 rounded-md text-xs border transition-colors ${aiReady ? 'border-accent-line bg-accent-soft text-accent-soft-fg hover:brightness-105' : 'border-line bg-surface text-muted opacity-60 cursor-not-allowed'}`}
-                      >
-                        {translating ? <Loader2 className="w-3 h-3 animate-spin" /> : <BookOpen className="w-3 h-3" />}
-                        {translating ? 'กำลังแปล' : 'แปลด้วย AI'}
-                      </button>
-                    </div>
-                    {isLastRead && (
-                      <p className="text-[11px] text-accent-soft-fg flex items-center gap-1">
-                        <History className="w-3 h-3" /> คุณค้างอ่านบทนี้ไว้
-                      </p>
-                    )}
-                    {chapterNotice && <p role="status" className="text-[11px] text-muted rounded-lg bg-surface border border-line px-2.5 py-1.5">{chapterNotice}</p>}
-                    <pre className="text-xs leading-relaxed whitespace-pre-wrap font-sans max-h-56 overflow-y-auto p-3 rounded-lg bg-bg border border-line">
-                      {c.originalText?.slice(0, 2000) || (c.readerContent ? htmlToPlainText(c.readerContent).slice(0, 2000) : 'ยังไม่ได้ดึงเนื้อหา')}
-                      {c.originalText && c.originalText.length > 2000 && ' …'}
-                    </pre>
-                    {(c.originalText || c.readerContent) && (
-                      <p className="flex items-center gap-1 text-[11px] text-muted">
-                        <Download className="w-3 h-3" />
-                        {(c.originalText ?? htmlToPlainText(c.readerContent ?? '')).length.toLocaleString()} ตัวอักษร
-                      </p>
-                    )}
-                    {c.translatedText && (
-                      <div className="space-y-1">
-                        <p className="text-[11px] font-medium text-muted">คำแปลที่บันทึกไว้</p>
-                        <pre className="text-xs leading-relaxed whitespace-pre-wrap font-sans max-h-40 overflow-y-auto p-3 rounded-lg bg-bg border border-line">{c.translatedText.slice(0, 2000)}{c.translatedText.length > 2000 ? ' …' : ''}</pre>
-                      </div>
-                    )}
+                {editingChapterId === c.id && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                  <div className="w-full max-w-sm rounded-2xl border border-line bg-card p-5">
+                    <h2 className="font-semibold">แก้ไขชื่อตอน</h2>
+                    <input autoFocus value={chapterTitleDraft} onChange={e=>setChapterTitleDraft(e.target.value)} className="mt-3 h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm"/>
+                    <div className="mt-4 flex justify-end gap-2"><button onClick={()=>setEditingChapterId(null)} className="rounded-lg border border-line px-3 py-2 text-sm">ยกเลิก</button><button onClick={async()=>{const updated=await getStore().renameChapter(id,c.id,chapterTitleDraft.trim());if(updated)setProject(updated);setEditingChapterId(null);}} disabled={!chapterTitleDraft.trim()} className="rounded-lg bg-accent px-3 py-2 text-sm text-accent-fg disabled:opacity-40">บันทึก</button></div>
                   </div>
-                )}
+                </div>}
               </div>
             );
           })}
         </section>
 
-        {!queue.running && pendingCount > 0 && (
-          <p className="text-[11px] text-muted text-center flex items-center justify-center gap-1.5">
-            <Sparkles className="w-3 h-3" />
-            กดปุ่ม “ดึงที่ยังไม่ได้” ด้านบนเพื่อดึงบททั้งหมดแบบลำดับในครั้งเดียว หรือขยายแต่ละบทเพื่อดึงเฉพาะที่ต้องการ
-          </p>
-        )}
+
 
 
       </main>

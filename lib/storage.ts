@@ -17,6 +17,13 @@ export interface NovelChapter {
   error?: string;
 }
 
+export interface WordReplacement {
+  id: string;
+  variants: string[];
+  replacement: string;
+  useRegex: boolean;
+}
+
 export interface NovelProject {
   id: string;
   title: string;
@@ -24,6 +31,7 @@ export interface NovelProject {
   host: string;
   glossary: Record<string, string>;
   glossaryTypes: Record<string, 'character' | 'term'>;
+  wordReplacements: WordReplacement[];
   // โหมดตรวจชื่อตัวละคร/ศัพท์เฉพาะด้วย AI: 'manual' = กดเองรายบท, 'auto' = จับหลังดึงเนื้อหาสำเร็จทุกบท
   glossaryMode: 'manual' | 'auto';
   // id บทล่าสุดที่เปิดอ่านจากโปรเจกต์นี้ — ใช้ทำปุ่ม "อ่านต่อ"
@@ -53,9 +61,11 @@ export interface NovelStore {
   renameProject(id: string, title: string): Promise<NovelProject | null>;
   updateProject(
     id: string,
-    patch: Partial<Pick<NovelProject, 'title' | 'glossary' | 'glossaryTypes' | 'glossaryMode' | 'lastReadChapterId'>>
+    patch: Partial<Pick<NovelProject, 'title' | 'glossary' | 'glossaryTypes' | 'glossaryMode' | 'lastReadChapterId' | 'wordReplacements'>>
   ): Promise<NovelProject | null>;
   deleteGlossaryTerms(projectId: string, sourceTerms: string[]): Promise<NovelProject | null>;
+  deleteChapters(projectId: string, chapterIds: string[]): Promise<NovelProject | null>;
+  renameChapter(projectId: string, chapterId: string, title: string): Promise<NovelProject | null>;
   // นำเข้าจากไฟล์ส่งออก JSON — id ซ้ำกับข้อมูลในเครื่องจะถูกแทนที่ด้วยข้อมูลไฟล์นำเข้า
   importProjects(projects: NovelProject[]): Promise<{ imported: number; skipped: number }>;
   deleteProject(id: string): Promise<void>;
@@ -95,6 +105,7 @@ function normalizeProject(p: any): NovelProject | null {
     host: String(p.host ?? ''),
     glossary: p.glossary && typeof p.glossary === 'object' ? p.glossary : {},
     glossaryTypes: p.glossaryTypes && typeof p.glossaryTypes === 'object' ? p.glossaryTypes : {},
+    wordReplacements: Array.isArray(p.wordReplacements) ? p.wordReplacements : [],
     glossaryMode: p.glossaryMode === 'auto' ? 'auto' : 'manual',
     lastReadChapterId: typeof p.lastReadChapterId === 'string' ? p.lastReadChapterId : undefined,
     createdAt: Number(p.createdAt) || Date.now(),
@@ -147,6 +158,7 @@ export const localStorageStore: NovelStore = {
       host: data.host,
       glossary: data.glossary ?? {},
       glossaryTypes: {},
+      wordReplacements: [],
       glossaryMode: 'manual',
       createdAt: now,
       updatedAt: now,
@@ -174,6 +186,7 @@ export const localStorageStore: NovelStore = {
     if (patch.title !== undefined) target.title = patch.title;
     if (patch.glossary !== undefined) target.glossary = patch.glossary;
     if (patch.glossaryTypes !== undefined) target.glossaryTypes = patch.glossaryTypes;
+    if (patch.wordReplacements !== undefined) target.wordReplacements = patch.wordReplacements;
     if (patch.glossaryMode !== undefined) target.glossaryMode = patch.glossaryMode;
     if (patch.lastReadChapterId !== undefined) target.lastReadChapterId = patch.lastReadChapterId;
     target.updatedAt = Date.now();
@@ -216,6 +229,30 @@ export const localStorageStore: NovelStore = {
     }
     if (imported > 0) saveAll(projects);
     return { imported, skipped };
+  },
+
+  async renameChapter(projectId, chapterId, title) {
+    const projects = loadAllValid();
+    const target = projects.find((p) => p.id === projectId);
+    if (!target) return null;
+    const chapter = target.chapters.find((item) => item.id === chapterId);
+    if (!chapter) return null;
+    chapter.title = title;
+    target.updatedAt = Date.now();
+    saveAll(projects);
+    return target;
+  },
+
+  async deleteChapters(projectId, chapterIds) {
+    const projects = loadAllValid();
+    const target = projects.find((p) => p.id === projectId);
+    if (!target) return null;
+    const ids = new Set(chapterIds);
+    target.chapters = target.chapters.filter((chapter) => !ids.has(chapter.id));
+    if (target.lastReadChapterId && ids.has(target.lastReadChapterId)) target.lastReadChapterId = undefined;
+    target.updatedAt = Date.now();
+    saveAll(projects);
+    return target;
   },
 
   async deleteProject(id) {
