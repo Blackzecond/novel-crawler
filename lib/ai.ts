@@ -217,7 +217,7 @@ export async function detectNamedTerms(text: string, settings?: AiDetectSettings
     cfg,
     [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: 'Detection options: characters=' + Boolean(options.characters) + ', terms=' + Boolean(options.terms) + '\\n\\n' + content },
+      { role: 'user', content: 'Detection options: characters=' + Boolean(options.characters) + ', terms=' + Boolean(options.terms) + '\n\n' + content },
     ],
     2048,
     0,
@@ -242,7 +242,12 @@ export async function detectNamedTerms(text: string, settings?: AiDetectSettings
     const th = typeof item?.th === 'string' ? item.th.trim() : '';
     if (!zh || !th || seen.has(zh)) continue;
     seen.add(zh);
-    const type = item?.type === 'character' ? 'character' : 'term';\n    if (type === 'character' && !options.characters) continue;\n    if (type === 'term' && !options.terms) continue;\n    const gender = ['male', 'female', 'unknown'].includes(item?.gender) ? item.gender as AiDetectPair['gender'] : 'unknown';\n    const category = typeof item?.category === 'string' && item.category.trim() ? item.category.trim() : 'other';\n    pairs.push({ zh, th, type, ...(type === 'character' ? { gender } : { category }) });
+    const type = item?.type === 'character' ? 'character' : 'term';
+    if (type === 'character' && !options.characters) continue;
+    if (type === 'term' && !options.terms) continue;
+    const gender = ['male', 'female', 'unknown'].includes(item?.gender) ? item.gender as AiDetectPair['gender'] : 'unknown';
+    const category = typeof item?.category === 'string' && item.category.trim() ? item.category.trim() : 'other';
+    pairs.push({ zh, th, type, ...(type === 'character' ? { gender } : { category }) });
   }
   return pairs;
 }
