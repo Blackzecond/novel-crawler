@@ -353,14 +353,22 @@ export default function ReaderPage() {
             const previousChapter = data.prevUrl
               ? project!.chapters.find((item) => item.url === data.prevUrl)
               : undefined;
+            const previousArticle = data.prevUrl
+              ? chapterCacheRef.current.get(`${activeProjectId}:${data.prevUrl}`)
+              : undefined;
+            const precedingChapter = previousArticle?.prevUrl
+              ? project!.chapters.find((item) => item.url === previousArticle.prevUrl)
+              : undefined;
             const followingChapter = data.nextUrl
               ? project!.chapters.find((item) => item.url === data.nextUrl)
               : undefined;
             const nextOrder = previousChapter
               ? previousChapter.order + 1
-              : followingChapter
-                ? followingChapter.order - 1
-                : Math.max(-1, ...project!.chapters.map((item) => item.order)) + 1;
+              : precedingChapter
+                ? precedingChapter.order + 2
+                : followingChapter
+                  ? followingChapter.order - 1
+                  : Math.max(-1, ...project!.chapters.map((item) => item.order)) + 1;
             const ensuredChapter = await getStore().ensureChapter(activeProjectId, {
               url: targetUrl,
               title: chapter?.title || data.title || 'ไม่มีชื่อบท',
@@ -506,14 +514,20 @@ export default function ReaderPage() {
       if (activeProjectId && project) {
         const previousChapter = project.chapters.find((item) => item.url === previousUrl)
           ?? (data.prevUrl ? project.chapters.find((item) => item.url === data.prevUrl) : undefined);
+        const previousArticle = chapterCacheRef.current.get(`${activeProjectId}:${previousUrl}`);
+        const precedingChapter = previousArticle?.prevUrl
+          ? project.chapters.find((item) => item.url === previousArticle.prevUrl)
+          : undefined;
         const followingChapter = data.nextUrl
           ? project.chapters.find((item) => item.url === data.nextUrl)
           : undefined;
         const nextOrder = previousChapter
           ? previousChapter.order + 1
-          : followingChapter
-            ? followingChapter.order - 1
-            : Math.max(-1, ...project.chapters.map((item) => item.order)) + 1;
+          : precedingChapter
+            ? precedingChapter.order + 2
+            : followingChapter
+              ? followingChapter.order - 1
+              : Math.max(-1, ...project.chapters.map((item) => item.order)) + 1;
         const ensured = await getStore().ensureChapter(activeProjectId, {
           url: targetUrl,
           title: chapter?.title || data.title || 'ไม่มีชื่อบท',
