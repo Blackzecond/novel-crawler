@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowDownUp, ArrowLeft, Download, FileUp, Pencil, Plus, Search, Trash2, X, MapPin, Landmark, Building2, Package, Sparkles, Swords, Boxes } from 'lucide-react';
+import { ArrowDownUp, ArrowLeft, BookOpen, Download, FileUp, Pencil, Plus, Search, Trash2, X, UserRound, MapPin, Landmark, Building2, Package, Sparkles, Swords, Boxes } from 'lucide-react';
 import { createId, getStore, NovelProject, WordReplacement } from '@/lib/storage';
 
 type EntryType = 'character' | 'term';
