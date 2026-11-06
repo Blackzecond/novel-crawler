@@ -207,10 +207,11 @@ export async function detectNamedTerms(text: string, settings?: AiDetectSettings
     'character names (人名), nicknames/titles, sect/clan names (门派/家族), place names (地名),',
     'cultivation techniques, magic/artifact terms (功法/武功/法宝), and other recurring special terms.',
     'Do NOT include common nouns or ordinary dialogue words.',
-    'For each item give: zh = the exact term as written in the text, th = the Thai name you propose,',
-    'type = "character" only for a named person or character; use "term" for every other proper noun or special term.',
-    'Do not classify titles, nicknames, sects, places, techniques, artifacts, or organizations as characters.',
-    'Maximum 30 items. Respond ONLY with JSON: {"items":[{"zh":"...","th":"...","type":"character|term"}]}',
+    'For each item give zh = exact source text, th = proposed Thai translation, type = character or term.',
+    'For characters, also give gender as male, female, or unknown. For terms, give category as place, sect, organization, item, technique, cultivation, or other.',
+    'Never classify sects, places, techniques, artifacts, or organizations as characters. Do not invent missing details.',
+    'Only extract characters if character detection is enabled; only extract terms if term detection is enabled.',
+    'Maximum 30 items. Respond ONLY with JSON: {"items":[{"zh":"...","th":"...","type":"character|term","gender":"male|female|unknown","category":"place|sect|organization|item|technique|cultivation|other"}]}',
   ].join(' ');
 
   const result = await requestChatCompletion(
