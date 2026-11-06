@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowDownUp, ArrowLeft, BookOpen, Download, FileUp, Pencil, Plus, Search, Trash2, Users, X } from 'lucide-react';
-import { getStore, NovelProject } from '@/lib/storage';
+import { createId, getStore, NovelProject, WordReplacement } from '@/lib/storage';
 
 type EntryType = 'character' | 'term';
 type Entry = { source: string; translated: string; type: EntryType };
@@ -36,6 +36,7 @@ export default function GlossaryPage({ id }: { id: string }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [editing, setEditing] = useState<Entry | null>(null);
+  const [editingReplacement, setEditingReplacement] = useState<WordReplacement | null>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -81,6 +82,35 @@ export default function GlossaryPage({ id }: { id: string }) {
       if (!updated) throw new Error('ไม่พบโปรเจกต์');
       setProject(updated); setSelected([]); setNotice('ลบแล้ว ' + sources.length + ' รายการ');
     } catch (e) { setNotice(e instanceof Error ? e.message : 'ลบไม่สำเร็จ'); }
+    finally { setBusy(false); }
+  };
+
+  const saveReplacement = async () => {
+    if (!project || !editingReplacement) return;
+    const variants = editingReplacement.variants.map(value => value.trim()).filter(Boolean);
+    if (!variants.length || !editingReplacement.replacement.trim()) return;
+    setBusy(true);
+    try {
+      const current = project.wordReplacements ?? [];
+      const exists = current.some(item => item.id === editingReplacement.id);
+      const next = exists
+        ? current.map(item => item.id === editingReplacement.id ? { ...editingReplacement, variants } : item)
+        : [...current, { ...editingReplacement, variants }];
+      const updated = await getStore().updateProject(id, { wordReplacements: next });
+      if (!updated) throw new Error('บันทึกกฎแทนที่ไม่สำเร็จ');
+      setProject(updated); setEditingReplacement(null); setNotice('บันทึกกฎแทนที่แล้ว');
+    } catch (e) { setNotice(e instanceof Error ? e.message : 'บันทึกกฎแทนที่ไม่สำเร็จ'); }
+    finally { setBusy(false); }
+  };
+
+  const deleteReplacement = async (replacementId: string) => {
+    if (!project || !window.confirm('ลบกฎแทนที่นี้หรือไม่?')) return;
+    setBusy(true);
+    try {
+      const updated = await getStore().updateProject(id, { wordReplacements: (project.wordReplacements ?? []).filter(item => item.id !== replacementId) });
+      if (!updated) throw new Error('ลบกฎไม่สำเร็จ');
+      setProject(updated); setNotice('ลบกฎแทนที่แล้ว');
+    } catch (e) { setNotice(e instanceof Error ? e.message : 'ลบกฎไม่สำเร็จ'); }
     finally { setBusy(false); }
   };
 
@@ -141,25 +171,36 @@ export default function GlossaryPage({ id }: { id: string }) {
     <section className="mx-auto max-w-4xl px-4 pb-12">
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[180px] flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={`Search ${tab}...`} className="h-11 w-full rounded-xl border border-line bg-card pl-10 pr-3 text-sm outline-none"/></div>
-        <button onClick={()=>setEditing({source:'',translated:'',type:tab==='characters'?'character':'term'})} className="inline-flex h-11 items-center gap-2 rounded-full bg-accent px-5 text-sm font-medium text-accent-fg"><Plus className="h-4 w-4"/> Add</button>
+        <button onClick={()=>tab==='replacements' ? setEditingReplacement({id:createId(),variants:[''],replacement:'',useRegex:false}) : setEditing({source:'',translated:'',type:tab==='characters'?'character':'term'})} className="inline-flex h-11 items-center gap-2 rounded-full bg-accent px-5 text-sm font-medium text-accent-fg"><Plus className="h-4 w-4"/> Add</button>
       </div>
       <div className="mt-4 flex items-center justify-between text-xs text-muted">
-        <span>{visible.length} รายการ</span>
+        <span>{tab==='replacements'?(project.wordReplacements??[]).length:visible.length} รายการ</span>
         <button onClick={()=>setSelected(selected.length===visible.length?[]:visible.map(e=>e.source))} className="underline underline-offset-4">{selected.length?'ยกเลิกเลือก':'Bulk Select'}</button>
       </div>
       {selected.length>0 && <div className="my-3 flex items-center justify-between rounded-xl border border-line bg-card p-3 text-sm"><span>เลือกแล้ว {selected.length} รายการ</span><button disabled={busy} onClick={()=>void deleteEntries(selected)} className="inline-flex items-center gap-1 text-red-600"><Trash2 className="h-4 w-4"/> ลบที่เลือก</button></div>}
       <div className="mt-3 overflow-hidden rounded-2xl border border-line bg-card">
         <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_auto] bg-surface px-4 py-3 text-xs font-semibold tracking-wide text-muted"><span>RAW</span><span>TRANSLATED</span><span/></div>
-        {tab==='replacements' ? <p className="p-6 text-sm text-muted">ยังไม่มีรายการแทนที่แยกจากคลังคำศัพท์ในเวอร์ชันนี้</p> : visible.map(entry=><div key={entry.source} className="grid grid-cols-[auto_minmax(0,0.8fr)_minmax(0,1.2fr)_auto] items-center gap-3 border-t border-line px-4 py-4">
+        {tab==='replacements' ? (project.wordReplacements??[]).filter(rule=>!query||rule.variants.some(v=>v.toLowerCase().includes(query.toLowerCase()))||rule.replacement.toLowerCase().includes(query.toLowerCase())).map(rule=><div key={rule.id} className="flex items-start justify-between gap-3 border-t border-line px-4 py-4"><div className="min-w-0 flex-1"><p className="break-words text-sm">{rule.variants.join(' / ')}</p><p className="mt-1 text-sm text-muted">→ {rule.replacement}</p><span className="mt-1 inline-block text-[11px] text-muted">{rule.useRegex?'Regex':'ข้อความตรงตัว'}</span></div><div className="flex shrink-0 gap-1"><button onClick={()=>setEditingReplacement({...rule,variants:[...rule.variants]})} className="rounded-lg p-2 text-muted hover:bg-surface" aria-label="แก้ไขกฎ"><Pencil className="h-4 w-4"/></button><button onClick={()=>void deleteReplacement(rule.id)} className="rounded-lg p-2 text-muted hover:bg-surface" aria-label="ลบกฎ"><Trash2 className="h-4 w-4"/></button></div></div>) : visible.map(entry=><div key={entry.source} className="grid grid-cols-[auto_minmax(0,0.8fr)_minmax(0,1.2fr)_auto] items-center gap-3 border-t border-line px-4 py-4">
           <input type="checkbox" checked={selected.includes(entry.source)} onChange={e=>setSelected(current=>e.target.checked?[...current,entry.source]:current.filter(x=>x!==entry.source))} aria-label={`เลือก ${entry.source}`} />
           <span className="min-w-0 break-words text-sm" lang="zh-CN">{entry.source}</span>
           <span className="min-w-0 break-words text-sm">{entry.translated}</span>
           <button onClick={()=>setEditing(entry)} aria-label={`แก้ไข ${entry.source}`} className="rounded-lg p-2 text-muted hover:bg-surface"><Pencil className="h-4 w-4"/></button>
         </div>)}
-        {tab!=='replacements' && visible.length===0 && <p className="p-8 text-center text-sm text-muted">ยังไม่มีรายการ</p>}
+        {(tab==='replacements'?(project.wordReplacements??[]).length===0:visible.length===0) && <p className="p-8 text-center text-sm text-muted">ยังไม่มีรายการ</p>}
       </div>
       {notice && <p role="status" className="mt-3 rounded-xl bg-accent-soft p-3 text-sm text-accent-soft-fg">{notice}</p>}
     </section>
+    {editingReplacement && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={()=>setEditingReplacement(null)}>
+      <div className="w-full max-w-xl space-y-4 rounded-2xl border border-line bg-card p-5 shadow-xl" onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Word Replacement</h2><button onClick={()=>setEditingReplacement(null)} aria-label="ปิด"><X className="h-5 w-5"/></button></div>
+        <p className="text-sm text-muted">กฎนี้จะใช้กับเนื้อหาทุกบทใน Reader ของนิยายเรื่องนี้</p>
+        <div className="flex items-center justify-between"><label className="text-sm font-medium">Original Word / Phrase</label><button onClick={()=>setEditingReplacement({...editingReplacement,variants:[...editingReplacement.variants,'']})} className="rounded-lg bg-accent px-3 py-2 text-xs text-accent-fg"><Plus className="mr-1 inline h-3.5 w-3.5"/>Add Variant</button></div>
+        {editingReplacement.variants.map((variant,index)=><div key={index} className="flex gap-2"><input value={variant} onChange={e=>setEditingReplacement({...editingReplacement,variants:editingReplacement.variants.map((v,i)=>i===index?e.target.value:v)})} placeholder="Text you want to replace" className="h-11 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 text-sm"/>{editingReplacement.variants.length>1&&<button onClick={()=>setEditingReplacement({...editingReplacement,variants:editingReplacement.variants.filter((_,i)=>i!==index)})} aria-label="ลบรูปแบบนี้" className="px-2 text-muted"><X className="h-4 w-4"/></button>}</div>)}
+        <label className="flex items-center justify-between rounded-xl border border-line p-4"><span><span className="block text-sm font-medium">Use regex</span><span className="mt-1 block text-xs text-muted">ใช้ Regular Expression แทนการค้นหาข้อความตรงตัว</span></span><input type="checkbox" checked={editingReplacement.useRegex} onChange={e=>setEditingReplacement({...editingReplacement,useRegex:e.target.checked})} className="h-5 w-5"/></label>
+        <label className="block text-sm font-medium">Replacement Word / Phrase<input value={editingReplacement.replacement} onChange={e=>setEditingReplacement({...editingReplacement,replacement:e.target.value})} placeholder="Text to replace with" className="mt-2 h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm"/></label>
+        <div className="flex justify-end gap-2 border-t border-line pt-3"><button onClick={()=>setEditingReplacement(null)} className="rounded-lg px-4 py-2 text-sm text-muted">Cancel</button><button disabled={busy||!editingReplacement.variants.some(v=>v.trim())||!editingReplacement.replacement.trim()} onClick={()=>void saveReplacement()} className="rounded-lg bg-accent px-5 py-2 text-sm text-accent-fg disabled:opacity-40">Save</button></div>
+      </div>
+    </div>}
     {editing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={()=>setEditing(null)}>
       <div className="w-full max-w-md space-y-3 rounded-2xl border border-line bg-card p-5 shadow-xl" onClick={e=>e.stopPropagation()}>
         <div className="flex items-center justify-between"><h2 className="font-semibold">{editing.source?'Edit entry':'Add entry'}</h2><button onClick={()=>setEditing(null)}><X className="h-5 w-5"/></button></div>
