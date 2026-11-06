@@ -316,6 +316,15 @@ export const supabaseStore: NovelStore = {
     const { error } = await getSupabase().from('glossary_entries').delete()
       .eq('project_id', projectId).eq('user_id', userId).in('source_term', sourceTerms);
     if (error) throw error;
+    const project = await loadOneProject(projectId);
+    if (project) {
+      const glossaryMetadata = { ...(project.glossaryMetadata ?? {}) };
+      for (const source of sourceTerms) delete glossaryMetadata[source];
+      const { error: metadataError } = await getSupabase().from('novel_projects')
+        .update({ glossary_metadata: glossaryMetadata, updated_at: new Date().toISOString() })
+        .eq('id', projectId).eq('user_id', userId);
+      if (metadataError) throw metadataError;
+    }
     return loadOneProject(projectId);
   },
 
