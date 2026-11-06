@@ -380,8 +380,6 @@ export const supabaseStore: NovelStore = {
           glossaryMode: raw.glossaryMode === 'auto' ? 'auto' : 'manual',
           glossaryMetadata: raw.glossaryMetadata && typeof raw.glossaryMetadata === 'object' ? raw.glossaryMetadata : {},
           glossaryDetection: raw.glossaryDetection && typeof raw.glossaryDetection === 'object' ? raw.glossaryDetection : { characters: raw.glossaryMode === 'auto', terms: raw.glossaryMode === 'auto' },
-          glossaryMetadata: raw.glossaryMetadata && typeof raw.glossaryMetadata === 'object' ? raw.glossaryMetadata : {},
-          glossaryDetection: raw.glossaryDetection && typeof raw.glossaryDetection === 'object' ? raw.glossaryDetection : { characters: raw.glossaryMode === 'auto', terms: raw.glossaryMode === 'auto' },
           lastReadChapterId: newLastRead?.id,
         });
         imported++;
