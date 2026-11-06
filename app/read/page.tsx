@@ -7,6 +7,7 @@ import {
   History, RotateCcw, Trash2, Library, Settings, X, List, Sparkles, BookMarked, Plus,
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
+import { applyWordReplacements } from '@/lib/wordReplacements';
 import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, editNovelTranslation } from '@/lib/ai';
 import {
   loadReaderSettings, saveReaderSettings, applySavedTheme,
@@ -599,7 +600,9 @@ export default function ReaderPage() {
     try {
       const latestProject = projectId ? await getStore().getProject(projectId) : null;
       const glossary = latestProject?.glossary ?? readerProject?.glossary ?? {};
-      const translated = await translateNovelText(article.textContent, settings, glossary);
+      const replacements = latestProject?.wordReplacements ?? readerProject?.wordReplacements ?? [];
+      const sourceText = applyWordReplacements(article.textContent, replacements);
+      const translated = applyWordReplacements(await translateNovelText(sourceText, settings, glossary), replacements);
       const updatedArticle = { ...article, translatedText: translated };
       setArticle(updatedArticle);
       chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
@@ -644,7 +647,9 @@ export default function ReaderPage() {
     try {
       const latestProject = projectId ? await getStore().getProject(projectId) : null;
       const glossary = latestProject?.glossary ?? readerProject?.glossary ?? {};
-      const edited = await editNovelTranslation(article.textContent, article.translatedText, settings, glossary);
+      const replacements = latestProject?.wordReplacements ?? readerProject?.wordReplacements ?? [];
+      const sourceText = applyWordReplacements(article.textContent, replacements);
+      const edited = applyWordReplacements(await editNovelTranslation(sourceText, applyWordReplacements(article.translatedText, replacements), settings, glossary), replacements);
       const updatedArticle = { ...article, translatedText: edited };
       setArticle(updatedArticle);
       chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
@@ -759,7 +764,8 @@ export default function ReaderPage() {
 
   const handleCopy = async () => {
     if (!article) return;
-    const visibleText = showTranslation && article.translatedText ? article.translatedText : article.textContent.trim();
+    const rules = readerProject?.wordReplacements ?? [];
+    const visibleText = showTranslation && article.translatedText ? applyWordReplacements(article.translatedText, rules) : applyWordReplacements(article.textContent.trim(), rules);
     const textToCopy = `${article.title}\n\n${visibleText}`;
     await navigator.clipboard.writeText(textToCopy);
     setCopied(true);
@@ -1134,7 +1140,7 @@ export default function ReaderPage() {
               <div
                 className="space-y-6 [&>p]:mb-6 [&>p]:block leading-relaxed"
                 style={{ fontSize: `${fontSize}px` }}
-                dangerouslySetInnerHTML={{ __html: article.content }}
+                dangerouslySetInnerHTML={{ __html: applyWordReplacements(article.content, readerProject?.wordReplacements ?? []) }}
               />
             )}
 
