@@ -223,7 +223,12 @@ export default function ReaderPage() {
           setArticle(inMemoryArticle);
           setTranslationError('');
           setShowTranslation(false);
-          setCurrentChapterId(readerProject?.chapters.find((item) => item.url === targetUrl)?.id ?? null);
+          const memoryChapter = readerProject?.chapters.find((item) => item.url === targetUrl);
+          setCurrentChapterId(memoryChapter?.id ?? null);
+          if (activeProjectId && memoryChapter) {
+            void getStore().updateProject(activeProjectId, { lastReadChapterId: memoryChapter.id })
+              .catch((progressError) => console.warn('Could not update last-read progress:', progressError));
+          }
           syncReaderUrl(targetUrl, activeProjectId);
           saveToHistory(targetUrl, inMemoryArticle.title);
           window.scrollTo({ top: 0, behavior: 'smooth' });
