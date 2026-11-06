@@ -349,6 +349,62 @@ export const supabaseStore: NovelStore = {
     if (error) throw error;
   },
 
+  async ensureChapter(projectId, chapter) {
+    const userId = await currentUserId();
+    const supabase = getSupabase();
+    const { data: projectRow, error: projectError } = await supabase
+      .from('novel_projects').select('chapter_catalog')
+      .eq('id', projectId).eq('user_id', userId).single();
+    if (projectError) throw projectError;
+
+    const catalog = Array.isArray(projectRow.chapter_catalog)
+      ? projectRow.chapter_catalog as { url: string; title: string; order: number }[]
+      : [];
+    const existingCatalogIndex = catalog.findIndex((item) => item.url === chapter.url);
+    const catalogEntry = {
+      url: chapter.url,
+      title: chapter.title || catalog[existingCatalogIndex]?.title || 'ไม่มีชื่อบท',
+      order: Number.isFinite(chapter.order) ? chapter.order : catalog[existingCatalogIndex]?.order ?? catalog.length,
+    };
+    const nextCatalog = [...catalog];
+    if (existingCatalogIndex >= 0) nextCatalog[existingCatalogIndex] = { ...catalog[existingCatalogIndex], ...catalogEntry };
+    else nextCatalog.push(catalogEntry);
+    nextCatalog.sort((a, b) => a.order - b.order);
+
+    if (existingCatalogIndex < 0 || catalog[existingCatalogIndex].title !== catalogEntry.title || catalog[existingCatalogIndex].order !== catalogEntry.order) {
+      const { error: catalogError } = await supabase.from('novel_projects')
+        .update({ chapter_catalog: nextCatalog, updated_at: new Date().toISOString() })
+        .eq('id', projectId).eq('user_id', userId);
+      if (catalogError) throw catalogError;
+    }
+
+    let row = await getChapterRowByUrl(projectId, chapter.url);
+    if (!row) {
+      const { data: inserted, error: insertError } = await supabase.from('novel_chapters').insert({
+        user_id: userId,
+        project_id: projectId,
+        source_url: chapter.url,
+        title: catalogEntry.title,
+        chapter_order: catalogEntry.order,
+        status: 'pending',
+      }).select('*').single();
+      if (insertError) {
+        row = await getChapterRowByUrl(projectId, chapter.url);
+        if (!row) throw insertError;
+      } else {
+        row = inserted as ChapterRow;
+      }
+    } else if (row.title !== catalogEntry.title || row.chapter_order !== catalogEntry.order) {
+      const { data: updated, error: updateError } = await supabase.from('novel_chapters')
+        .update({ title: catalogEntry.title, chapter_order: catalogEntry.order, updated_at: new Date().toISOString() })
+        .eq('id', row.id).eq('project_id', projectId).eq('user_id', userId)
+        .select('*').single();
+      if (updateError) throw updateError;
+      row = updated as ChapterRow;
+    }
+    return mapChapter(row);
+  },
+
   async updateChapter(projectId, chapterId, patch) {
     const userId = await currentUserId();
     let row = chapterId.startsWith('catalog:') ? null : await getChapterRow(projectId, chapterId);
