@@ -57,6 +57,7 @@ export interface NovelStore {
   ): Promise<NovelProject | null>;
   deleteGlossaryTerms(projectId: string, sourceTerms: string[]): Promise<NovelProject | null>;
   deleteChapters(projectId: string, chapterIds: string[]): Promise<NovelProject | null>;
+  renameChapter(projectId: string, chapterId: string, title: string): Promise<NovelProject | null>;
   // นำเข้าจากไฟล์ส่งออก JSON — id ซ้ำกับข้อมูลในเครื่องจะถูกแทนที่ด้วยข้อมูลไฟล์นำเข้า
   importProjects(projects: NovelProject[]): Promise<{ imported: number; skipped: number }>;
   deleteProject(id: string): Promise<void>;
@@ -217,6 +218,18 @@ export const localStorageStore: NovelStore = {
     }
     if (imported > 0) saveAll(projects);
     return { imported, skipped };
+  },
+
+  async renameChapter(projectId, chapterId, title) {
+    const projects = loadAllValid();
+    const target = projects.find((p) => p.id === projectId);
+    if (!target) return null;
+    const chapter = target.chapters.find((item) => item.id === chapterId);
+    if (!chapter) return null;
+    chapter.title = title;
+    target.updatedAt = Date.now();
+    saveAll(projects);
+    return target;
   },
 
   async deleteChapters(projectId, chapterIds) {
