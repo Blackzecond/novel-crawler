@@ -194,7 +194,7 @@ function estimateOutputTokens(text: string): number {
  * ตรวจชื่อตัวละคร/ศัพท์เฉพาะจากเนื้อหาบทจีน แล้วถอดเสียง/แปลเป็นไทยพร้อมกัน
  * คืน [] ถ้าไม่พบ — ผู้เรียกเป็นตัวต่อที่เก็บ glossary ของโปรเจกต์ (dedupe ที่จุดเรียก)
  */
-export async function detectNamedTerms(text: string, settings?: AiDetectSettings): Promise<AiDetectPair[]> {
+export async function detectNamedTerms(text: string, settings?: AiDetectSettings, options: { characters?: boolean; terms?: boolean } = { characters: true, terms: true }): Promise<AiDetectPair[]> {
   const cfg = settings ?? loadAiSettings();
   if (!cfg.apiKey.trim()) {
     throw new Error('AI_NOT_CONFIGURED');
@@ -217,7 +217,7 @@ export async function detectNamedTerms(text: string, settings?: AiDetectSettings
     cfg,
     [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content },
+      { role: 'user', content: 'Detection options: characters=' + Boolean(options.characters) + ', terms=' + Boolean(options.terms) + '\\n\\n' + content },
     ],
     2048,
     0,
@@ -242,7 +242,7 @@ export async function detectNamedTerms(text: string, settings?: AiDetectSettings
     const th = typeof item?.th === 'string' ? item.th.trim() : '';
     if (!zh || !th || seen.has(zh)) continue;
     seen.add(zh);
-    pairs.push({ zh, th, type: item?.type === 'character' ? 'character' : 'term' });
+    const type = item?.type === 'character' ? 'character' : 'term';\n    if (type === 'character' && !options.characters) continue;\n    if (type === 'term' && !options.terms) continue;\n    const gender = ['male', 'female', 'unknown'].includes(item?.gender) ? item.gender as AiDetectPair['gender'] : 'unknown';\n    const category = typeof item?.category === 'string' && item.category.trim() ? item.category.trim() : 'other';\n    pairs.push({ zh, th, type, ...(type === 'character' ? { gender } : { category }) });
   }
   return pairs;
 }
