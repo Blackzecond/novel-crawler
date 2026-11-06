@@ -1,4 +1,4 @@
-import type { NewProjectData, NovelChapter, NovelProject, NovelStore } from '@/lib/storage';
+import type { NewProjectData, NovelChapter, NovelProject, NovelStore, WordReplacement } from '@/lib/storage';
 import { getSupabase } from '@/lib/supabase';
 
 const BUCKET = 'novel-content';
@@ -19,6 +19,7 @@ type ChapterRow = {
   translated_storage_path: string | null;
   error_message: string | null; created_at: string; updated_at: string;
 };
+type ReplacementRow = { id: string; variants: string[]; replacement_text: string; use_regex: boolean; created_at: string };
 type GlossaryRow = { project_id: string; source_term: string; translated_term: string; term_type?: string | null };
 
 function toTimestamp(value: string): number {
@@ -37,7 +38,7 @@ function mapChapter(row: ChapterRow): NovelChapter {
   };
 }
 
-function mapProject(row: ProjectRow, fetchedChapters: NovelChapter[], glossary: Record<string, string>, glossaryTypes: Record<string, 'character' | 'term'>): NovelProject {
+function mapProject(row: ProjectRow, fetchedChapters: NovelChapter[], glossary: Record<string, string>, glossaryTypes: Record<string, 'character' | 'term'>, wordReplacements: WordReplacement[]): NovelProject {
   const fetchedByUrl = new Map(fetchedChapters.map((chapter) => [chapter.url, chapter]));
   const catalog = Array.isArray(row.chapter_catalog) ? row.chapter_catalog : [];
   const chapters: NovelChapter[] = catalog.map((item) => fetchedByUrl.get(item.url) ?? ({
@@ -56,6 +57,7 @@ function mapProject(row: ProjectRow, fetchedChapters: NovelChapter[], glossary: 
     host: row.host,
     glossary,
     glossaryTypes,
+    wordReplacements,
     glossaryMode: row.glossary_mode,
     lastReadChapterId: row.last_read_chapter_id ?? undefined,
     chapters,
@@ -103,10 +105,25 @@ async function loadGlossary(projectIds: string[]): Promise<Map<string, { terms: 
   return result;
 }
 
+async function loadWordReplacements(projectIds: string[]): Promise<Map<string, WordReplacement[]>> {
+  const result = new Map<string, WordReplacement[]>();
+  if (!projectIds.length) return result;
+  const { data, error } = await getSupabase().from('glossary_replacements')
+    .select('id, project_id, variants, replacement_text, use_regex, created_at')
+    .in('project_id', projectIds).order('created_at');
+  if (error) throw error;
+  for (const row of (data ?? []) as Array<ReplacementRow & { project_id: string }>) {
+    const items = result.get(row.project_id) ?? [];
+    items.push({ id: row.id, variants: row.variants ?? [], replacement: row.replacement_text, useRegex: row.use_regex });
+    result.set(row.project_id, items);
+  }
+  return result;
+}
+
 async function buildProjects(rows: ProjectRow[]): Promise<NovelProject[]> {
   if (!rows.length) return [];
   const ids = rows.map((row) => row.id);
-  const [chapters, glossaries] = await Promise.all([loadChapters(ids), loadGlossary(ids)]);
+  const [chapters, glossaries, replacements] = await Promise.all([loadChapters(ids), loadGlossary(ids), loadWordReplacements(ids)]);
   const byProject = new Map<string, NovelChapter[]>();
   for (const row of chapters) {
     const list = byProject.get(row.project_id) ?? [];
@@ -115,7 +132,7 @@ async function buildProjects(rows: ProjectRow[]): Promise<NovelProject[]> {
   }
   return rows.map((row) => {
     const glossary = glossaries.get(row.id) ?? { terms: {}, types: {} };
-    return mapProject(row, byProject.get(row.id) ?? [], glossary.terms, glossary.types);
+    return mapProject(row, byProject.get(row.id) ?? [], glossary.terms, glossary.types, replacements.get(row.id) ?? []);
   });
 }
 
@@ -237,6 +254,23 @@ export const supabaseStore: NovelStore = {
     if (Object.keys(update).length > 1 || patch.glossary !== undefined || patch.glossaryTypes !== undefined) {
       const { error } = await supabase.from('novel_projects').update(update).eq('id', id).eq('user_id', userId);
       if (error) throw error;
+    }
+    if (patch.wordReplacements !== undefined) {
+      const { error: deleteError } = await supabase.from('glossary_replacements')
+        .delete().eq('project_id', id).eq('user_id', userId);
+      if (deleteError) throw deleteError;
+      if (patch.wordReplacements.length) {
+        const rows = patch.wordReplacements.map((item) => ({
+          id: item.id,
+          user_id: userId,
+          project_id: id,
+          variants: item.variants,
+          replacement_text: item.replacement,
+          use_regex: item.useRegex,
+        }));
+        const { error: insertError } = await supabase.from('glossary_replacements').insert(rows);
+        if (insertError) throw insertError;
+      }
     }
     if (patch.glossary !== undefined || patch.glossaryTypes !== undefined) {
       const { data: existing, error: existingError } = await supabase.from('glossary_entries')
