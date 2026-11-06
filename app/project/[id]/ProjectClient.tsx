@@ -632,6 +632,13 @@ export default function ProjectClient({ id }: { id: string }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button onClick={() => setSortDesc(!sortDesc)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-sm hover:bg-card" title={hasOriginalOrderAsc ? 'สารบัญต้นฉบับเรียงบทจากน้อยไปมาก' : 'สารบัญต้นฉบับเรียงบทแบบย้อนกลับ'}>
+              <ArrowUpDown className="h-3.5 w-3.5"/> {sortDesc ? 'ใหม่…เก่า' : 'เก่า…ใหม่'}
+            </button>
+            <div className="relative min-w-[10rem] flex-1 basis-full sm:basis-auto">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted"/>
+              <input aria-label="ค้นหาชื่อบท" value={filter} onChange={e=>setFilter(e.target.value)} placeholder="ค้นหาชื่อบท..." className="h-9 w-full rounded-lg border border-line bg-bg pl-9 pr-3 text-sm"/>
+            </div>
             <button onClick={() => {setBulkDeleteMode(!bulkDeleteMode);setSelectedChapterIds([]);}} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-sm">{bulkDeleteMode ? 'ยกเลิกเลือกลบ' : 'ลบหลายตอน'}</button>
             {bulkDeleteMode && <button disabled={!selectedChapterIds.length} onClick={async()=>{if(!window.confirm(`ลบ ${selectedChapterIds.length} ตอนพร้อมไฟล์ทั้งหมดถาวรหรือไม่?`))return;const updated=await getStore().deleteChapters(id,selectedChapterIds);if(updated)setProject(updated);setSelectedChapterIds([]);setBulkDeleteMode(false);}} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-danger-fg px-3 text-sm text-white disabled:opacity-40">ลบที่เลือก ({selectedChapterIds.length})</button>}
           </div>
