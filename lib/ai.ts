@@ -40,6 +40,8 @@ export interface AiDetectPair {
   zh: string;
   th: string;
   type: 'character' | 'term';
+  gender?: 'male' | 'female' | 'unknown';
+  category?: string;
 }
 
 export const AI_SETTINGS_KEY = 'novel_ai_settings_v1';
