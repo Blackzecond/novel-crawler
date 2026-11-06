@@ -7,7 +7,7 @@ import {
   History, RotateCcw, Trash2, Library, Settings, X, List, Sparkles, BookMarked, Plus,
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
-import { applyWordReplacements } from '@/lib/wordReplacements';
+import { applyWordReplacements, applyWordReplacementsToHtml } from '@/lib/wordReplacements';
 import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, editNovelTranslation } from '@/lib/ai';
 import {
   loadReaderSettings, saveReaderSettings, applySavedTheme,
@@ -1140,7 +1140,7 @@ export default function ReaderPage() {
               <div
                 className="space-y-6 [&>p]:mb-6 [&>p]:block leading-relaxed"
                 style={{ fontSize: `${fontSize}px` }}
-                dangerouslySetInnerHTML={{ __html: applyWordReplacements(article.content, readerProject?.wordReplacements ?? []) }}
+                dangerouslySetInnerHTML={{ __html: applyWordReplacementsToHtml(article.content, readerProject?.wordReplacements ?? []) }}
               />
             )}
 
