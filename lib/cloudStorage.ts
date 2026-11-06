@@ -249,7 +249,9 @@ export const supabaseStore: NovelStore = {
     const supabase = getSupabase();
     const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (patch.title !== undefined) update.title = patch.title;
-    if (patch.glossaryMode !== undefined) update.glossary_mode = patch.glossaryMode;\n    if (patch.glossaryMetadata !== undefined) update.glossary_metadata = patch.glossaryMetadata;\n    if (patch.glossaryDetection !== undefined) { update.glossary_detection = patch.glossaryDetection; update.glossary_mode = patch.glossaryDetection.characters || patch.glossaryDetection.terms ? 'auto' : 'manual'; }
+    if (patch.glossaryMode !== undefined) update.glossary_mode = patch.glossaryMode;
+    if (patch.glossaryMetadata !== undefined) update.glossary_metadata = patch.glossaryMetadata;
+    if (patch.glossaryDetection !== undefined) { update.glossary_detection = patch.glossaryDetection; update.glossary_mode = patch.glossaryDetection.characters || patch.glossaryDetection.terms ? 'auto' : 'manual'; }
     if (patch.lastReadChapterId !== undefined) update.last_read_chapter_id = patch.lastReadChapterId || null;
     if (Object.keys(update).length > 1 || patch.glossary !== undefined || patch.glossaryTypes !== undefined) {
       const { error } = await supabase.from('novel_projects').update(update).eq('id', id).eq('user_id', userId);
@@ -364,7 +366,9 @@ export const supabaseStore: NovelStore = {
         await this.updateProject(created.id, {
           glossary,
           wordReplacements: Array.isArray(raw.wordReplacements) ? raw.wordReplacements : [],
-          glossaryMode: raw.glossaryMode === 'auto' ? 'auto' : 'manual',\n          glossaryMetadata: raw.glossaryMetadata && typeof raw.glossaryMetadata === 'object' ? raw.glossaryMetadata : {},\n          glossaryDetection: raw.glossaryDetection && typeof raw.glossaryDetection === 'object' ? raw.glossaryDetection : { characters: raw.glossaryMode === 'auto', terms: raw.glossaryMode === 'auto' },
+          glossaryMode: raw.glossaryMode === 'auto' ? 'auto' : 'manual',
+          glossaryMetadata: raw.glossaryMetadata && typeof raw.glossaryMetadata === 'object' ? raw.glossaryMetadata : {},
+          glossaryDetection: raw.glossaryDetection && typeof raw.glossaryDetection === 'object' ? raw.glossaryDetection : { characters: raw.glossaryMode === 'auto', terms: raw.glossaryMode === 'auto' },
           lastReadChapterId: newLastRead?.id,
         });
         imported++;
