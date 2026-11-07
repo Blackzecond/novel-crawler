@@ -24,6 +24,9 @@ export interface WordReplacement {
   useRegex: boolean;
 }
 
+export interface GlossaryMetadata { gender?: string; category?: string; notes?: string; }
+export interface GlossaryDetection { characters: boolean; terms: boolean; }
+
 export interface NovelProject {
   id: string;
   title: string;
@@ -31,6 +34,8 @@ export interface NovelProject {
   host: string;
   glossary: Record<string, string>;
   glossaryTypes: Record<string, 'character' | 'term'>;
+  glossaryMetadata: Record<string, GlossaryMetadata>;
+  glossaryDetection: GlossaryDetection;
   wordReplacements: WordReplacement[];
   // โหมดตรวจชื่อตัวละคร/ศัพท์เฉพาะด้วย AI: 'manual' = กดเองรายบท, 'auto' = จับหลังดึงเนื้อหาสำเร็จทุกบท
   glossaryMode: 'manual' | 'auto';
@@ -61,7 +66,7 @@ export interface NovelStore {
   renameProject(id: string, title: string): Promise<NovelProject | null>;
   updateProject(
     id: string,
-    patch: Partial<Pick<NovelProject, 'title' | 'glossary' | 'glossaryTypes' | 'glossaryMode' | 'lastReadChapterId' | 'wordReplacements'>>
+    patch: Partial<Pick<NovelProject, 'title' | 'glossary' | 'glossaryTypes' | 'glossaryMetadata' | 'glossaryDetection' | 'glossaryMode' | 'lastReadChapterId' | 'wordReplacements'>>
   ): Promise<NovelProject | null>;
   deleteGlossaryTerms(projectId: string, sourceTerms: string[]): Promise<NovelProject | null>;
   deleteChapters(projectId: string, chapterIds: string[]): Promise<NovelProject | null>;
@@ -105,6 +110,8 @@ function normalizeProject(p: any): NovelProject | null {
     host: String(p.host ?? ''),
     glossary: p.glossary && typeof p.glossary === 'object' ? p.glossary : {},
     glossaryTypes: p.glossaryTypes && typeof p.glossaryTypes === 'object' ? p.glossaryTypes : {},
+    glossaryMetadata: p.glossaryMetadata && typeof p.glossaryMetadata === 'object' ? p.glossaryMetadata : {},
+    glossaryDetection: p.glossaryDetection && typeof p.glossaryDetection === 'object' ? { characters: p.glossaryDetection.characters === true, terms: p.glossaryDetection.terms === true } : { characters: p.glossaryMode === 'auto', terms: p.glossaryMode === 'auto' },
     wordReplacements: Array.isArray(p.wordReplacements) ? p.wordReplacements : [],
     glossaryMode: p.glossaryMode === 'auto' ? 'auto' : 'manual',
     lastReadChapterId: typeof p.lastReadChapterId === 'string' ? p.lastReadChapterId : undefined,
@@ -158,6 +165,8 @@ export const localStorageStore: NovelStore = {
       host: data.host,
       glossary: data.glossary ?? {},
       glossaryTypes: {},
+      glossaryMetadata: {},
+      glossaryDetection: { characters: false, terms: false },
       wordReplacements: [],
       glossaryMode: 'manual',
       createdAt: now,
@@ -186,6 +195,9 @@ export const localStorageStore: NovelStore = {
     if (patch.title !== undefined) target.title = patch.title;
     if (patch.glossary !== undefined) target.glossary = patch.glossary;
     if (patch.glossaryTypes !== undefined) target.glossaryTypes = patch.glossaryTypes;
+    if (patch.glossaryMetadata !== undefined) target.glossaryMetadata = patch.glossaryMetadata;
+    if (patch.glossaryDetection !== undefined) target.glossaryDetection = patch.glossaryDetection;
+    if (patch.glossaryDetection !== undefined) target.glossaryMode = patch.glossaryDetection.characters || patch.glossaryDetection.terms ? 'auto' : 'manual';
     if (patch.wordReplacements !== undefined) target.wordReplacements = patch.wordReplacements;
     if (patch.glossaryMode !== undefined) target.glossaryMode = patch.glossaryMode;
     if (patch.lastReadChapterId !== undefined) target.lastReadChapterId = patch.lastReadChapterId;
@@ -200,9 +212,11 @@ export const localStorageStore: NovelStore = {
     if (!target) return null;
     const glossary = { ...target.glossary };
     const glossaryTypes = { ...target.glossaryTypes };
-    for (const term of sourceTerms) { delete glossary[term]; delete glossaryTypes[term]; }
+    const glossaryMetadata = { ...(target.glossaryMetadata ?? {}) };
+    for (const term of sourceTerms) { delete glossary[term]; delete glossaryTypes[term]; delete glossaryMetadata[term]; }
     target.glossary = glossary;
     target.glossaryTypes = glossaryTypes;
+    target.glossaryMetadata = glossaryMetadata;
     target.updatedAt = Date.now();
     saveAll(projects);
     return target;

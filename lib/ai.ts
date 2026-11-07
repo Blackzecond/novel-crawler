@@ -40,6 +40,8 @@ export interface AiDetectPair {
   zh: string;
   th: string;
   type: 'character' | 'term';
+  gender?: 'male' | 'female' | 'unknown';
+  category?: string;
 }
 
 export const AI_SETTINGS_KEY = 'novel_ai_settings_v1';
@@ -194,7 +196,7 @@ function estimateOutputTokens(text: string): number {
  * ตรวจชื่อตัวละคร/ศัพท์เฉพาะจากเนื้อหาบทจีน แล้วถอดเสียง/แปลเป็นไทยพร้อมกัน
  * คืน [] ถ้าไม่พบ — ผู้เรียกเป็นตัวต่อที่เก็บ glossary ของโปรเจกต์ (dedupe ที่จุดเรียก)
  */
-export async function detectNamedTerms(text: string, settings?: AiDetectSettings): Promise<AiDetectPair[]> {
+export async function detectNamedTerms(text: string, settings?: AiDetectSettings, options: { characters?: boolean; terms?: boolean } = { characters: true, terms: true }): Promise<AiDetectPair[]> {
   const cfg = settings ?? loadAiSettings();
   if (!cfg.apiKey.trim()) {
     throw new Error('AI_NOT_CONFIGURED');
@@ -207,17 +209,18 @@ export async function detectNamedTerms(text: string, settings?: AiDetectSettings
     'character names (人名), nicknames/titles, sect/clan names (门派/家族), place names (地名),',
     'cultivation techniques, magic/artifact terms (功法/武功/法宝), and other recurring special terms.',
     'Do NOT include common nouns or ordinary dialogue words.',
-    'For each item give: zh = the exact term as written in the text, th = the Thai name you propose,',
-    'type = "character" only for a named person or character; use "term" for every other proper noun or special term.',
-    'Do not classify titles, nicknames, sects, places, techniques, artifacts, or organizations as characters.',
-    'Maximum 30 items. Respond ONLY with JSON: {"items":[{"zh":"...","th":"...","type":"character|term"}]}',
+    'For each item give zh = exact source text, th = proposed Thai translation, type = character or term.',
+    'For characters, also give gender as male, female, or unknown. For terms, give category as place, sect, organization, item, technique, cultivation, or other.',
+    'Never classify sects, places, techniques, artifacts, or organizations as characters. Do not invent missing details.',
+    'Only extract characters if character detection is enabled; only extract terms if term detection is enabled.',
+    'Maximum 30 items. Respond ONLY with JSON: {"items":[{"zh":"...","th":"...","type":"character|term","gender":"male|female|unknown","category":"place|sect|organization|item|technique|cultivation|other"}]}',
   ].join(' ');
 
   const result = await requestChatCompletion(
     cfg,
     [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content },
+      { role: 'user', content: 'Detection options: characters=' + Boolean(options.characters) + ', terms=' + Boolean(options.terms) + '\n\n' + content },
     ],
     2048,
     0,
@@ -242,7 +245,12 @@ export async function detectNamedTerms(text: string, settings?: AiDetectSettings
     const th = typeof item?.th === 'string' ? item.th.trim() : '';
     if (!zh || !th || seen.has(zh)) continue;
     seen.add(zh);
-    pairs.push({ zh, th, type: item?.type === 'character' ? 'character' : 'term' });
+    const type = item?.type === 'character' ? 'character' : 'term';
+    if (type === 'character' && !options.characters) continue;
+    if (type === 'term' && !options.terms) continue;
+    const gender = ['male', 'female', 'unknown'].includes(item?.gender) ? item.gender as AiDetectPair['gender'] : 'unknown';
+    const category = typeof item?.category === 'string' && item.category.trim() ? item.category.trim() : 'other';
+    pairs.push({ zh, th, type, ...(type === 'character' ? { gender } : { category }) });
   }
   return pairs;
 }

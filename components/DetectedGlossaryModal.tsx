@@ -7,6 +7,9 @@ export interface DetectedGlossaryItem {
   zh: string;
   th: string;
   type: 'character' | 'term';
+  gender?: 'male' | 'female' | 'unknown';
+  category?: string;
+  notes?: string;
 }
 
 export default function DetectedGlossaryModal({
@@ -55,7 +58,7 @@ export default function DetectedGlossaryModal({
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
           {saveError && <p role="alert" className="rounded-lg border border-danger-line bg-danger-bg px-3 py-2 text-xs text-danger-fg">{saveError}</p>}
           {draft.map((item, index) => (
-            <div key={item.zh + ':' + index} className="grid grid-cols-1 gap-2 rounded-xl border border-line bg-bg p-3 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.5fr)_7rem]">
+            <div key={item.zh + ':' + index} className="grid grid-cols-1 gap-2 rounded-xl border border-line bg-bg p-3 sm:grid-cols-2">
               <label className="min-w-0 space-y-1">
                 <span className="block text-[11px] text-muted">คำจีน</span>
                 <input value={item.zh} onChange={(event) => update(index, { zh: event.target.value })} className="h-9 w-full min-w-0 rounded-lg border border-line bg-card px-2 text-sm" />
@@ -69,6 +72,17 @@ export default function DetectedGlossaryModal({
                 <select value={item.type} onChange={(event) => update(index, { type: event.target.value as 'character' | 'term' })} className="h-9 w-full rounded-lg border border-line bg-card px-2 text-xs">
                   <option value="character">ตัวละคร</option><option value="term">ศัพท์เฉพาะ</option>
                 </select>
+              </label>
+              {item.type === 'character' ? <label className="min-w-0 space-y-1">
+                <span className="block text-[11px] text-muted">เพศ</span>
+                <select value={item.gender ?? 'unknown'} onChange={(event) => update(index, { gender: event.target.value as DetectedGlossaryItem['gender'] })} className="h-9 w-full rounded-lg border border-line bg-card px-2 text-xs"><option value="unknown">ไม่ระบุ</option><option value="male">ชาย</option><option value="female">หญิง</option></select>
+              </label> : <label className="min-w-0 space-y-1">
+                <span className="block text-[11px] text-muted">หมวดหมู่</span>
+                <select value={item.category ?? 'other'} onChange={(event) => update(index, { category: event.target.value })} className="h-9 w-full rounded-lg border border-line bg-card px-2 text-xs"><option value="place">สถานที่</option><option value="sect">สำนัก</option><option value="organization">องค์กร</option><option value="item">สิ่งของ</option><option value="technique">วิชา/เคล็ดวิชา</option><option value="cultivation">การบำเพ็ญ</option><option value="other">อื่น ๆ</option></select>
+              </label>}
+              <label className="min-w-0 space-y-1 sm:col-span-3">
+                <span className="block text-[11px] text-muted">Notes (เว้นว่างไว้ให้กรอกภายหลัง)</span>
+                <textarea value={item.notes ?? ''} onChange={(event) => update(index, { notes: event.target.value })} rows={2} className="w-full rounded-lg border border-line bg-card px-2 py-2 text-xs" />
               </label>
             </div>
           ))}
