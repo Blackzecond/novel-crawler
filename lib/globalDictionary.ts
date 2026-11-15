@@ -52,6 +52,8 @@ interface TrieNode {
 }
 
 const dictionaryCache = new Map<string, { entries?: GlobalDictionaryEntry[]; pending?: Promise<GlobalDictionaryEntry[]> }>();
+const dictionaryVersions = new WeakMap<GlobalDictionaryEntry[], number>();
+let nextDictionaryVersion = 1;
 const matcherCache = new Map<string, AhoCorasickMatcher>();
 
 function mapRow(row: DictionaryRow): GlobalDictionaryEntry {
@@ -95,6 +97,7 @@ export async function loadGlobalDictionaryEntries(forceRefresh = false): Promise
       .order('source_term', { ascending: true });
     if (error) throw error;
     const entries = ((data ?? []) as DictionaryRow[]).map(mapRow);
+    dictionaryVersions.set(entries, nextDictionaryVersion++);
     dictionaryCache.set(userId, { entries });
     return entries;
   })();
@@ -224,7 +227,7 @@ class AhoCorasickMatcher {
 
 function getMatcher(entries: GlobalDictionaryEntry[], protectedTerms: string[]): AhoCorasickMatcher {
   const protectedKey = [...new Set(protectedTerms.filter(Boolean))].sort().join('\u0001');
-  const dictionaryVersion = entries.map((entry) => entry.id + ':' + entry.updatedAt).join('|');
+  const dictionaryVersion = dictionaryVersions.get(entries) ?? 0;
   const cacheKey = dictionaryVersion + '#' + protectedKey;
   const cached = matcherCache.get(cacheKey);
   if (cached) return cached;
