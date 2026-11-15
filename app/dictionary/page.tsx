@@ -1,13 +1,22 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, Loader2, Pencil, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowLeft, BookOpen, Check, Download, FileSpreadsheet, Loader2, Pencil,
+  Plus, RefreshCw, Search, Trash2, Upload, X, AlertTriangle,
+} from 'lucide-react';
+import {
+  analyzeGlobalDictionaryImport,
   deleteGlobalDictionaryEntry,
+  exportGlobalDictionaryCsv,
+  importGlobalDictionaryEntries,
   listGlobalDictionaryEntries,
+  parseGlobalDictionaryCsv,
   saveGlobalDictionaryEntry,
   type GlobalDictionaryCategory,
   type GlobalDictionaryEntry,
+  type GlobalDictionaryImportAnalysis,
+  type GlobalDictionaryImportRow,
 } from '@/lib/globalDictionary';
 
 const CATEGORIES: { value: GlobalDictionaryCategory; label: string }[] = [
@@ -48,6 +57,10 @@ export default function GlobalDictionaryPage() {
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<Draft | null>(null);
   const [notice, setNotice] = useState('');
+  const [importRows, setImportRows] = useState<GlobalDictionaryImportRow[]>([]);
+  const [importAnalysis, setImportAnalysis] = useState<GlobalDictionaryImportAnalysis | null>(null);
+  const [importName, setImportName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = async () => {
     setLoading(true);
@@ -142,6 +155,56 @@ export default function GlobalDictionaryPage() {
     }
   };
 
+  const exportCsv = () => {
+    const csv = '\uFEFF' + exportGlobalDictionaryCsv(entries);
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'novel-crawler-global-dictionary.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setNotice('ส่งออก ' + entries.length + ' รายการแล้ว');
+  };
+
+  const inspectImportFile = async (file?: File) => {
+    if (!file) return;
+    setBusy(true);
+    setImportAnalysis(null);
+    try {
+      const text = await file.text();
+      const rows = parseGlobalDictionaryCsv(text);
+      const analysis = await analyzeGlobalDictionaryImport(rows);
+      setImportRows(rows);
+      setImportAnalysis(analysis);
+      setImportName(file.name);
+      setNotice('');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'อ่านไฟล์ CSV ไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const confirmImport = async () => {
+    if (!importAnalysis || importAnalysis.conflicts.length) return;
+    setBusy(true);
+    try {
+      const count = await importGlobalDictionaryEntries(importRows);
+      setImportRows([]);
+      setImportAnalysis(null);
+      setImportName('');
+      setNotice('นำเข้า ' + count + ' รายการสำเร็จ ข้ามรายการซ้ำ ' + (importAnalysis.duplicates) + ' รายการ');
+      await refresh();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'นำเข้าคำศัพท์ไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-bg text-fg">
       <header className="mx-auto max-w-4xl px-4 pt-7 pb-5">
@@ -157,7 +220,18 @@ export default function GlobalDictionaryPage() {
             <Plus className="h-4 w-4" /> เพิ่มคำ
           </button>
         </div>
-        <div className="mt-5 flex items-center gap-2 rounded-xl border border-line bg-card px-3">
+
+        <div className="mt-5 grid grid-cols-2 gap-2 sm:flex">
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy || loading} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-line bg-card px-3 text-sm hover:bg-surface disabled:opacity-50">
+            <Upload className="h-4 w-4" /> นำเข้า CSV
+          </button>
+          <button type="button" onClick={exportCsv} disabled={busy || loading || !entries.length} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-line bg-card px-3 text-sm hover:bg-surface disabled:opacity-50">
+            <Download className="h-4 w-4" /> ส่งออก CSV
+          </button>
+          <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => void inspectImportFile(event.target.files?.[0])} />
+        </div>
+
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-line bg-card px-3">
           <Search className="h-4 w-4 text-muted" />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาคำจีน คำแปล หรือ Alias..." className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none" />
           <button onClick={() => void refresh()} disabled={loading || busy} aria-label="โหลดใหม่" className="rounded-lg p-2 text-muted hover:bg-surface disabled:opacity-50">
@@ -172,6 +246,42 @@ export default function GlobalDictionaryPage() {
 
       <section className="mx-auto max-w-4xl px-4 pb-12">
         {notice && <div role="status" className="mb-3 rounded-xl border border-line bg-card p-3 text-sm">{notice}</div>}
+
+        {importAnalysis && (
+          <div className="mb-4 rounded-2xl border border-line bg-card p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5 text-muted" />
+                <div>
+                  <h2 className="text-sm font-semibold">ตรวจสอบไฟล์นำเข้า</h2>
+                  <p className="text-xs text-muted">{importName}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => { setImportRows([]); setImportAnalysis(null); }} aria-label="ยกเลิกนำเข้า" className="rounded-lg p-1 text-muted hover:bg-surface"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-xl bg-surface p-2"><p className="text-lg font-semibold tabular-nums">{importAnalysis.accepted.length}</p><p className="text-[11px] text-muted">เพิ่มได้</p></div>
+              <div className="rounded-xl bg-surface p-2"><p className="text-lg font-semibold tabular-nums">{importAnalysis.duplicates}</p><p className="text-[11px] text-muted">ซ้ำ / ข้าม</p></div>
+              <div className="rounded-xl bg-surface p-2"><p className="text-lg font-semibold tabular-nums">{importAnalysis.conflicts.length}</p><p className="text-[11px] text-muted">คำชนกัน</p></div>
+            </div>
+            {importAnalysis.conflicts.length > 0 && (
+              <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3">
+                <div className="flex items-center gap-2 text-sm font-medium"><AlertTriangle className="h-4 w-4 text-amber-600" /> พบคำศัพท์ที่กำหนดคำแปลขัดแย้งกัน</div>
+                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-muted">
+                  {importAnalysis.conflicts.map((conflict) => <li key={conflict.rowNumber}>แถว {conflict.rowNumber} · {conflict.sourceTerm}: {conflict.reason}</li>)}
+                </ul>
+                <p className="mt-2 text-xs text-muted">ระบบจะไม่บันทึกไฟล์นี้จนกว่าจะแก้รายการที่ชนกันแล้วนำเข้าใหม่</p>
+              </div>
+            )}
+            <div className="mt-3 flex justify-end gap-2">
+              <button type="button" onClick={() => { setImportRows([]); setImportAnalysis(null); }} className="rounded-lg px-3 py-2 text-sm text-muted">ยกเลิก</button>
+              <button type="button" onClick={() => void confirmImport()} disabled={busy || importAnalysis.accepted.length === 0 || importAnalysis.conflicts.length > 0} className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm text-accent-fg disabled:opacity-40">
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />} นำเข้ารายการที่ผ่าน
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-hidden rounded-2xl border border-line bg-card">
           {loading ? (
             <div className="flex items-center justify-center gap-2 p-10 text-sm text-muted"><Loader2 className="h-4 w-4 animate-spin" /> กำลังโหลดคลังคำศัพท์...</div>
