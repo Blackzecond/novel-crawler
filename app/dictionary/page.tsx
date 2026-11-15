@@ -57,6 +57,7 @@ export default function GlobalDictionaryPage() {
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<Draft | null>(null);
   const [notice, setNotice] = useState('');
+  const [formError, setFormError] = useState('');
   const [importRows, setImportRows] = useState<GlobalDictionaryImportRow[]>([]);
   const [importAnalysis, setImportAnalysis] = useState<GlobalDictionaryImportAnalysis | null>(null);
   const [importName, setImportName] = useState('');
@@ -86,6 +87,7 @@ export default function GlobalDictionaryPage() {
   }, [entries, query]);
 
   const openEdit = (entry?: GlobalDictionaryEntry) => {
+    setFormError('');
     if (!entry) { setEditing(emptyDraft()); return; }
     setEditing({
       id: entry.id,
@@ -115,7 +117,7 @@ export default function GlobalDictionaryPage() {
       setNotice('บันทึกคำศัพท์แล้ว');
       await refresh();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'บันทึกคำศัพท์ไม่สำเร็จ');
+      setFormError(error instanceof Error ? error.message : 'บันทึกคำศัพท์ไม่สำเร็จ');
     } finally {
       setBusy(false);
     }
@@ -339,6 +341,7 @@ export default function GlobalDictionaryPage() {
               <h2 className="text-lg font-semibold">{editing.id ? 'แก้ไขคำศัพท์' : 'เพิ่มคำศัพท์พื้นฐาน'}</h2>
               <button onClick={() => setEditing(null)} aria-label="ปิด"><X className="h-5 w-5" /></button>
             </div>
+            {formError && <div role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-700">{formError}</div>}
             <label className="block text-xs text-muted">คำต้นฉบับ
               <input value={editing.sourceTerm} onChange={(event) => setEditing({ ...editing, sourceTerm: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm text-fg" placeholder="茅台" />
             </label>
