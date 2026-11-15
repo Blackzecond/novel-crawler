@@ -221,7 +221,8 @@ class AhoCorasickMatcher {
 
 function getMatcher(entries: GlobalDictionaryEntry[], protectedTerms: string[]): AhoCorasickMatcher {
   const protectedKey = [...new Set(protectedTerms.filter(Boolean))].sort().join('\u0001');
-  const cacheKey = protectedKey;
+  const dictionaryVersion = entries.map((entry) => entry.id + ':' + entry.updatedAt).join('|');
+  const cacheKey = dictionaryVersion + '#' + protectedKey;
   const cached = matcherCache.get(cacheKey);
   if (cached) return cached;
 
