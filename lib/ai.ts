@@ -1,3 +1,4 @@
+import type { GlobalDictionaryPromptTerm } from '@/lib/globalDictionary';
 // AI provider layer for Novel Crawler.
 // API keys remain in this browser's localStorage. Gemini uses the native Interactions API; other providers use OpenAI-compatible Chat Completions.
 
@@ -263,6 +264,7 @@ export async function translateNovelText(
   text: string,
   settings?: AiDetectSettings,
   glossary: Record<string, string> = {},
+  dictionaryTerms: GlobalDictionaryPromptTerm[] = [],
 ): Promise<string> {
   const cfg = settings ?? loadAiSettings();
   if (!text.trim()) throw new Error('ไม่มีเนื้อหาสำหรับแปล');
@@ -284,6 +286,9 @@ export async function translateNovelText(
     'ส่งเฉพาะคำแปลภาษาไทยทั้งตอน ห้ามส่งคำเกริ่น คำอธิบาย หมายเหตุ หรือข้อความภาษาจีน',
     ...(Object.keys(relevantGlossary).length
       ? ['Glossary ต่อไปนี้เป็นข้อกำหนดบังคับ ต้องใช้รูปภาษาไทยตามนี้อย่างสม่ำเสมอ:', JSON.stringify(relevantGlossary)]
+      : []),
+    ...(dictionaryTerms.length
+      ? ['คำศัพท์พื้นฐานต่อไปนี้ตรวจพบในบทนี้ ให้ใช้คำแปลตามรายการเมื่อพบคำตรงกัน โดย Glossary ประจำเรื่องมีลำดับความสำคัญสูงกว่า:', JSON.stringify(dictionaryTerms)]
       : []),
   ].join('\n');
 
@@ -329,6 +334,9 @@ export async function editNovelTranslation(
     'ส่งคืนคำแปลภาษาไทยฉบับแก้ไขครบทั้งตอนเท่านั้น ห้ามส่งคำอธิบาย รายงานการแก้ไข หรือข้อความภาษาจีน',
     ...(Object.keys(relevantGlossary).length
       ? ['Glossary บังคับ:', JSON.stringify(relevantGlossary)]
+      : []),
+    ...(dictionaryTerms.length
+      ? ['คำศัพท์พื้นฐานที่ตรวจพบในบทนี้ ให้คงรูปคำแปลตามรายการนี้ เว้นแต่ Glossary ประจำเรื่องกำหนดไว้ต่างออกไป:', JSON.stringify(dictionaryTerms)]
       : []),
   ].join('\n');
 
