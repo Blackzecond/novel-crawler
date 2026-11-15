@@ -267,7 +267,10 @@ async function findDictionaryConflicts(
     if (entry.id === candidate.id) continue;
     const existingKeys = [entry.sourceTerm, ...entry.aliases].map(normalizeDictionaryKey);
     const shared = candidateKeys.filter((key) => existingKeys.includes(key));
-    if (shared.length && entry.translatedTerm !== candidate.translatedTerm) {
+    const exactSourceAlreadyExists = normalizeDictionaryKey(entry.sourceTerm) === normalizeDictionaryKey(candidate.sourceTerm);
+    if (exactSourceAlreadyExists) {
+      conflicts.push('คำต้นฉบับ “' + candidate.sourceTerm + '” มีอยู่ในคลังแล้ว');
+    } else if (shared.length && entry.translatedTerm !== candidate.translatedTerm) {
       conflicts.push('คำว่า ' + shared[0] + ' ถูกกำหนดให้แปลเป็น “' + entry.translatedTerm + '” อยู่แล้ว');
     }
   }
