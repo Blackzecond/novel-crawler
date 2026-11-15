@@ -1,7 +1,7 @@
 import { getSupabase } from '@/lib/supabase';
 
 export type GlobalDictionaryCategory =
-  | 'brand' | 'food' | 'drink' | 'app' | 'place' | 'culture' | 'unit' | 'title' | 'other';
+  | 'brand' | 'food' | 'drink' | 'app' | 'place' | 'culture' | 'unit' | 'title' | 'sect' | 'cultivation' | 'technique' | 'item' | 'creature' | 'other';
 
 export interface GlobalDictionaryEntry {
   id: string;
@@ -44,7 +44,7 @@ export interface GlobalDictionaryImportAnalysis {
 }
 
 const VALID_CATEGORIES: GlobalDictionaryCategory[] = [
-  'brand', 'food', 'drink', 'app', 'place', 'culture', 'unit', 'title', 'other',
+  'brand', 'food', 'drink', 'app', 'place', 'culture', 'unit', 'title', 'sect', 'cultivation', 'technique', 'item', 'creature', 'other',
 ];
 
 function normalizeDictionaryKey(value: string): string {
