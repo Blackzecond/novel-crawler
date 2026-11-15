@@ -278,17 +278,38 @@ export async function findRelevantGlobalDictionaryTerms(
     accepted.push(candidate);
   }
 
-  const unique = new Map<string, GlobalDictionaryPromptTerm>();
+  const unique = new Map<string, { term: GlobalDictionaryPromptTerm; count: number; firstStart: number }>();
   for (const match of accepted) {
     if (match.pattern.protected || !match.pattern.entry) continue;
     const source = match.pattern.text;
     const key = source + '\u0000' + match.pattern.entry.id;
-    if (unique.has(key)) continue;
+    const existing = unique.get(key);
+    if (existing) {
+      existing.count += 1;
+      continue;
+    }
     unique.set(key, {
-      source,
-      target: match.pattern.entry.translatedTerm,
-      ...(match.pattern.entry.notes ? { note: match.pattern.entry.notes } : {}),
+      term: {
+        source,
+        target: match.pattern.entry.translatedTerm,
+        ...(match.pattern.entry.notes ? { note: match.pattern.entry.notes.slice(0, 160) } : {}),
+      },
+      count: 1,
+      firstStart: match.start,
     });
   }
-  return [...unique.values()];
+
+  // Bound dictionary context so an unusually dense chapter cannot consume the
+  // model's input budget. Repeated terms are prioritized, then first appearance.
+  const ranked = [...unique.values()].sort((a, b) => b.count - a.count || a.firstStart - b.firstStart);
+  const selected: GlobalDictionaryPromptTerm[] = [];
+  let contextChars = 2;
+  for (const item of ranked) {
+    if (selected.length >= 100) break;
+    const itemChars = JSON.stringify(item.term).length + (selected.length ? 1 : 0);
+    if (contextChars + itemChars > 6000) continue;
+    selected.push(item.term);
+    contextChars += itemChars;
+  }
+  return selected;
 }
