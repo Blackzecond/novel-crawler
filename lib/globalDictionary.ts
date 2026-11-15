@@ -217,6 +217,26 @@ async function getSessionUserId(): Promise<string> {
   return data.session.user.id;
 }
 
+const DICTIONARY_PAGE_SIZE = 1000;
+
+async function fetchDictionaryRows(activeOnly: boolean): Promise<DictionaryRow[]> {
+  const rows: DictionaryRow[] = [];
+  for (let from = 0; ; from += DICTIONARY_PAGE_SIZE) {
+    let request = getSupabase()
+      .from('global_dictionary_entries')
+      .select('id, source_term, translated_term, category, aliases, notes, is_active, created_at, updated_at')
+      .order('source_term', { ascending: true })
+      .range(from, from + DICTIONARY_PAGE_SIZE - 1);
+    if (activeOnly) request = request.eq('is_active', true);
+    const { data, error } = await request;
+    if (error) throw error;
+    const batch = (data ?? []) as DictionaryRow[];
+    rows.push(...batch);
+    if (batch.length < DICTIONARY_PAGE_SIZE) break;
+  }
+  return rows;
+}
+
 /** Loads active entries once per signed-in account. Pass true after an explicit refresh. */
 export async function loadGlobalDictionaryEntries(forceRefresh = false): Promise<GlobalDictionaryEntry[]> {
   const userId = await getSessionUserId();
@@ -225,13 +245,7 @@ export async function loadGlobalDictionaryEntries(forceRefresh = false): Promise
   if (!forceRefresh && cached?.pending) return cached.pending;
 
   const pending = (async () => {
-    const { data, error } = await getSupabase()
-      .from('global_dictionary_entries')
-      .select('id, source_term, translated_term, category, aliases, notes, is_active, created_at, updated_at')
-      .eq('is_active', true)
-      .order('source_term', { ascending: true });
-    if (error) throw error;
-    const entries = ((data ?? []) as DictionaryRow[]).map(mapRow);
+    const entries = (await fetchDictionaryRows(true)).map(mapRow);
     dictionaryVersions.set(entries, nextDictionaryVersion++);
     dictionaryCache.set(userId, { entries });
     return entries;
@@ -248,12 +262,7 @@ export async function loadGlobalDictionaryEntries(forceRefresh = false): Promise
 
 /** Lists active and inactive rows for the dictionary management screen. */
 export async function listGlobalDictionaryEntries(): Promise<GlobalDictionaryEntry[]> {
-  const { data, error } = await getSupabase()
-    .from('global_dictionary_entries')
-    .select('id, source_term, translated_term, category, aliases, notes, is_active, created_at, updated_at')
-    .order('source_term', { ascending: true });
-  if (error) throw error;
-  return ((data ?? []) as DictionaryRow[]).map(mapRow);
+  return (await fetchDictionaryRows(false)).map(mapRow);
 }
 
 async function findDictionaryConflicts(
