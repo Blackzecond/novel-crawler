@@ -51,9 +51,7 @@ interface TrieNode {
   outputs: Pattern[];
 }
 
-let cachedUserId: string | null = null;
-let cachedEntries: GlobalDictionaryEntry[] | null = null;
-let cachedLoad: Promise<GlobalDictionaryEntry[]> | null = null;
+const dictionaryCache = new Map<string, { entries?: GlobalDictionaryEntry[]; pending?: Promise<GlobalDictionaryEntry[]> }>();
 const matcherCache = new Map<string, AhoCorasickMatcher>();
 
 function mapRow(row: DictionaryRow): GlobalDictionaryEntry {
@@ -85,11 +83,11 @@ async function getSessionUserId(): Promise<string> {
 /** Loads active entries once per signed-in account. Pass true after an explicit refresh. */
 export async function loadGlobalDictionaryEntries(forceRefresh = false): Promise<GlobalDictionaryEntry[]> {
   const userId = await getSessionUserId();
-  if (!forceRefresh && cachedUserId === userId && cachedEntries) return cachedEntries;
-  if (!forceRefresh && cachedUserId === userId && cachedLoad) return cachedLoad;
+  const cached = dictionaryCache.get(userId);
+  if (!forceRefresh && cached?.entries) return cached.entries;
+  if (!forceRefresh && cached?.pending) return cached.pending;
 
-  cachedUserId = userId;
-  cachedLoad = (async () => {
+  const pending = (async () => {
     const { data, error } = await getSupabase()
       .from('global_dictionary_entries')
       .select('id, source_term, translated_term, category, aliases, notes, is_active, created_at, updated_at')
@@ -97,15 +95,15 @@ export async function loadGlobalDictionaryEntries(forceRefresh = false): Promise
       .order('source_term', { ascending: true });
     if (error) throw error;
     const entries = ((data ?? []) as DictionaryRow[]).map(mapRow);
-    cachedEntries = entries;
+    dictionaryCache.set(userId, { entries });
     return entries;
   })();
+  dictionaryCache.set(userId, { pending });
 
   try {
-    return await cachedLoad;
+    return await pending;
   } catch (error) {
-    cachedEntries = null;
-    cachedLoad = null;
+    if (dictionaryCache.get(userId)?.pending === pending) dictionaryCache.delete(userId);
     throw error;
   }
 }
@@ -158,8 +156,7 @@ export async function deleteGlobalDictionaryEntry(id: string): Promise<void> {
 }
 
 export function invalidateGlobalDictionaryCache(): void {
-  cachedEntries = null;
-  cachedLoad = null;
+  dictionaryCache.clear();
   matcherCache.clear();
 }
 
