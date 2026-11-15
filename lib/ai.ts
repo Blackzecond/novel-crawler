@@ -314,6 +314,7 @@ export async function editNovelTranslation(
   draftTranslation: string,
   settings?: AiDetectSettings,
   glossary: Record<string, string> = {},
+  dictionaryTerms: GlobalDictionaryPromptTerm[] = [],
 ): Promise<string> {
   const cfg = settings ?? loadAiSettings();
   if (!sourceText.trim() || !draftTranslation.trim()) {
