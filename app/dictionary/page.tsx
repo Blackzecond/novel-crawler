@@ -28,6 +28,11 @@ const CATEGORIES: { value: GlobalDictionaryCategory; label: string }[] = [
   { value: 'culture', label: 'วัฒนธรรม' },
   { value: 'unit', label: 'หน่วย / จำนวนเงิน' },
   { value: 'title', label: 'ตำแหน่ง / คำเรียก' },
+  { value: 'sect', label: 'สำนัก / ตระกูล' },
+  { value: 'cultivation', label: 'การบำเพ็ญ / พลัง' },
+  { value: 'technique', label: 'วิชา / ค่ายกล' },
+  { value: 'item', label: 'สิ่งของ / สมบัติวิเศษ' },
+  { value: 'creature', label: 'อสูร / สัตว์วิเศษ' },
   { value: 'other', label: 'อื่น ๆ' },
 ];
 
