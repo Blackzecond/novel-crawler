@@ -169,7 +169,7 @@ export default function GlobalDictionaryPage() {
   };
 
   const downloadCsvTemplate = () => {
-    const csv = '\\uFEFF' + exportGlobalDictionaryCsv([]);
+    const csv = '\uFEFF' + exportGlobalDictionaryCsv([]);
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a');
     link.href = url;
