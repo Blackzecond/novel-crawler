@@ -76,9 +76,15 @@ async function getCurrentUserId(): Promise<string> {
   return data.user.id;
 }
 
+async function getSessionUserId(): Promise<string> {
+  const { data, error } = await getSupabase().auth.getSession();
+  if (error || !data.session?.user) throw new Error('กรุณาเข้าสู่ระบบก่อนใช้คลังคำศัพท์พื้นฐาน');
+  return data.session.user.id;
+}
+
 /** Loads active entries once per signed-in account. Pass true after an explicit refresh. */
 export async function loadGlobalDictionaryEntries(forceRefresh = false): Promise<GlobalDictionaryEntry[]> {
-  const userId = await getCurrentUserId();
+  const userId = await getSessionUserId();
   if (!forceRefresh && cachedUserId === userId && cachedEntries) return cachedEntries;
   if (!forceRefresh && cachedUserId === userId && cachedLoad) return cachedLoad;
 
