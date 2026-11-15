@@ -168,6 +168,18 @@ export default function GlobalDictionaryPage() {
     setNotice('ส่งออก ' + entries.length + ' รายการแล้ว');
   };
 
+  const downloadCsvTemplate = () => {
+    const csv = '\\uFEFF' + exportGlobalDictionaryCsv([]);
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'novel-crawler-dictionary-template.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   const inspectImportFile = async (file?: File) => {
     if (!file) return;
     setBusy(true);
@@ -227,6 +239,9 @@ export default function GlobalDictionaryPage() {
           </button>
           <button type="button" onClick={exportCsv} disabled={busy || loading || !entries.length} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-line bg-card px-3 text-sm hover:bg-surface disabled:opacity-50">
             <Download className="h-4 w-4" /> ส่งออก CSV
+          </button>
+          <button type="button" onClick={downloadCsvTemplate} disabled={busy || loading} className="col-span-2 inline-flex h-9 items-center justify-center gap-2 text-xs text-muted underline underline-offset-4 hover:text-fg sm:ml-auto sm:col-span-1">
+            ดาวน์โหลดแม่แบบ CSV
           </button>
           <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => void inspectImportFile(event.target.files?.[0])} />
         </div>
