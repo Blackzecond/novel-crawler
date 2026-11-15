@@ -9,6 +9,7 @@ import {
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 import { applyWordReplacements, applyWordReplacementsToHtml } from '@/lib/wordReplacements';
 import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, editNovelTranslation } from '@/lib/ai';
+import { findRelevantGlobalDictionaryTerms, loadGlobalDictionaryEntries } from '@/lib/globalDictionary';
 import {
   loadReaderSettings, saveReaderSettings, applySavedTheme,
   readerDefaults, ReaderFont, ReaderTheme,
@@ -74,6 +75,11 @@ export default function ReaderPage() {
   const scrollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const settingsRef = useRef<HTMLDivElement | null>(null);
   const settingsBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  // Warm the account-scoped global dictionary cache without delaying chapter rendering.
+  useEffect(() => {
+    void loadGlobalDictionaryEntries().catch((dictionaryError) => console.info('Global dictionary preload skipped:', dictionaryError));
+  }, []);
 
   // โหลดค่าจากเครื่องก่อน แล้วซิงก์กับ Cloud เมื่อเข้าสู่ระบบ
   useEffect(() => {
@@ -604,7 +610,11 @@ export default function ReaderPage() {
       const glossary = latestProject?.glossary ?? readerProject?.glossary ?? {};
       const replacements = latestProject?.wordReplacements ?? readerProject?.wordReplacements ?? [];
       const sourceText = applyWordReplacements(article.textContent, replacements);
-      const translated = applyWordReplacements(await translateNovelText(sourceText, settings, glossary), replacements);
+      const dictionaryTerms = await findRelevantGlobalDictionaryTerms(sourceText, glossary).catch((dictionaryError) => {
+        console.warn('Global dictionary matching skipped:', dictionaryError);
+        return [];
+      });
+      const translated = applyWordReplacements(await translateNovelText(sourceText, settings, glossary, dictionaryTerms), replacements);
       const updatedArticle = { ...article, translatedText: translated };
       setArticle(updatedArticle);
       chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
@@ -651,7 +661,11 @@ export default function ReaderPage() {
       const glossary = latestProject?.glossary ?? readerProject?.glossary ?? {};
       const replacements = latestProject?.wordReplacements ?? readerProject?.wordReplacements ?? [];
       const sourceText = applyWordReplacements(article.textContent, replacements);
-      const edited = applyWordReplacements(await editNovelTranslation(sourceText, applyWordReplacements(article.translatedText, replacements), settings, glossary), replacements);
+      const dictionaryTerms = await findRelevantGlobalDictionaryTerms(sourceText, glossary).catch((dictionaryError) => {
+        console.warn('Global dictionary matching skipped for editor:', dictionaryError);
+        return [];
+      });
+      const edited = applyWordReplacements(await editNovelTranslation(sourceText, applyWordReplacements(article.translatedText, replacements), settings, glossary, dictionaryTerms), replacements);
       const updatedArticle = { ...article, translatedText: edited };
       setArticle(updatedArticle);
       chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
@@ -829,6 +843,14 @@ export default function ReaderPage() {
                 <BookMarked className="h-4 w-4" />
               </button>
             )}
+            <a
+              href="/dictionary"
+              title="คลังคำศัพท์พื้นฐาน"
+              aria-label="คลังคำศัพท์พื้นฐาน"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-card hover:text-fg"
+            >
+              <Library className="w-4 h-4" />
+            </a>
             <a
               href="/settings/ai"
               title="ตั้งค่า AI สำหรับการแปล"
