@@ -71,7 +71,7 @@ export function exportGlobalDictionaryCsv(entries: GlobalDictionaryEntry[]): str
 
 /** Parses quoted CSV fields, escaped quotes, commas and embedded line breaks. */
 export function parseGlobalDictionaryCsv(input: string): GlobalDictionaryImportRow[] {
-  const source = input.replace(/^\\uFEFF/, '');
+  const source = input.charCodeAt(0) === 0xFEFF ? input.slice(1) : input;
   const matrix: string[][] = [];
   let row: string[] = [];
   let field = '';
@@ -112,7 +112,7 @@ export function parseGlobalDictionaryCsv(input: string): GlobalDictionaryImportR
   }
   if (matrix.length < 2) throw new Error('ไม่พบข้อมูลคำศัพท์ในไฟล์ CSV');
 
-  const headers = matrix[0].map((value) => value.trim().replace(/^\\uFEFF/, '').toLowerCase());
+  const headers = matrix[0].map((value) => value.trim().replace(/^\uFEFF/, '').toLowerCase());
   const findColumn = (...names: string[]) => headers.findIndex((header) => names.includes(header));
   const sourceIndex = findColumn('source_term', 'sourceterm', 'source', 'original', 'คำต้นฉบับ');
   const targetIndex = findColumn('translated_term', 'translatedterm', 'translation', 'target', 'คำแปล');
