@@ -27,6 +27,7 @@ interface ArticleData {
   content: string;
   textContent: string;
   translatedText?: string;
+  preProofreadText?: string;
   prevUrl: string | null;
   nextUrl: string | null;
 }
@@ -265,6 +266,7 @@ export default function ReaderPage() {
           const cachedArticle: ArticleData = {
             title: chapter.title, content: cached.readerContent,
             translatedText: cached.translatedText,
+            preProofreadText: cached.preProofreadText,
             textContent: cached.originalText ?? cached.readerContent.replace(/<[^>]*>/g, ' ').trim(),
             prevUrl: index > 0 ? project.chapters[index - 1].url : null,
             nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : null,
@@ -661,7 +663,7 @@ export default function ReaderPage() {
         }
       }
 
-      const updatedArticle = { ...article, translatedText: translated };
+      const updatedArticle = { ...article, translatedText: translated, preProofreadText: preProofreadText || undefined };
       setArticle(updatedArticle);
       chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
       setShowTranslation(true);
@@ -730,6 +732,31 @@ export default function ReaderPage() {
       setTranslationBusy(false);
     }
   };
+  const handleRestorePreProofread = async () => {
+    if (!article?.preProofreadText || !projectId || !currentChapterId) return;
+    const restored = article.preProofreadText;
+    const updatedArticle = { ...article, translatedText: restored, preProofreadText: undefined };
+    setArticle(updatedArticle);
+    chapterCacheRef.current.set(`${projectId}:${url}`, updatedArticle);
+    setShowTranslation(true);
+    try {
+      await getStore().updateChapter(projectId, currentChapterId, {
+        translatedText: restored,
+        preProofreadText: '',
+        status: 'translated',
+        error: undefined,
+      });
+      setReaderProject((current) => current?.id === projectId ? {
+        ...current,
+        chapters: current.chapters.map((item) => item.id === currentChapterId
+          ? { ...item, translatedText: restored, preProofreadText: undefined }
+          : item),
+      } : current);
+    } catch (restoreError) {
+      setTranslationError('คืนฉบับก่อนตรวจแล้ว แต่บันทึกลงคลังไม่สำเร็จ: ' + (restoreError instanceof Error ? restoreError.message : String(restoreError)));
+    }
+  };
+
   const handleEditTranslation = async () => {
     if (!article?.translatedText || editorBusy || translationBusy) return;
     const settings = loadAiSettings();
@@ -1144,6 +1171,18 @@ export default function ReaderPage() {
                       <button type="button" onClick={() => setShowTranslation((value) => !value)} aria-label={showTranslation ? "ดูต้นฉบับ" : "ดูคำแปล"} title={showTranslation ? "ดูต้นฉบับ" : "ดูคำแปล"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-fg transition-colors hover:border-accent-line hover:bg-card">
                         <BookOpen className="h-4 w-4" />
                       </button>
+                      {article.preProofreadText && (
+                        <button
+                          type="button"
+                          onClick={handleRestorePreProofread}
+                          title="คืนคำแปลฉบับก่อน AI บ.ก. ตรวจ"
+                          aria-label="คืนคำแปลฉบับก่อนตรวจ"
+                          className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-2 text-xs text-fg hover:bg-card"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                          <span>คืนฉบับเดิม</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={handleEditTranslation}
