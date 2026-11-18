@@ -633,6 +633,7 @@ export default function ReaderPage() {
       const rawTranslated = applyWordReplacements(await translateNovelText(sourceText, settings, glossary, dictionaryTerms, {
         previousInteractionId,
         memoryContext,
+        translationProfile: latestProject?.translationProfile ?? 'general',
         storeInteraction: Boolean(projectId),
         onInteractionId: (id) => { nextInteractionId = id; },
       }), replacements);
