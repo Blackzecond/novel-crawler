@@ -377,7 +377,7 @@ export async function extractNovelMemory(
     return [{
       node_type: item.node_type,
       canonical_name: canonicalName,
-      source_terms: Array.isArray(item.source_terms) ? item.source_terms.filter((term: unknown): term is string => typeof term === 'string' && term.trim()).slice(0, 12) : [],
+      source_terms: Array.isArray(item.source_terms) ? item.source_terms.filter((term: unknown): term is string => typeof term === 'string' && term.trim().length > 0).slice(0, 12) : [],
       summary,
       attributes: item.attributes && typeof item.attributes === 'object' && !Array.isArray(item.attributes) ? item.attributes : {},
       importance: Math.max(1, Math.min(5, Number.isFinite(Number(item.importance)) ? Math.round(Number(item.importance)) : 3)),
