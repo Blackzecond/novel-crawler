@@ -8,8 +8,9 @@ import {
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 import { applyWordReplacements, applyWordReplacementsToHtml } from '@/lib/wordReplacements';
-import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, editNovelTranslation } from '@/lib/ai';
+import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, extractNovelMemory, inspectThaiTranslation, proofreadThaiFormatting } from '@/lib/ai';
 import { findRelevantGlobalDictionaryTerms, loadGlobalDictionaryEntries } from '@/lib/globalDictionary';
+import { loadNovelMemoryContext, loadTranslationInteractionId, saveTranslationInteractionId, loadMemoryExtractionCheckpoint, loadNovelMemoryForExtraction, saveNovelMemoryGraph, compactTranslationHistoryIfNeeded } from '@/lib/novelMemory';
 import {
   loadReaderSettings, saveReaderSettings, applySavedTheme,
   readerDefaults, ReaderFont, ReaderTheme,
@@ -26,6 +27,7 @@ interface ArticleData {
   content: string;
   textContent: string;
   translatedText?: string;
+  preProofreadText?: string;
   prevUrl: string | null;
   nextUrl: string | null;
 }
@@ -264,6 +266,7 @@ export default function ReaderPage() {
           const cachedArticle: ArticleData = {
             title: chapter.title, content: cached.readerContent,
             translatedText: cached.translatedText,
+            preProofreadText: cached.preProofreadText,
             textContent: cached.originalText ?? cached.readerContent.replace(/<[^>]*>/g, ' ').trim(),
             prevUrl: index > 0 ? project.chapters[index - 1].url : null,
             nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : null,
@@ -614,25 +617,106 @@ export default function ReaderPage() {
         console.warn('Global dictionary matching skipped:', dictionaryError);
         return [];
       });
-      const translated = applyWordReplacements(await translateNovelText(sourceText, settings, glossary, dictionaryTerms), replacements);
-      const updatedArticle = { ...article, translatedText: translated };
+      const memoryContext = projectId
+        ? await loadNovelMemoryContext(projectId, sourceText).catch((memoryError) => {
+            console.warn('Novel memory retrieval skipped:', memoryError);
+            return '';
+          })
+        : '';
+      const previousInteractionId = projectId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
+        ? await loadTranslationInteractionId(projectId, settings.model).catch((stateError) => {
+            console.warn('Could not load Gemini interaction state:', stateError);
+            return undefined;
+          })
+        : undefined;
+      let nextInteractionId: string | undefined;
+      const rawTranslated = applyWordReplacements(await translateNovelText(sourceText, settings, glossary, dictionaryTerms, {
+        previousInteractionId,
+        memoryContext,
+        storeInteraction: Boolean(projectId),
+        onInteractionId: (id) => { nextInteractionId = id; },
+      }), replacements);
+      if (projectId && nextInteractionId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')) {
+        const chapterOrder = latestProject?.chapters.find((item) => item.id === currentChapterId)?.order;
+        await saveTranslationInteractionId(projectId, settings.model, nextInteractionId, chapterOrder)
+          .catch((stateError) => console.warn('Could not save Gemini interaction state:', stateError));
+      }
+
+      // ตรวจอักขระในเครื่องก่อน: คำแปลไทยที่สะอาดไม่ต้องเสีย API call ครั้งที่สอง
+      const initialInspection = inspectThaiTranslation(rawTranslated);
+      let translated = rawTranslated;
+      let preProofreadText = '';
+      let proofreadWarning = '';
+      if (!initialInspection.passed) {
+        preProofreadText = rawTranslated;
+        try {
+          // ส่งให้ AI บ.ก. เฉพาะคำแปลไทยเท่านั้น ไม่ส่งต้นฉบับจีน Glossary หรือ Memory
+          const candidate = applyWordReplacements(await proofreadThaiFormatting(rawTranslated, settings), replacements);
+          if (inspectThaiTranslation(candidate).passed) {
+            translated = candidate;
+          } else {
+            proofreadWarning = 'AI บ.ก. ตรวจแล้วแต่ยังพบอักขระที่ไม่ผ่านการตรวจ จึงแสดงคำแปลฉบับเดิมเพื่อป้องกันเนื้อหาเพี้ยน';
+          }
+        } catch (proofreadError) {
+          console.warn('Automatic formatting proofread failed:', proofreadError);
+          proofreadWarning = 'AI บ.ก. ตรวจรูปแบบไม่สำเร็จ จึงแสดงคำแปลฉบับเดิม';
+        }
+      }
+
+      const updatedArticle = { ...article, translatedText: translated, preProofreadText: preProofreadText || undefined };
       setArticle(updatedArticle);
       chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
       setShowTranslation(true);
 
-      // The translation is usable immediately; persistence failure must not hide it.
       if (projectId && currentChapterId) {
         try {
           const saved = await getStore().updateChapter(projectId, currentChapterId, {
             translatedText: translated,
+            preProofreadText,
             status: 'translated',
             error: undefined,
           });
           if (saved) {
             setReaderProject((current) => current?.id === projectId ? {
               ...current,
-              chapters: current.chapters.map((item) => item.id === currentChapterId ? { ...item, status: 'translated' } : item),
+              chapters: current.chapters.map((item) => item.id === currentChapterId
+                ? { ...item, status: 'translated', preProofreadText }
+                : item),
             } : current);
+
+            // Build durable memory in batches of five translated chapters, not on every chapter.
+            try {
+              const provider = settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
+                ? 'gemini'
+                : settings.baseUrl.toLowerCase().includes('maas.aliyuncs.com') || settings.baseUrl.toLowerCase().includes('dashscope')
+                  ? 'qwen'
+                  : 'custom';
+              const memoryProject = await getStore().getProject(projectId);
+              const checkpoint = await loadMemoryExtractionCheckpoint(projectId, provider, settings.model);
+              const pendingChapters = (memoryProject?.chapters ?? [])
+                .filter((item) => item.status === 'translated' && item.order <= saved.order && (checkpoint === null || item.order > checkpoint))
+                .sort((a, b) => a.order - b.order)
+                .slice(0, 5);
+              if (pendingChapters.length === 5) {
+                const memorySources = await Promise.all(pendingChapters.map(async (item) => {
+                  const content = await getStore().getChapterContent(projectId, item.id, {
+                    includeOriginalText: true,
+                    includeTranslatedText: false,
+                  });
+                  return { order: item.order, title: item.title, sourceText: content?.originalText ?? '' };
+                }));
+                if (memorySources.every((item) => item.sourceText.trim())) {
+                  const existingMemory = await loadNovelMemoryForExtraction(projectId);
+                  const extracted = await extractNovelMemory(memorySources, existingMemory, settings);
+                  await saveNovelMemoryGraph(projectId, provider, settings.model, pendingChapters[4].order, extracted);
+                  if (provider === 'gemini' && (extracted.nodes.length > 0 || existingMemory.trim())) {
+                    await compactTranslationHistoryIfNeeded(projectId, settings.model);
+                  }
+                }
+              }
+            } catch (memoryUpdateError) {
+              console.warn('Batched novel memory update skipped:', memoryUpdateError);
+            }
           } else {
             setTranslationError('แปลสำเร็จแล้ว แต่ยังบันทึกคำแปลลงคลังไม่ได้ คำแปลนี้ยังแสดงอยู่ใน Reader');
           }
@@ -641,12 +725,42 @@ export default function ReaderPage() {
           setTranslationError('แปลสำเร็จแล้ว แต่บันทึกคำแปลไม่สำเร็จ คำแปลนี้ยังแสดงอยู่ใน Reader');
         }
       }
+      if (proofreadWarning) setTranslationError(proofreadWarning);
     } catch (err) {
       setTranslationError(err instanceof Error ? err.message : 'แปลไม่สำเร็จ');
     } finally {
       setTranslationBusy(false);
     }
   };
+  const handleRestorePreProofread = async () => {
+    if (!article?.preProofreadText) return;
+    const restored = article.preProofreadText;
+    try {
+      if (projectId && currentChapterId) {
+        await getStore().updateChapter(projectId, currentChapterId, {
+          translatedText: restored,
+          preProofreadText: '',
+          status: 'translated',
+          error: undefined,
+        });
+      }
+      const updatedArticle = { ...article, translatedText: restored, preProofreadText: undefined };
+      setArticle(updatedArticle);
+      chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
+      setShowTranslation(true);
+      if (projectId && currentChapterId) {
+        setReaderProject((current) => current?.id === projectId ? {
+          ...current,
+          chapters: current.chapters.map((item) => item.id === currentChapterId
+            ? { ...item, translatedText: restored, preProofreadText: undefined }
+            : item),
+        } : current);
+      }
+    } catch (restoreError) {
+      setTranslationError('คืนฉบับก่อนตรวจไม่สำเร็จ: ' + (restoreError instanceof Error ? restoreError.message : String(restoreError)));
+    }
+  };
+
   const handleEditTranslation = async () => {
     if (!article?.translatedText || editorBusy || translationBusy) return;
     const settings = loadAiSettings();
@@ -657,16 +771,14 @@ export default function ReaderPage() {
     setEditorBusy(true);
     setTranslationError('');
     try {
-      const latestProject = projectId ? await getStore().getProject(projectId) : null;
-      const glossary = latestProject?.glossary ?? readerProject?.glossary ?? {};
-      const replacements = latestProject?.wordReplacements ?? readerProject?.wordReplacements ?? [];
-      const sourceText = applyWordReplacements(article.textContent, replacements);
-      const dictionaryTerms = await findRelevantGlobalDictionaryTerms(sourceText, glossary).catch((dictionaryError) => {
-        console.warn('Global dictionary matching skipped for editor:', dictionaryError);
-        return [];
-      });
-      const edited = applyWordReplacements(await editNovelTranslation(sourceText, applyWordReplacements(article.translatedText, replacements), settings, glossary, dictionaryTerms), replacements);
-      const updatedArticle = { ...article, translatedText: edited };
+      // AI บ.ก. ได้รับเฉพาะคำแปลไทย ไม่ส่งต้นฉบับจีนหรือข้อมูลคลังศัพท์
+      const originalDraft = article.translatedText;
+      const edited = await proofreadThaiFormatting(originalDraft, settings);
+      const updatedArticle = {
+        ...article,
+        translatedText: edited,
+        preProofreadText: article.preProofreadText ?? originalDraft,
+      };
       setArticle(updatedArticle);
       chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
       setShowTranslation(true);
@@ -675,17 +787,18 @@ export default function ReaderPage() {
         try {
           const saved = await getStore().updateChapter(projectId, currentChapterId, {
             translatedText: edited,
+            preProofreadText: updatedArticle.preProofreadText,
             status: 'translated',
             error: undefined,
           });
-          if (!saved) setTranslationError('AI บ.ก. ตรวจแก้แล้ว แต่บันทึกฉบับแก้ไขลงคลังไม่ได้');
+          if (!saved) setTranslationError('AI บ.ก. ตรวจรูปแบบแล้ว แต่บันทึกฉบับแก้ไขลงคลังไม่ได้');
         } catch (saveError) {
-          console.warn('Could not save AI-edited chapter:', saveError);
-          setTranslationError('AI บ.ก. ตรวจแก้แล้ว แต่บันทึกฉบับแก้ไขลงคลังไม่สำเร็จ');
+          console.warn('Could not save AI-formatted chapter:', saveError);
+          setTranslationError('AI บ.ก. ตรวจรูปแบบแล้ว แต่บันทึกฉบับแก้ไขลงคลังไม่สำเร็จ');
         }
       }
     } catch (err) {
-      setTranslationError(err instanceof Error ? err.message : 'AI บ.ก. ตรวจแก้ไม่สำเร็จ');
+      setTranslationError(err instanceof Error ? err.message : 'AI บ.ก. ตรวจรูปแบบไม่สำเร็จ');
     } finally {
       setEditorBusy(false);
     }
@@ -1061,6 +1174,18 @@ export default function ReaderPage() {
                       <button type="button" onClick={() => setShowTranslation((value) => !value)} aria-label={showTranslation ? "ดูต้นฉบับ" : "ดูคำแปล"} title={showTranslation ? "ดูต้นฉบับ" : "ดูคำแปล"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-fg transition-colors hover:border-accent-line hover:bg-card">
                         <BookOpen className="h-4 w-4" />
                       </button>
+                      {article.preProofreadText && (
+                        <button
+                          type="button"
+                          onClick={handleRestorePreProofread}
+                          title="คืนคำแปลฉบับก่อน AI บ.ก. ตรวจ"
+                          aria-label="คืนคำแปลฉบับก่อนตรวจ"
+                          className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-2 text-xs text-fg hover:bg-card"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                          <span>คืนฉบับเดิม</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={handleEditTranslation}

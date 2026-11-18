@@ -83,7 +83,8 @@ async function requestChatCompletion(
   maxTokens?: number,
   temperature = 0.2,
   thinkingLevel: 'minimal' | 'low' | 'medium' | 'high' = 'low',
-): Promise<{ content: string; finishReason: string | null }> {
+  interaction?: { previousInteractionId?: string; store?: boolean },
+): Promise<{ content: string; finishReason: string | null; interactionId?: string }> {
   if (!settings.apiKey.trim()) throw new Error('AI_NOT_CONFIGURED');
 
   if (inferAiProvider(settings.baseUrl) === 'gemini') {
@@ -99,7 +100,8 @@ async function requestChatCompletion(
         model: settings.model,
         ...(systemInstruction ? { system_instruction: systemInstruction } : {}),
         input,
-        store: false,
+        store: interaction?.store === true,
+        ...(interaction?.previousInteractionId ? { previous_interaction_id: interaction.previousInteractionId } : {}),
         generation_config: {
           ...(maxTokens ? { max_output_tokens: maxTokens } : {}),
           thinking_level: thinkingLevel,
@@ -137,6 +139,7 @@ async function requestChatCompletion(
     return {
       content: content.trim(),
       finishReason: typeof data?.status === 'string' ? data.status : null,
+      ...(typeof data?.id === 'string' ? { interactionId: data.id } : {}),
     };
   }
 
@@ -265,6 +268,12 @@ export async function translateNovelText(
   settings?: AiDetectSettings,
   glossary: Record<string, string> = {},
   dictionaryTerms: GlobalDictionaryPromptTerm[] = [],
+  options: {
+    previousInteractionId?: string;
+    memoryContext?: string;
+    storeInteraction?: boolean;
+    onInteractionId?: (id: string) => void;
+  } = {},
 ): Promise<string> {
   const cfg = settings ?? loadAiSettings();
   if (!text.trim()) throw new Error('ไม่มีเนื้อหาสำหรับแปล');
@@ -290,6 +299,9 @@ export async function translateNovelText(
     ...(dictionaryTerms.length
       ? ['คำศัพท์พื้นฐานต่อไปนี้ตรวจพบในบทนี้ ให้ใช้คำแปลตามรายการเมื่อพบคำตรงกัน โดย Glossary ประจำเรื่องมีลำดับความสำคัญสูงกว่า:', JSON.stringify(dictionaryTerms)]
       : []),
+    ...(options.memoryContext?.trim()
+      ? ['ความทรงจำระยะยาวของนิยาย เฉพาะข้อมูลที่เกี่ยวข้องกับตอนนี้ ใช้เป็นบริบทประกอบและห้ามนำไปแต่งเติมเกินต้นฉบับ:', options.memoryContext.trim()]
+      : []),
   ].join('\n');
 
   const result = await requestChatCompletion(
@@ -301,56 +313,141 @@ export async function translateNovelText(
     estimateOutputTokens(text),
     0.2,
     'high',
+    inferAiProvider(cfg.baseUrl) === 'gemini' && options.storeInteraction
+      ? { store: true, ...(options.previousInteractionId ? { previousInteractionId: options.previousInteractionId } : {}) }
+      : undefined,
   );
+  if (result.interactionId) options.onInteractionId?.(result.interactionId);
   return result.content;
 }
 
-/**
- * AI บรรณาธิการตรวจคำแปลไทยทั้งตอนเทียบกับต้นฉบับจีนทั้งตอนในคำขอเดียว
- * ผู้ใช้เป็นผู้กดเรียกเอง ไม่มีการทำงานอัตโนมัติ และไม่แบ่งตอน
- */
-export async function editNovelTranslation(
-  sourceText: string,
+
+export interface ThaiTranslationInspection {
+  passed: boolean;
+  unsupportedCharacters: string[];
+}
+
+/** ตรวจอักขระในเครื่อง: อนุญาตอักษรไทย ตัวเลข เครื่องหมาย และช่องว่าง */
+export function inspectThaiTranslation(text: string): ThaiTranslationInspection {
+  const allowed = /^[\p{Script=Thai}\p{Number}\p{Punctuation}\p{Symbol}\p{Mark}\s\u200D]$/u;
+  const unsupported = new Set<string>();
+  for (const character of Array.from(text)) {
+    if (character === '\uFFFD' || !allowed.test(character)) unsupported.add(character);
+  }
+  return { passed: unsupported.size === 0, unsupportedCharacters: [...unsupported].slice(0, 24) };
+}
+
+/** ตรวจเฉพาะคำแปลไทย ไม่มีการส่งต้นฉบับจีนหรือข้อมูลประกอบอื่น */
+export async function proofreadThaiFormatting(
   draftTranslation: string,
   settings?: AiDetectSettings,
-  glossary: Record<string, string> = {},
-  dictionaryTerms: GlobalDictionaryPromptTerm[] = [],
 ): Promise<string> {
   const cfg = settings ?? loadAiSettings();
-  if (!sourceText.trim() || !draftTranslation.trim()) {
-    throw new Error('ไม่มีต้นฉบับหรือคำแปลสำหรับตรวจแก้');
-  }
-
-  const relevantGlossary = Object.fromEntries(
-    Object.entries(glossary).filter(([source, target]) => source.trim() && target.trim() && sourceText.includes(source)),
-  );
+  if (!draftTranslation.trim()) throw new Error('ไม่มีคำแปลสำหรับตรวจรูปแบบ');
   const systemPrompt = [
-    'คุณเป็นบรรณาธิการภาษาไทยผู้เชี่ยวชาญด้านนิยายแปลจีน หน้าที่คือพิสูจน์อักษรและตรวจแก้คำแปลโดยเทียบกับต้นฉบับจีน',
-    'แก้เฉพาะข้อผิดพลาดที่ตรวจพบได้ ได้แก่ แปลผิดความหมาย แปลตกหล่น เติมเนื้อหาเอง ชื่อหรือศัพท์เฉพาะไม่สม่ำเสมอ ไวยากรณ์ไทยผิด และสำนวนแปลตรงตัวที่ผิดธรรมชาติ',
-    'รักษาความหมาย รายละเอียด น้ำเสียง ลำดับย่อหน้า บทสนทนา และรูปแบบของต้นฉบับอย่างเคร่งครัด',
-    'ห้ามแต่งสำนวนใหม่เพื่อความสวยงาม ห้ามเพิ่มอารมณ์หรือคำอธิบาย ห้ามสรุป ห้ามย่อ และห้ามตัดข้อความที่ถูกต้องอยู่แล้ว',
-    'หากประโยคเดิมถูกต้องและเป็นธรรมชาติอยู่แล้ว ให้คงไว้ ไม่ต้องเปลี่ยนเพียงเพื่อให้ดูแตกต่าง',
-    'ห้ามเดาความหมายที่ต้นฉบับไม่รองรับ หากจุดใดกำกวมให้รักษาความหมายอย่างระมัดระวัง',
-    'ชื่อบุคคลต้องเขียนติดกัน ไม่เว้นวรรคกลางชื่อ และต้องใช้ Glossary ตามที่กำหนด',
-    'ส่งคืนคำแปลภาษาไทยฉบับแก้ไขครบทั้งตอนเท่านั้น ห้ามส่งคำอธิบาย รายงานการแก้ไข หรือข้อความภาษาจีน',
-    ...(Object.keys(relevantGlossary).length
-      ? ['Glossary บังคับ:', JSON.stringify(relevantGlossary)]
-      : []),
-    ...(dictionaryTerms.length
-      ? ['คำศัพท์พื้นฐานที่ตรวจพบในบทนี้ ให้คงรูปคำแปลตามรายการนี้ เว้นแต่ Glossary ประจำเรื่องกำหนดไว้ต่างออกไป:', JSON.stringify(dictionaryTerms)]
-      : []),
+    'คุณเป็น AI บรรณาธิการสำหรับตรวจรูปแบบข้อความคำแปลภาษาไทยเท่านั้น',
+    'ข้อมูลที่ได้รับมีเพียงคำแปลภาษาไทย ไม่มีต้นฉบับภาษาจีน และห้ามร้องขอหรือสมมติว่ามีต้นฉบับ',
+    'ห้ามแปลใหม่ ห้ามเขียนใหม่ ห้ามเกลาสำนวน ห้ามเปลี่ยนคำศัพท์ ชื่อบุคคล ความหมาย น้ำเสียง หรือเนื้อหาของประโยค',
+    'คงข้อความภาษาไทยทุกคำตามเดิม แก้ได้เฉพาะอักษรจากภาษาอื่นที่หลุดมาอย่างชัดเจน อักขระผิดรูปแบบ ช่องว่างซ้ำ และการแบ่งย่อหน้าหรือบรรทัดว่างที่ผิดปกติ',
+    'ห้ามเดาคำภาษาไทยมาแทนอักษรต่างภาษา หากไม่แน่ใจว่าเป็นอักขระที่หลุดมาหรือเป็นส่วนหนึ่งของข้อความ ให้คงข้อความเดิมไว้',
+    'รักษาลำดับประโยคและย่อหน้าเดิมให้มากที่สุด ไม่รวมย่อหน้าที่แยกกันโดยตั้งใจ',
+    'ส่งกลับเฉพาะข้อความฉบับตรวจรูปแบบแล้วทั้งหมด ห้ามใส่คำเกริ่น คำอธิบาย รายงาน หรือ Markdown code fence',
   ].join('\n');
-
-  const combinedInput = sourceText + '\n\n' + draftTranslation;
   const result = await requestChatCompletion(
     cfg,
-    [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: 'ต้นฉบับภาษาจีนทั้งตอน:\n' + sourceText + '\n\nคำแปลภาษาไทยฉบับร่างที่ต้องตรวจแก้ทั้งตอน:\n' + draftTranslation },
-    ],
-    estimateOutputTokens(draftTranslation || combinedInput),
+    [{ role: 'system', content: systemPrompt }, { role: 'user', content: draftTranslation }],
+    estimateOutputTokens(draftTranslation),
     0.1,
     'high',
   );
   return result.content;
+}
+
+export interface NovelMemoryExtraction {
+  nodes: Array<{
+    node_type: 'character' | 'organization' | 'location' | 'technique' | 'item' | 'event' | 'concept' | 'other';
+    canonical_name: string;
+    source_terms: string[];
+    summary: string;
+    attributes: Record<string, unknown>;
+    importance: number;
+    evidence?: string;
+  }>;
+  edges: Array<{
+    source_name: string;
+    target_name: string;
+    relation_type: string;
+    description: string;
+    evidence?: string;
+  }>;
+}
+
+/** สกัดความจำถาวรจากชุดตอนที่แปลแล้ว ใช้เป็นงาน batch ไม่เรียกทุกตอน */
+export async function extractNovelMemory(
+  chapters: Array<{ order: number; title: string; sourceText: string }>,
+  existingMemory: string,
+  settings?: AiDetectSettings,
+): Promise<NovelMemoryExtraction> {
+  const cfg = settings ?? loadAiSettings();
+  if (!chapters.length) return { nodes: [], edges: [] };
+  const chapterInput = chapters.map((chapter) =>
+    `[ตอนที่ ${chapter.order + 1}: ${chapter.title}]\\n${chapter.sourceText.slice(0, 18000)}`
+  ).join('\\n\\n');
+  const systemPrompt = [
+    'You maintain a compact, factual memory graph for a long-running Chinese web novel translated into Thai.',
+    'Extract only durable facts useful for understanding later chapters: identities, aliases, affiliations, relationships, locations, cultivation facts, important objects, unresolved promises, secrets already revealed, and consequential events.',
+    'Do not summarize every scene. Exclude temporary actions, decorative details, speculation, and facts not supported by the supplied source.',
+    'Use exact Chinese names as canonical_name and source_terms. Write concise summaries and relation descriptions in Thai.',
+    'When existing memory is supplied, update or correct it using the new chapters; preserve older facts unless the new source explicitly changes or disproves them.',
+    'Do not invent entities or relations. Only create an edge when both endpoint entities are present in nodes or existing memory.',
+    'Return at most 30 nodes and 40 edges. Keep each summary concise and distinguish confirmed facts from uncertainty in attributes.',
+    'Return ONLY JSON: {"nodes":[{"node_type":"character|organization|location|technique|item|event|concept|other","canonical_name":"...","source_terms":["..."],"summary":"...","attributes":{},"importance":1,"evidence":"..."}],"edges":[{"source_name":"...","target_name":"...","relation_type":"...","description":"...","evidence":"..."}]}',
+  ].join(' ');
+  const result = await requestChatCompletion(cfg, [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: (existingMemory ? 'Existing memory to update:\\n' + existingMemory + '\\n\\n' : '') + 'New chapter sources:\\n' + chapterInput },
+  ], 8192, 0.1, 'medium');
+  const raw = result.content.slice(result.content.indexOf('{'), result.content.lastIndexOf('}') + 1);
+  if (!raw) throw new Error('AI ไม่ส่งข้อมูล Memory ในรูปแบบ JSON');
+  let parsed: any;
+  try { parsed = JSON.parse(raw); } catch { throw new Error('รูปแบบ Memory JSON ไม่ถูกต้อง'); }
+  const allowed = new Set(['character', 'organization', 'location', 'technique', 'item', 'event', 'concept', 'other']);
+  const nodes = (Array.isArray(parsed?.nodes) ? parsed.nodes : []).flatMap((item: any) => {
+    const canonicalName = typeof item?.canonical_name === 'string' ? item.canonical_name.trim() : '';
+    const summary = typeof item?.summary === 'string' ? item.summary.trim() : '';
+    if (!canonicalName || !summary || !allowed.has(item?.node_type)) return [];
+    return [{
+      node_type: item.node_type,
+      canonical_name: canonicalName,
+      source_terms: Array.isArray(item.source_terms) ? item.source_terms.filter((term: unknown): term is string => typeof term === 'string' && term.trim().length > 0).slice(0, 12) : [],
+      summary,
+      attributes: item.attributes && typeof item.attributes === 'object' && !Array.isArray(item.attributes) ? item.attributes : {},
+      importance: Math.max(1, Math.min(5, Number.isFinite(Number(item.importance)) ? Math.round(Number(item.importance)) : 3)),
+      ...(typeof item.evidence === 'string' ? { evidence: item.evidence.slice(0, 500) } : {}),
+    }];
+  }).slice(0, 30);
+  const edges = (Array.isArray(parsed?.edges) ? parsed.edges : []).flatMap((item: any) => {
+    const source_name = typeof item?.source_name === 'string' ? item.source_name.trim() : '';
+    const target_name = typeof item?.target_name === 'string' ? item.target_name.trim() : '';
+    const relation_type = typeof item?.relation_type === 'string' ? item.relation_type.trim() : '';
+    if (!source_name || !target_name || !relation_type || source_name === target_name) return [];
+    return [{
+      source_name, target_name, relation_type: relation_type.slice(0, 80),
+      description: typeof item.description === 'string' ? item.description.slice(0, 500) : '',
+      ...(typeof item.evidence === 'string' ? { evidence: item.evidence.slice(0, 500) } : {}),
+    }];
+  }).slice(0, 40);
+  return { nodes, edges };
+}
+
+/** Compatibility wrapper: accepts legacy arguments but sends only the Thai draft to the formatter. */
+export async function editNovelTranslation(
+  _sourceText: string,
+  draftTranslation: string,
+  settings?: AiDetectSettings,
+  _glossary: Record<string, string> = {},
+  _dictionaryTerms: GlobalDictionaryPromptTerm[] = [],
+): Promise<string> {
+  // คง signature เดิมเพื่อรองรับโค้ดเก่า แต่ไม่ส่งต้นฉบับหรือ Glossary ให้ AI บ.ก.
+  return proofreadThaiFormatting(draftTranslation, settings);
 }
