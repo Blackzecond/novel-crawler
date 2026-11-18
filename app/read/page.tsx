@@ -10,6 +10,7 @@ import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 import { applyWordReplacements, applyWordReplacementsToHtml } from '@/lib/wordReplacements';
 import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, editNovelTranslation } from '@/lib/ai';
 import { findRelevantGlobalDictionaryTerms, loadGlobalDictionaryEntries } from '@/lib/globalDictionary';
+import { loadNovelMemoryContext, loadTranslationInteractionId, saveTranslationInteractionId } from '@/lib/novelMemory';
 import {
   loadReaderSettings, saveReaderSettings, applySavedTheme,
   readerDefaults, ReaderFont, ReaderTheme,
@@ -614,7 +615,29 @@ export default function ReaderPage() {
         console.warn('Global dictionary matching skipped:', dictionaryError);
         return [];
       });
-      const translated = applyWordReplacements(await translateNovelText(sourceText, settings, glossary, dictionaryTerms), replacements);
+      const memoryContext = projectId
+        ? await loadNovelMemoryContext(projectId, sourceText).catch((memoryError) => {
+            console.warn('Novel memory retrieval skipped:', memoryError);
+            return '';
+          })
+        : '';
+      const previousInteractionId = projectId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
+        ? await loadTranslationInteractionId(projectId, settings.model).catch((stateError) => {
+            console.warn('Could not load Gemini interaction state:', stateError);
+            return undefined;
+          })
+        : undefined;
+      let nextInteractionId: string | undefined;
+      const translated = applyWordReplacements(await translateNovelText(sourceText, settings, glossary, dictionaryTerms, {
+        previousInteractionId,
+        memoryContext,
+        onInteractionId: (id) => { nextInteractionId = id; },
+      }), replacements);
+      if (projectId && nextInteractionId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')) {
+        const chapterOrder = latestProject?.chapters.find((item) => item.id === currentChapterId)?.order;
+        await saveTranslationInteractionId(projectId, settings.model, nextInteractionId, chapterOrder)
+          .catch((stateError) => console.warn('Could not save Gemini interaction state:', stateError));
+      }
       const updatedArticle = { ...article, translatedText: translated };
       setArticle(updatedArticle);
       chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
