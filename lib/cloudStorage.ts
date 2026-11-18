@@ -209,7 +209,7 @@ export const supabaseStore: NovelStore = {
       includeTranslatedText && row.translated_storage_provider === 'supabase'
         ? readText(row.translated_storage_path)
         : Promise.resolve(undefined),
-      readText(contentPath(userId, projectId, row.id, 'pre-proofread')),
+      includeTranslatedText\n        ? readText(contentPath(userId, projectId, row.id, 'pre-proofread'))\n        : Promise.resolve(undefined),
     ]);
     if (originalText !== undefined) chapter.originalText = originalText;
     if (readerContent !== undefined) chapter.readerContent = readerContent;
