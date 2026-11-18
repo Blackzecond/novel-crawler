@@ -631,6 +631,7 @@ export default function ReaderPage() {
       const translated = applyWordReplacements(await translateNovelText(sourceText, settings, glossary, dictionaryTerms, {
         previousInteractionId,
         memoryContext,
+        storeInteraction: Boolean(projectId),
         onInteractionId: (id) => { nextInteractionId = id; },
       }), replacements);
       if (projectId && nextInteractionId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')) {
