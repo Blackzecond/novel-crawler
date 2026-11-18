@@ -630,9 +630,9 @@ export default function ReaderPage() {
           })
         : { interactionId: undefined, count: 0, summary: '' };
       const memoryContext = [
-        conversationState.summary ? '[สรุปบริบทการแปลก่อนหน้า]\\n' + conversationState.summary : '',
+        conversationState.summary ? '[สรุปบริบทการแปลก่อนหน้า]\n' + conversationState.summary : '',
         graphMemoryContext,
-      ].filter(Boolean).join('\\n\\n');
+      ].filter(Boolean).join('\n\n');
       const previousInteractionId = projectId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
         ? (conversationState.interactionId ?? await loadTranslationInteractionId(projectId, settings.model).catch((stateError) => {
             console.warn('Could not load Gemini interaction state:', stateError);
