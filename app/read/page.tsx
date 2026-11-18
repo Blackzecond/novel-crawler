@@ -8,9 +8,9 @@ import {
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 import { applyWordReplacements, applyWordReplacementsToHtml } from '@/lib/wordReplacements';
-import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, editNovelTranslation } from '@/lib/ai';
+import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, extractNovelMemory, editNovelTranslation } from '@/lib/ai';
 import { findRelevantGlobalDictionaryTerms, loadGlobalDictionaryEntries } from '@/lib/globalDictionary';
-import { loadNovelMemoryContext, loadTranslationInteractionId, saveTranslationInteractionId } from '@/lib/novelMemory';
+import { loadNovelMemoryContext, loadTranslationInteractionId, saveTranslationInteractionId, loadMemoryExtractionCheckpoint, loadNovelMemoryForExtraction, saveNovelMemoryGraph, compactTranslationHistoryIfNeeded } from '@/lib/novelMemory';
 import {
   loadReaderSettings, saveReaderSettings, applySavedTheme,
   readerDefaults, ReaderFont, ReaderTheme,
@@ -657,6 +657,41 @@ export default function ReaderPage() {
               ...current,
               chapters: current.chapters.map((item) => item.id === currentChapterId ? { ...item, status: 'translated' } : item),
             } : current);
+
+            // Build durable memory in batches of five translated chapters, not on every chapter.
+            try {
+              const provider = settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
+                ? 'gemini'
+                : settings.baseUrl.toLowerCase().includes('maas.aliyuncs.com') || settings.baseUrl.toLowerCase().includes('dashscope')
+                  ? 'qwen'
+                  : 'custom';
+              const memoryProject = await getStore().getProject(projectId);
+              const checkpoint = await loadMemoryExtractionCheckpoint(projectId, provider, settings.model);
+              const pendingChapters = (memoryProject?.chapters ?? [])
+                .filter((item) => item.status === 'translated' && item.order <= saved.order && (checkpoint === null || item.order > checkpoint))
+                .sort((a, b) => a.order - b.order)
+                .slice(0, 5);
+              if (pendingChapters.length === 5) {
+                const memorySources = await Promise.all(pendingChapters.map(async (item) => {
+                  const content = await getStore().getChapterContent(projectId, item.id, {
+                    includeOriginalText: true,
+                    includeTranslatedText: false,
+                  });
+                  return { order: item.order, title: item.title, sourceText: content?.originalText ?? '' };
+                }));
+                if (memorySources.every((item) => item.sourceText.trim())) {
+                  const existingMemory = await loadNovelMemoryForExtraction(projectId);
+                  const extracted = await extractNovelMemory(memorySources, existingMemory, settings);
+                  await saveNovelMemoryGraph(projectId, provider, settings.model, pendingChapters[4].order, extracted);
+                  if (provider === 'gemini' && (extracted.nodes.length > 0 || existingMemory.trim())) {
+                    await compactTranslationHistoryIfNeeded(projectId, settings.model);
+                  }
+                }
+              }
+            } catch (memoryUpdateError) {
+              // Memory maintenance must never invalidate a successful chapter translation.
+              console.warn('Batched novel memory update skipped:', memoryUpdateError);
+            }
           } else {
             setTranslationError('แปลสำเร็จแล้ว แต่ยังบันทึกคำแปลลงคลังไม่ได้ คำแปลนี้ยังแสดงอยู่ใน Reader');
           }
