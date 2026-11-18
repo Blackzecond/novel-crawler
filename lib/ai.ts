@@ -440,10 +440,7 @@ export async function extractNovelMemory(
   return { nodes, edges };
 }
 
-/**
- * AI บรรณาธิการตรวจคำแปลไทยทั้งตอนเทียบกับต้นฉบับจีนทั้งตอนในคำขอเดียว
- * ผู้ใช้เป็นผู้กดเรียกเอง ไม่มีการทำงานอัตโนมัติ และไม่แบ่งตอน
- */
+/** Compatibility wrapper: accepts legacy arguments but sends only the Thai draft to the formatter. */
 export async function editNovelTranslation(
   _sourceText: string,
   draftTranslation: string,
