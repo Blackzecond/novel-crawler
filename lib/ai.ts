@@ -391,12 +391,12 @@ export async function summarizeGeminiTranslationHistory(
       'หากข้อมูลใหม่ขัดกับสรุปเดิม ให้ยึดข้อมูลล่าสุดที่มีหลักฐาน',
       'เขียนภาษาไทยแบบกระชับ แบ่งหัวข้อสั้น ๆ และไม่เกิน 5000 ตัวอักษร',
       'ส่งเฉพาะสรุป ไม่ต้องมีคำเกริ่นหรือคำอธิบาย',
-    ].join('\\n') },
+    ].join('\n') },
     { role: 'user', content: [
-      previousSummary ? '[สรุปความจำเดิม]\\n' + previousSummary : '',
-      durableMemory ? '[ความจำถาวรจากกราฟนิยาย]\\n' + durableMemory : '',
+      previousSummary ? '[สรุปความจำเดิม]\n' + previousSummary : '',
+      durableMemory ? '[ความจำถาวรจากกราฟนิยาย]\n' + durableMemory : '',
       'โปรดสรุปบริบทการสนทนาและงานแปลทั้งหมดใน interaction chain ก่อนหน้านี้ให้พร้อมใช้งานต่อ',
-    ].filter(Boolean).join('\\n\\n') },
+    ].filter(Boolean).join('\n\n') },
   ], 7000, 0.1, 'high', { store: true, previousInteractionId });
   if (!result.interactionId) throw new Error('Gemini ไม่ส่ง interaction ID สำหรับเริ่ม chain ใหม่');
   return { summary: result.content.slice(0, 5000), interactionId: result.interactionId };
