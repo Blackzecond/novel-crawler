@@ -392,7 +392,7 @@ export default function ProjectClient({ id }: { id: string }) {
         return;
       }
       const latest = await getStore().getProject(id);
-      const translatedText = await translateNovelText(sourceText, loadAiSettings(), latest?.glossary ?? project?.glossary ?? {});
+      const translatedText = await translateNovelText(sourceText, loadAiSettings(), latest?.glossary ?? project?.glossary ?? {}, [], { translationProfile: latest?.translationProfile ?? project?.translationProfile ?? 'general' });
       const saved = await getStore().updateChapter(id, chapter.id, {
         url: chapter.url, title: chapter.title, order: chapter.order,
         translatedText, status: 'translated', error: undefined,
