@@ -733,25 +733,29 @@ export default function ReaderPage() {
     }
   };
   const handleRestorePreProofread = async () => {
-    if (!article?.preProofreadText || !projectId || !currentChapterId) return;
+    if (!article?.preProofreadText) return;
     const restored = article.preProofreadText;
     try {
-      await getStore().updateChapter(projectId, currentChapterId, {
-        translatedText: restored,
-        preProofreadText: '',
-        status: 'translated',
-        error: undefined,
-      });
+      if (projectId && currentChapterId) {
+        await getStore().updateChapter(projectId, currentChapterId, {
+          translatedText: restored,
+          preProofreadText: '',
+          status: 'translated',
+          error: undefined,
+        });
+      }
       const updatedArticle = { ...article, translatedText: restored, preProofreadText: undefined };
       setArticle(updatedArticle);
-      chapterCacheRef.current.set(`${projectId}:${url}`, updatedArticle);
+      chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
       setShowTranslation(true);
-      setReaderProject((current) => current?.id === projectId ? {
-        ...current,
-        chapters: current.chapters.map((item) => item.id === currentChapterId
-          ? { ...item, translatedText: restored, preProofreadText: undefined }
-          : item),
-      } : current);
+      if (projectId && currentChapterId) {
+        setReaderProject((current) => current?.id === projectId ? {
+          ...current,
+          chapters: current.chapters.map((item) => item.id === currentChapterId
+            ? { ...item, translatedText: restored, preProofreadText: undefined }
+            : item),
+        } : current);
+      }
     } catch (restoreError) {
       setTranslationError('คืนฉบับก่อนตรวจไม่สำเร็จ: ' + (restoreError instanceof Error ? restoreError.message : String(restoreError)));
     }
