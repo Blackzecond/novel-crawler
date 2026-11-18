@@ -8,7 +8,7 @@ import {
   Sparkles, Globe, BookOpen, Download, FolderOpen, Pencil, Check, X,
   BookMarked, Plus, History, MoreVertical,
 } from 'lucide-react';
-import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
+import { getStore, NovelChapter, NovelProject, TranslationProfile } from '@/lib/storage';
 import {
   detectNamedTerms, hasAiKey, loadAiSettings, saveAiSettings, translateNovelText,
 } from '@/lib/ai';
@@ -81,6 +81,7 @@ export default function ProjectClient({ id }: { id: string }) {
   const [addTermType, setAddTermType] = useState<'character' | 'term'>('term');
   const [selectedGlossaryTerms, setSelectedGlossaryTerms] = useState<string[]>([]);
   const [aiReady, setAiReady] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoaded(false);
@@ -468,6 +469,19 @@ export default function ProjectClient({ id }: { id: string }) {
     }
   };
 
+  const setTranslationProfile = async (profile: TranslationProfile) => {
+    if (!project || profileSaving) return;
+    setProfileSaving(true);
+    try {
+      const updated = await getStore().updateProject(id, { translationProfile: profile });
+      if (updated) setProject(updated);
+    } catch (error) {
+      setChapterNotice('บันทึกโปรไฟล์การแปลไม่สำเร็จ: ' + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
   const setGlossaryMode = async (mode: 'manual' | 'auto') => {
     const updated = await getStore().updateProject(id, { glossaryMode: mode });
     if (updated) setProject(updated);
@@ -648,6 +662,19 @@ export default function ProjectClient({ id }: { id: string }) {
               กำลังดึงแบบลำดับ — เว้นจังหวะ {FETCH_DELAY_MS / 1000} วิ/บท กัน rate-limit ปิดแท็บนี้ไม่ได้ระหว่างลงมือทำ
             </p>
           )}
+        </section>
+
+        <section className="rounded-xl border border-line bg-card px-4 py-3 space-y-2">
+          <div><p className="text-sm font-semibold">โปรไฟล์การแปล</p><p className="mt-0.5 text-xs text-muted">กำหนดแนวภาษาให้ AI ใช้เฉพาะกับนิยายเรื่องนี้</p></div>
+          <select aria-label="โปรไฟล์การแปล" value={project.translationProfile ?? 'general'} disabled={profileSaving} onChange={(event) => void setTranslationProfile(event.target.value as TranslationProfile)} className="h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm">
+            <option value="general">ทั่วไป — ไม่กำหนดยุคหรือแนวเรื่อง</option>
+            <option value="modern">นิยายปัจจุบัน</option>
+            <option value="xianxia">เทพเซียน</option>
+            <option value="wuxia">กำลังภายใน / ยุทธภพ</option>
+            <option value="fantasy">แฟนตาซี</option>
+            <option value="scifi">ไซไฟ</option>
+          </select>
+          {profileSaving && <p className="text-[11px] text-muted">กำลังบันทึก...</p>}
         </section>
 
         <section className="flex items-center justify-between rounded-xl border border-line bg-card px-4 py-3">
