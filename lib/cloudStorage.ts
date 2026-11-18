@@ -195,7 +195,7 @@ export const supabaseStore: NovelStore = {
   },
 
   async getChapterContent(projectId, chapterId, options = {}) {
-    await currentUserId();
+    const userId = await currentUserId();
     const row = await getChapterRow(projectId, chapterId);
     if (!row) return null;
     const includeOriginalText = options.includeOriginalText !== false;
@@ -209,7 +209,7 @@ export const supabaseStore: NovelStore = {
       includeTranslatedText && row.translated_storage_provider === 'supabase'
         ? readText(row.translated_storage_path)
         : Promise.resolve(undefined),
-      readText(contentPath(await currentUserId(), projectId, row.id, 'pre-proofread')),
+      readText(contentPath(userId, projectId, row.id, 'pre-proofread')),
     ]);
     if (originalText !== undefined) chapter.originalText = originalText;
     if (readerContent !== undefined) chapter.readerContent = readerContent;
