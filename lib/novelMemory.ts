@@ -1,0 +1,145 @@
+import { getSupabase } from '@/lib/supabase';
+
+type ConversationRow = {
+  last_interaction_id: string | null;
+  interaction_count: number | null;
+};
+
+export async function loadTranslationInteractionId(
+  projectId: string,
+  model: string,
+): Promise<string | undefined> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('novel_ai_conversations')
+    .select('last_interaction_id')
+    .eq('project_id', projectId)
+    .eq('task_type', 'translation')
+    .eq('provider', 'gemini')
+    .eq('model', model)
+    .maybeSingle();
+  if (error) throw error;
+  const row = data as Pick<ConversationRow, 'last_interaction_id'> | null;
+  return row?.last_interaction_id ?? undefined;
+}
+
+export async function saveTranslationInteractionId(
+  projectId: string,
+  model: string,
+  interactionId: string,
+  chapterOrder?: number,
+): Promise<void> {
+  const supabase = getSupabase();
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError || !auth.user) throw new Error('กรุณาเข้าสู่ระบบก่อนบันทึกสถานะ AI');
+  const { data: existing, error: readError } = await supabase
+    .from('novel_ai_conversations')
+    .select('interaction_count')
+    .eq('project_id', projectId)
+    .eq('task_type', 'translation')
+    .eq('provider', 'gemini')
+    .eq('model', model)
+    .maybeSingle();
+  if (readError) throw readError;
+  const count = Number((existing as Pick<ConversationRow, 'interaction_count'> | null)?.interaction_count ?? 0) + 1;
+  const { error } = await supabase.from('novel_ai_conversations').upsert({
+    user_id: auth.user.id,
+    project_id: projectId,
+    task_type: 'translation',
+    provider: 'gemini',
+    model,
+    last_interaction_id: interactionId,
+    interaction_count: count,
+    last_chapter_order: Number.isFinite(chapterOrder) ? chapterOrder : null,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'project_id,task_type,provider,model' });
+  if (error) throw error;
+}
+
+type MemoryNode = {
+  id: string;
+  node_type: string;
+  canonical_name: string;
+  source_terms: string[] | null;
+  summary: string | null;
+  attributes: Record<string, unknown> | null;
+  importance: number | null;
+};
+
+type MemoryEdge = {
+  source_node_id: string;
+  target_node_id: string;
+  relation_type: string;
+  description: string | null;
+};
+
+function matchesSource(text: string, node: MemoryNode): boolean {
+  const terms = [node.canonical_name, ...(node.source_terms ?? [])]
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 2);
+  return terms.some((term) => text.includes(term));
+}
+
+/**
+ * Retrieves only graph facts whose entity names/aliases occur in this chapter.
+ * This first version deliberately uses indexed relational data + exact Chinese
+ * term matching; it does not require an embedding API call for every chapter.
+ */
+export async function loadNovelMemoryContext(
+  projectId: string,
+  sourceText: string,
+  maxCharacters = 4200,
+): Promise<string> {
+  if (!sourceText.trim()) return '';
+  const supabase = getSupabase();
+  const { data: nodeRows, error: nodeError } = await supabase
+    .from('novel_ai_memory_nodes')
+    .select('id,node_type,canonical_name,source_terms,summary,attributes,importance')
+    .eq('project_id', projectId)
+    .order('importance', { ascending: false })
+    .limit(300);
+  if (nodeError) throw nodeError;
+  const nodes = (nodeRows ?? []) as MemoryNode[];
+  if (!nodes.length) return '';
+
+  const matched = nodes.filter((node) => matchesSource(sourceText, node)).slice(0, 16);
+  if (!matched.length) return '';
+  const matchedIds = new Set(matched.map((node) => node.id));
+
+  const { data: edgeRows, error: edgeError } = await supabase
+    .from('novel_ai_memory_edges')
+    .select('source_node_id,target_node_id,relation_type,description')
+    .eq('project_id', projectId)
+    .limit(600);
+  if (edgeError) throw edgeError;
+  const allEdges = (edgeRows ?? []) as MemoryEdge[];
+  const relatedEdges = allEdges.filter((edge) =>
+    matchedIds.has(edge.source_node_id) || matchedIds.has(edge.target_node_id)
+  ).slice(0, 24);
+
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const neighborIds = new Set<string>();
+  for (const edge of relatedEdges) {
+    if (!matchedIds.has(edge.source_node_id)) neighborIds.add(edge.source_node_id);
+    if (!matchedIds.has(edge.target_node_id)) neighborIds.add(edge.target_node_id);
+  }
+  const neighborNodes = [...neighborIds]
+    .map((id) => nodeById.get(id))
+    .filter((node): node is MemoryNode => Boolean(node))
+    .slice(0, 10);
+
+  const lines: string[] = ['[ข้อมูลความจำที่เกี่ยวข้องกับตอนนี้]'];
+  for (const node of [...matched, ...neighborNodes]) {
+    const summary = node.summary?.trim();
+    if (!summary) continue;
+    lines.push(`- [${node.node_type}] ${node.canonical_name}: ${summary}`);
+  }
+  for (const edge of relatedEdges) {
+    const source = nodeById.get(edge.source_node_id)?.canonical_name;
+    const target = nodeById.get(edge.target_node_id)?.canonical_name;
+    if (source && target) {
+      lines.push(`- ความสัมพันธ์: ${source} — ${edge.relation_type} — ${target}${edge.description ? ' (' + edge.description + ')' : ''}`);
+    }
+  }
+  return lines.join('\n').slice(0, maxCharacters);
+}
