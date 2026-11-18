@@ -230,6 +230,7 @@ export async function saveNovelMemoryGraph(
       }).select('id').single();
       if (error) throw error;
       idsByName.set(nameKey, data.id);
+      existing.set(key, { id: data.id, node_type: node.node_type, canonical_name: node.canonical_name, source_terms: sourceTerms, summary: node.summary, attributes: node.attributes, importance: node.importance, first_chapter_order: throughChapterOrder, last_chapter_order: throughChapterOrder });
     }
   }
 
@@ -292,7 +293,7 @@ export async function compactTranslationHistoryIfNeeded(
     .eq('model', model)
     .maybeSingle();
   if (error) throw error;
-  if (!data || Number(data.interaction_count ?? 0) < 20) return false;
+  if (!data || Number(data.interaction_count ?? 0) < 10) return false;
   const { error: updateError } = await supabase.from('novel_ai_conversations')
     .update({ last_interaction_id: null, interaction_count: 0, updated_at: new Date().toISOString() })
     .eq('id', data.id);
