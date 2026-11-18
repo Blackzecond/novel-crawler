@@ -83,7 +83,8 @@ async function requestChatCompletion(
   maxTokens?: number,
   temperature = 0.2,
   thinkingLevel: 'minimal' | 'low' | 'medium' | 'high' = 'low',
-): Promise<{ content: string; finishReason: string | null }> {
+  interaction?: { previousInteractionId?: string; store?: boolean },
+): Promise<{ content: string; finishReason: string | null; interactionId?: string }> {
   if (!settings.apiKey.trim()) throw new Error('AI_NOT_CONFIGURED');
 
   if (inferAiProvider(settings.baseUrl) === 'gemini') {
@@ -99,7 +100,8 @@ async function requestChatCompletion(
         model: settings.model,
         ...(systemInstruction ? { system_instruction: systemInstruction } : {}),
         input,
-        store: false,
+        store: interaction?.store === true,
+        ...(interaction?.previousInteractionId ? { previous_interaction_id: interaction.previousInteractionId } : {}),
         generation_config: {
           ...(maxTokens ? { max_output_tokens: maxTokens } : {}),
           thinking_level: thinkingLevel,
@@ -137,6 +139,7 @@ async function requestChatCompletion(
     return {
       content: content.trim(),
       finishReason: typeof data?.status === 'string' ? data.status : null,
+      ...(typeof data?.id === 'string' ? { interactionId: data.id } : {}),
     };
   }
 
@@ -265,6 +268,11 @@ export async function translateNovelText(
   settings?: AiDetectSettings,
   glossary: Record<string, string> = {},
   dictionaryTerms: GlobalDictionaryPromptTerm[] = [],
+  options: {
+    previousInteractionId?: string;
+    memoryContext?: string;
+    onInteractionId?: (id: string) => void;
+  } = {},
 ): Promise<string> {
   const cfg = settings ?? loadAiSettings();
   if (!text.trim()) throw new Error('ไม่มีเนื้อหาสำหรับแปล');
@@ -290,6 +298,9 @@ export async function translateNovelText(
     ...(dictionaryTerms.length
       ? ['คำศัพท์พื้นฐานต่อไปนี้ตรวจพบในบทนี้ ให้ใช้คำแปลตามรายการเมื่อพบคำตรงกัน โดย Glossary ประจำเรื่องมีลำดับความสำคัญสูงกว่า:', JSON.stringify(dictionaryTerms)]
       : []),
+    ...(options.memoryContext?.trim()
+      ? ['ความทรงจำระยะยาวของนิยาย เฉพาะข้อมูลที่เกี่ยวข้องกับตอนนี้ ใช้เป็นบริบทประกอบและห้ามนำไปแต่งเติมเกินต้นฉบับ:', options.memoryContext.trim()]
+      : []),
   ].join('\n');
 
   const result = await requestChatCompletion(
@@ -301,7 +312,11 @@ export async function translateNovelText(
     estimateOutputTokens(text),
     0.2,
     'high',
+    inferAiProvider(cfg.baseUrl) === 'gemini'
+      ? { store: true, ...(options.previousInteractionId ? { previousInteractionId: options.previousInteractionId } : {}) }
+      : undefined,
   );
+  if (result.interactionId) options.onInteractionId?.(result.interactionId);
   return result.content;
 }
 
