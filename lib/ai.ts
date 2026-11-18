@@ -1,4 +1,5 @@
 import type { GlobalDictionaryPromptTerm } from '@/lib/globalDictionary';
+import type { TranslationProfile } from '@/lib/storage';
 // AI provider layer for Novel Crawler.
 // API keys remain in this browser's localStorage. Gemini uses the native Interactions API; other providers use OpenAI-compatible Chat Completions.
 
@@ -271,7 +272,7 @@ export async function translateNovelText(
   options: {
     previousInteractionId?: string;
     memoryContext?: string;
-    translationProfile?: import('@/lib/storage').TranslationProfile;
+    translationProfile?: TranslationProfile;
     storeInteraction?: boolean;
     onInteractionId?: (id: string) => void;
   } = {},
@@ -282,9 +283,9 @@ export async function translateNovelText(
   const relevantGlossary = Object.fromEntries(
     Object.entries(glossary).filter(([source, target]) => source.trim() && target.trim() && text.includes(source)),
   );
-  const profileInstructions: Record<NonNullable<typeof options.translationProfile>, string[]> = {
+  const profileInstructions: Record<TranslationProfile, string[]> = {
     general: ['ใช้ภาษาไทยมาตรฐานแบบนิยายแปล เลือกระดับภาษาให้ตรงกับบริบทต้นฉบับ โดยไม่สมมติยุคสมัยหรือแนวเรื่อง'],
-    modern: ['ใช้ภาษาไทยเป็นธรรมชาติ เหมาะกับบริบทปัจจุบัน', 'ห้ามใช้คำหยาบและสแลงที่ไม่จำเป็น หากมีคำอังกฤษให้แปลหรือถอดความเป็นไทย', 'ห้ามใส่วงเล็บอธิบาย'],
+    modern: ['ใช้ภาษาไทยเป็นธรรมชาติ เหมาะกับบริบทปัจจุบัน', 'ห้ามใช้คำหยาบและสแลง หากมีคำอังกฤษให้แปลหรือถอดความเป็นไทย', 'ห้ามใส่วงเล็บอธิบาย'],
     xianxia: ['ใช้ภาษาทางการหรือกึ่งทางการ สอดคล้องกับโลกเทพเซียนและบริบทโบราณ', 'หลีกเลี่ยงภาษาพูด คำสแลง และภาษาอังกฤษ', 'ถ่ายทอดสำนวนจีนเป็นไทยให้เหมาะกับบริบทโบราณโดยไม่ขยายความ', 'ห้ามใส่วงเล็บอธิบาย'],
     wuxia: ['ใช้ภาษาทางการหรือกึ่งทางการ สอดคล้องกับยุทธภพและกำลังภายใน', 'รักษาศัพท์ยุทธภพและลำดับอาวุโสให้สม่ำเสมอ หลีกเลี่ยงสแลงและภาษาอังกฤษ', 'ห้ามใส่วงเล็บอธิบาย'],
     fantasy: ['ใช้ภาษาไทยให้เข้ากับโลกแฟนตาซีและระบบเวทมนตร์ของเรื่อง', 'รักษาชื่อเผ่าพันธุ์ เวทมนตร์ สิ่งประดิษฐ์ และระบบพลังให้สม่ำเสมอ', 'ไม่สร้างคำอธิบายระบบที่ต้นฉบับไม่ได้ระบุ'],
