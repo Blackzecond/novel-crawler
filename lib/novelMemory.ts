@@ -279,24 +279,14 @@ export async function saveNovelMemoryGraph(
   if (checkpointError) throw checkpointError;
 }
 
+/**
+ * ปิดการ reset interaction chain แบบเดิมไว้ก่อน เพราะการล้าง previous_interaction_id
+ * โดยไม่มี summary ที่บันทึกสำเร็จจะทำให้บริบทบทก่อนหน้าหายไปจาก Gemini
+ * จะเปิดการ compact อีกครั้งเมื่อมีขั้นตอนสรุปและ persist summary แบบ transactional
+ */
 export async function compactTranslationHistoryIfNeeded(
-  projectId: string,
-  model: string,
+  _projectId: string,
+  _model: string,
 ): Promise<boolean> {
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('novel_ai_conversations')
-    .select('id,interaction_count')
-    .eq('project_id', projectId)
-    .eq('task_type', 'translation')
-    .eq('provider', 'gemini')
-    .eq('model', model)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data || Number(data.interaction_count ?? 0) < 10) return false;
-  const { error: updateError } = await supabase.from('novel_ai_conversations')
-    .update({ last_interaction_id: null, interaction_count: 0, updated_at: new Date().toISOString() })
-    .eq('id', data.id);
-  if (updateError) throw updateError;
-  return true;
+  return false;
 }
