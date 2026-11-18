@@ -138,7 +138,7 @@ async function buildProjects(rows: ProjectRow[]): Promise<NovelProject[]> {
   });
 }
 
-function contentPath(userId: string, projectId: string, chapterId: string, kind: 'original' | 'translated' | 'reader') {
+function contentPath(userId: string, projectId: string, chapterId: string, kind: 'original' | 'translated' | 'reader' | 'pre-proofread') {
   return `${userId}/${projectId}/${chapterId}/${kind}.txt`;
 }
 
@@ -201,7 +201,7 @@ export const supabaseStore: NovelStore = {
     const includeOriginalText = options.includeOriginalText !== false;
     const includeTranslatedText = options.includeTranslatedText !== false;
     const chapter = mapChapter(row);
-    const [originalText, readerContent, translatedText] = await Promise.all([
+    const [originalText, readerContent, translatedText, preProofreadText] = await Promise.all([
       includeOriginalText && row.original_storage_provider === 'supabase'
         ? readText(row.original_storage_path)
         : Promise.resolve(undefined),
@@ -209,10 +209,12 @@ export const supabaseStore: NovelStore = {
       includeTranslatedText && row.translated_storage_provider === 'supabase'
         ? readText(row.translated_storage_path)
         : Promise.resolve(undefined),
+      readText(contentPath(await currentUserId(), projectId, row.id, 'pre-proofread')),
     ]);
     if (originalText !== undefined) chapter.originalText = originalText;
     if (readerContent !== undefined) chapter.readerContent = readerContent;
     if (translatedText !== undefined) chapter.translatedText = translatedText;
+    if (preProofreadText !== undefined) chapter.preProofreadText = preProofreadText;
     return chapter;
   },
 
@@ -564,6 +566,9 @@ export const supabaseStore: NovelStore = {
     const translatedPath = patch.translatedText !== undefined
       ? contentPath(userId, projectId, actualChapterId, 'translated')
       : row.translated_storage_path;
+    const preProofreadPath = patch.preProofreadText !== undefined
+      ? contentPath(userId, projectId, actualChapterId, 'pre-proofread')
+      : null;
 
     const uploads: Promise<void>[] = [];
     if (patch.originalText !== undefined) {
@@ -579,6 +584,9 @@ export const supabaseStore: NovelStore = {
       update.translated_storage_provider = 'supabase';
       update.translated_storage_path = translatedPath;
       uploads.push(putText(translatedPath!, patch.translatedText));
+    }
+    if (patch.preProofreadText !== undefined) {
+      uploads.push(putText(preProofreadPath!, patch.preProofreadText));
     }
     await Promise.all(uploads);
     if (patch.title !== undefined) update.title = patch.title;
@@ -608,6 +616,7 @@ export const supabaseStore: NovelStore = {
     });
     if (patch.originalText !== undefined) updated.originalText = patch.originalText;
     if (patch.translatedText !== undefined) updated.translatedText = patch.translatedText;
+    if (patch.preProofreadText !== undefined) updated.preProofreadText = patch.preProofreadText;
     if (patch.readerContent !== undefined) updated.readerContent = patch.readerContent;
     return updated;
   },
