@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 import { applyWordReplacements, applyWordReplacementsToHtml } from '@/lib/wordReplacements';
-import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, extractNovelMemory, editNovelTranslation } from '@/lib/ai';
+import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, extractNovelMemory, editNovelTranslation, inspectThaiTranslation, proofreadThaiFormatting } from '@/lib/ai';
 import { findRelevantGlobalDictionaryTerms, loadGlobalDictionaryEntries } from '@/lib/globalDictionary';
 import { loadNovelMemoryContext, loadTranslationInteractionId, saveTranslationInteractionId, loadMemoryExtractionCheckpoint, loadNovelMemoryForExtraction, saveNovelMemoryGraph, compactTranslationHistoryIfNeeded } from '@/lib/novelMemory';
 import {
@@ -628,7 +628,7 @@ export default function ReaderPage() {
           })
         : undefined;
       let nextInteractionId: string | undefined;
-      const translated = applyWordReplacements(await translateNovelText(sourceText, settings, glossary, dictionaryTerms, {
+      const rawTranslated = applyWordReplacements(await translateNovelText(sourceText, settings, glossary, dictionaryTerms, {
         previousInteractionId,
         memoryContext,
         storeInteraction: Boolean(projectId),
@@ -639,27 +639,50 @@ export default function ReaderPage() {
         await saveTranslationInteractionId(projectId, settings.model, nextInteractionId, chapterOrder)
           .catch((stateError) => console.warn('Could not save Gemini interaction state:', stateError));
       }
+
+      // ตรวจอักขระในเครื่องก่อน: คำแปลไทยที่สะอาดไม่ต้องเสีย API call ครั้งที่สอง
+      const initialInspection = inspectThaiTranslation(rawTranslated);
+      let translated = rawTranslated;
+      let preProofreadText = '';
+      let proofreadWarning = '';
+      if (!initialInspection.passed) {
+        preProofreadText = rawTranslated;
+        try {
+          // ส่งให้ AI บ.ก. เฉพาะคำแปลไทยเท่านั้น ไม่ส่งต้นฉบับจีน Glossary หรือ Memory
+          const candidate = applyWordReplacements(await proofreadThaiFormatting(rawTranslated, settings), replacements);
+          if (inspectThaiTranslation(candidate).passed) {
+            translated = candidate;
+          } else {
+            proofreadWarning = 'AI บ.ก. ตรวจแล้วแต่ยังพบอักขระที่ไม่ผ่านการตรวจ จึงแสดงคำแปลฉบับเดิมเพื่อป้องกันเนื้อหาเพี้ยน';
+          }
+        } catch (proofreadError) {
+          console.warn('Automatic formatting proofread failed:', proofreadError);
+          proofreadWarning = 'AI บ.ก. ตรวจรูปแบบไม่สำเร็จ จึงแสดงคำแปลฉบับเดิม';
+        }
+      }
+
       const updatedArticle = { ...article, translatedText: translated };
       setArticle(updatedArticle);
       chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
       setShowTranslation(true);
 
-      // The translation is usable immediately; persistence failure must not hide it.
       if (projectId && currentChapterId) {
         try {
           const saved = await getStore().updateChapter(projectId, currentChapterId, {
             translatedText: translated,
+            preProofreadText,
             status: 'translated',
             error: undefined,
           });
           if (saved) {
             setReaderProject((current) => current?.id === projectId ? {
               ...current,
-              chapters: current.chapters.map((item) => item.id === currentChapterId ? { ...item, status: 'translated' } : item),
+              chapters: current.chapters.map((item) => item.id === currentChapterId
+                ? { ...item, status: 'translated', preProofreadText }
+                : item),
             } : current);
 
             // Build durable memory in batches of five translated chapters, not on every chapter.
-            // The saved checkpoint prevents repeat extraction when the Reader revisits an older chapter.
             try {
               const provider = settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
                 ? 'gemini'
@@ -690,7 +713,6 @@ export default function ReaderPage() {
                 }
               }
             } catch (memoryUpdateError) {
-              // Memory maintenance must never invalidate a successful chapter translation.
               console.warn('Batched novel memory update skipped:', memoryUpdateError);
             }
           } else {
@@ -701,6 +723,7 @@ export default function ReaderPage() {
           setTranslationError('แปลสำเร็จแล้ว แต่บันทึกคำแปลไม่สำเร็จ คำแปลนี้ยังแสดงอยู่ใน Reader');
         }
       }
+      if (proofreadWarning) setTranslationError(proofreadWarning);
     } catch (err) {
       setTranslationError(err instanceof Error ? err.message : 'แปลไม่สำเร็จ');
     } finally {
