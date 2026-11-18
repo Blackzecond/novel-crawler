@@ -12,6 +12,8 @@ export interface NovelChapter {
   status: 'pending' | 'fetched' | 'translated';
   originalText?: string;
   translatedText?: string;
+  /** Original AI translation before automatic formatting proofread. */
+  preProofreadText?: string;
   /** Cached reader HTML; separate from plain text used by glossary/AI tools. */
   readerContent?: string;
   error?: string;
@@ -315,6 +317,7 @@ export const localStorageStore: NovelStore = {
     chapter.status = maxRank === 2 ? 'translated' : maxRank === 1 ? 'fetched' : 'pending';
     if ('originalText' in patch) chapter.originalText = patch.originalText;
     if ('translatedText' in patch) chapter.translatedText = patch.translatedText;
+    if ('preProofreadText' in patch) chapter.preProofreadText = patch.preProofreadText;
     if ('readerContent' in patch) chapter.readerContent = patch.readerContent;
     if ('error' in patch) chapter.error = patch.error;
     target.updatedAt = Date.now();
