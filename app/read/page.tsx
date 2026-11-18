@@ -659,6 +659,7 @@ export default function ReaderPage() {
             } : current);
 
             // Build durable memory in batches of five translated chapters, not on every chapter.
+            // The saved checkpoint prevents repeat extraction when the Reader revisits an older chapter.
             try {
               const provider = settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
                 ? 'gemini'
