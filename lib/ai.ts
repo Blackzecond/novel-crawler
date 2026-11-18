@@ -374,6 +374,34 @@ export async function proofreadThaiFormatting(
   return result.content;
 }
 
+/** สรุปบริบทของ Gemini ก่อนเริ่ม interaction chain ใหม่ โดยต่อจาก interaction เดิม */
+export async function summarizeGeminiTranslationHistory(
+  previousInteractionId: string,
+  previousSummary: string,
+  durableMemory: string,
+  settings?: AiDetectSettings,
+): Promise<{ summary: string; interactionId: string }> {
+  const cfg = settings ?? loadAiSettings();
+  if (inferAiProvider(cfg.baseUrl) !== 'gemini') throw new Error('การสรุปประวัติรองรับเฉพาะ Gemini Interactions');
+  const result = await requestChatCompletion(cfg, [
+    { role: 'system', content: [
+      'คุณกำลังสรุปบริบทของงานแปลนิยายจีนระยะยาว เพื่อส่งต่อให้ interaction chain ใหม่',
+      'สรุปเฉพาะข้อเท็จจริงที่มีประโยชน์ต่อการแปลตอนถัดไป เช่น ตัวตนและความสัมพันธ์ตัวละคร รูปสะกดชื่อ/ศัพท์ที่ตกลงใช้ เหตุการณ์ค้างอยู่ และข้อกำหนดการแปลที่ผู้ใช้ระบุ',
+      'ห้ามแต่งเติม ห้ามคาดเดา และห้ามสรุปเนื้อหาทั่วไปที่ไม่ช่วยรักษาความต่อเนื่อง',
+      'หากข้อมูลใหม่ขัดกับสรุปเดิม ให้ยึดข้อมูลล่าสุดที่มีหลักฐาน',
+      'เขียนภาษาไทยแบบกระชับ แบ่งหัวข้อสั้น ๆ และไม่เกิน 5000 ตัวอักษร',
+      'ส่งเฉพาะสรุป ไม่ต้องมีคำเกริ่นหรือคำอธิบาย',
+    ].join('\\n') },
+    { role: 'user', content: [
+      previousSummary ? '[สรุปความจำเดิม]\\n' + previousSummary : '',
+      durableMemory ? '[ความจำถาวรจากกราฟนิยาย]\\n' + durableMemory : '',
+      'โปรดสรุปบริบทการสนทนาและงานแปลทั้งหมดใน interaction chain ก่อนหน้านี้ให้พร้อมใช้งานต่อ',
+    ].filter(Boolean).join('\\n\\n') },
+  ], 7000, 0.1, 'high', { store: true, previousInteractionId });
+  if (!result.interactionId) throw new Error('Gemini ไม่ส่ง interaction ID สำหรับเริ่ม chain ใหม่');
+  return { summary: result.content.slice(0, 5000), interactionId: result.interactionId };
+}
+
 export interface NovelMemoryExtraction {
   nodes: Array<{
     node_type: 'character' | 'organization' | 'location' | 'technique' | 'item' | 'event' | 'concept' | 'other';
