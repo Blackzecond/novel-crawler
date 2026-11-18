@@ -383,6 +383,7 @@ export const supabaseStore: NovelStore = {
         const newLastRead = oldLastRead ? refreshed?.chapters.find((chapter) => chapter.url === oldLastRead.url && chapter.status !== 'pending') : undefined;
         await this.updateProject(created.id, {
           glossary,
+          translationProfile: ['modern','xianxia','wuxia','fantasy','scifi'].includes(raw.translationProfile) ? raw.translationProfile : 'general',
           wordReplacements: Array.isArray(raw.wordReplacements) ? raw.wordReplacements : [],
           glossaryMode: raw.glossaryMode === 'auto' ? 'auto' : 'manual',
           glossaryMetadata: raw.glossaryMetadata && typeof raw.glossaryMetadata === 'object' ? raw.glossaryMetadata : {},
