@@ -329,7 +329,7 @@ export interface ThaiTranslationInspection {
 
 /** ตรวจอักขระในเครื่อง: อนุญาตอักษรไทย ตัวเลข เครื่องหมาย และช่องว่าง */
 export function inspectThaiTranslation(text: string): ThaiTranslationInspection {
-  const allowed = /^[\p{Script=Thai}\p{Number}\p{Punctuation}\p{Symbol}\p{Mark}\\s\u200D]$/u;
+  const allowed = /^[\p{Script=Thai}\p{Number}\p{Punctuation}\p{Symbol}\p{Mark}\s\u200D]$/u;
   const unsupported = new Set<string>();
   for (const character of Array.from(text)) {
     if (character === '\uFFFD' || !allowed.test(character)) unsupported.add(character);
@@ -445,47 +445,12 @@ export async function extractNovelMemory(
  * ผู้ใช้เป็นผู้กดเรียกเอง ไม่มีการทำงานอัตโนมัติ และไม่แบ่งตอน
  */
 export async function editNovelTranslation(
-  sourceText: string,
+  _sourceText: string,
   draftTranslation: string,
   settings?: AiDetectSettings,
-  glossary: Record<string, string> = {},
-  dictionaryTerms: GlobalDictionaryPromptTerm[] = [],
+  _glossary: Record<string, string> = {},
+  _dictionaryTerms: GlobalDictionaryPromptTerm[] = [],
 ): Promise<string> {
-  const cfg = settings ?? loadAiSettings();
-  if (!sourceText.trim() || !draftTranslation.trim()) {
-    throw new Error('ไม่มีต้นฉบับหรือคำแปลสำหรับตรวจแก้');
-  }
-
-  const relevantGlossary = Object.fromEntries(
-    Object.entries(glossary).filter(([source, target]) => source.trim() && target.trim() && sourceText.includes(source)),
-  );
-  const systemPrompt = [
-    'คุณเป็นบรรณาธิการภาษาไทยผู้เชี่ยวชาญด้านนิยายแปลจีน หน้าที่คือพิสูจน์อักษรและตรวจแก้คำแปลโดยเทียบกับต้นฉบับจีน',
-    'แก้เฉพาะข้อผิดพลาดที่ตรวจพบได้ ได้แก่ แปลผิดความหมาย แปลตกหล่น เติมเนื้อหาเอง ชื่อหรือศัพท์เฉพาะไม่สม่ำเสมอ ไวยากรณ์ไทยผิด และสำนวนแปลตรงตัวที่ผิดธรรมชาติ',
-    'รักษาความหมาย รายละเอียด น้ำเสียง ลำดับย่อหน้า บทสนทนา และรูปแบบของต้นฉบับอย่างเคร่งครัด',
-    'ห้ามแต่งสำนวนใหม่เพื่อความสวยงาม ห้ามเพิ่มอารมณ์หรือคำอธิบาย ห้ามสรุป ห้ามย่อ และห้ามตัดข้อความที่ถูกต้องอยู่แล้ว',
-    'หากประโยคเดิมถูกต้องและเป็นธรรมชาติอยู่แล้ว ให้คงไว้ ไม่ต้องเปลี่ยนเพียงเพื่อให้ดูแตกต่าง',
-    'ห้ามเดาความหมายที่ต้นฉบับไม่รองรับ หากจุดใดกำกวมให้รักษาความหมายอย่างระมัดระวัง',
-    'ชื่อบุคคลต้องเขียนติดกัน ไม่เว้นวรรคกลางชื่อ และต้องใช้ Glossary ตามที่กำหนด',
-    'ส่งคืนคำแปลภาษาไทยฉบับแก้ไขครบทั้งตอนเท่านั้น ห้ามส่งคำอธิบาย รายงานการแก้ไข หรือข้อความภาษาจีน',
-    ...(Object.keys(relevantGlossary).length
-      ? ['Glossary บังคับ:', JSON.stringify(relevantGlossary)]
-      : []),
-    ...(dictionaryTerms.length
-      ? ['คำศัพท์พื้นฐานที่ตรวจพบในบทนี้ ให้คงรูปคำแปลตามรายการนี้ เว้นแต่ Glossary ประจำเรื่องกำหนดไว้ต่างออกไป:', JSON.stringify(dictionaryTerms)]
-      : []),
-  ].join('\n');
-
-  const combinedInput = sourceText + '\n\n' + draftTranslation;
-  const result = await requestChatCompletion(
-    cfg,
-    [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: 'ต้นฉบับภาษาจีนทั้งตอน:\n' + sourceText + '\n\nคำแปลภาษาไทยฉบับร่างที่ต้องตรวจแก้ทั้งตอน:\n' + draftTranslation },
-    ],
-    estimateOutputTokens(draftTranslation || combinedInput),
-    0.1,
-    'high',
-  );
-  return result.content;
+  // คง signature เดิมเพื่อรองรับโค้ดเก่า แต่ไม่ส่งต้นฉบับหรือ Glossary ให้ AI บ.ก.
+  return proofreadThaiFormatting(draftTranslation, settings);
 }
