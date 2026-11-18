@@ -271,6 +271,7 @@ export async function translateNovelText(
   options: {
     previousInteractionId?: string;
     memoryContext?: string;
+    storeInteraction?: boolean;
     onInteractionId?: (id: string) => void;
   } = {},
 ): Promise<string> {
@@ -312,7 +313,7 @@ export async function translateNovelText(
     estimateOutputTokens(text),
     0.2,
     'high',
-    inferAiProvider(cfg.baseUrl) === 'gemini'
+    inferAiProvider(cfg.baseUrl) === 'gemini' && options.storeInteraction
       ? { store: true, ...(options.previousInteractionId ? { previousInteractionId: options.previousInteractionId } : {}) }
       : undefined,
   );
