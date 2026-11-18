@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 import { applyWordReplacements, applyWordReplacementsToHtml } from '@/lib/wordReplacements';
-import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, extractNovelMemory, editNovelTranslation, inspectThaiTranslation, proofreadThaiFormatting } from '@/lib/ai';
+import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, extractNovelMemory, inspectThaiTranslation, proofreadThaiFormatting } from '@/lib/ai';
 import { findRelevantGlobalDictionaryTerms, loadGlobalDictionaryEntries } from '@/lib/globalDictionary';
 import { loadNovelMemoryContext, loadTranslationInteractionId, saveTranslationInteractionId, loadMemoryExtractionCheckpoint, loadNovelMemoryForExtraction, saveNovelMemoryGraph, compactTranslationHistoryIfNeeded } from '@/lib/novelMemory';
 import {
@@ -767,16 +767,14 @@ export default function ReaderPage() {
     setEditorBusy(true);
     setTranslationError('');
     try {
-      const latestProject = projectId ? await getStore().getProject(projectId) : null;
-      const glossary = latestProject?.glossary ?? readerProject?.glossary ?? {};
-      const replacements = latestProject?.wordReplacements ?? readerProject?.wordReplacements ?? [];
-      const sourceText = applyWordReplacements(article.textContent, replacements);
-      const dictionaryTerms = await findRelevantGlobalDictionaryTerms(sourceText, glossary).catch((dictionaryError) => {
-        console.warn('Global dictionary matching skipped for editor:', dictionaryError);
-        return [];
-      });
-      const edited = applyWordReplacements(await editNovelTranslation(sourceText, applyWordReplacements(article.translatedText, replacements), settings, glossary, dictionaryTerms), replacements);
-      const updatedArticle = { ...article, translatedText: edited };
+      // AI บ.ก. ได้รับเฉพาะคำแปลไทย ไม่ส่งต้นฉบับจีนหรือข้อมูลคลังศัพท์
+      const originalDraft = article.translatedText;
+      const edited = await proofreadThaiFormatting(originalDraft, settings);
+      const updatedArticle = {
+        ...article,
+        translatedText: edited,
+        preProofreadText: article.preProofreadText ?? originalDraft,
+      };
       setArticle(updatedArticle);
       chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
       setShowTranslation(true);
@@ -785,17 +783,18 @@ export default function ReaderPage() {
         try {
           const saved = await getStore().updateChapter(projectId, currentChapterId, {
             translatedText: edited,
+            preProofreadText: updatedArticle.preProofreadText,
             status: 'translated',
             error: undefined,
           });
-          if (!saved) setTranslationError('AI บ.ก. ตรวจแก้แล้ว แต่บันทึกฉบับแก้ไขลงคลังไม่ได้');
+          if (!saved) setTranslationError('AI บ.ก. ตรวจรูปแบบแล้ว แต่บันทึกฉบับแก้ไขลงคลังไม่ได้');
         } catch (saveError) {
-          console.warn('Could not save AI-edited chapter:', saveError);
-          setTranslationError('AI บ.ก. ตรวจแก้แล้ว แต่บันทึกฉบับแก้ไขลงคลังไม่สำเร็จ');
+          console.warn('Could not save AI-formatted chapter:', saveError);
+          setTranslationError('AI บ.ก. ตรวจรูปแบบแล้ว แต่บันทึกฉบับแก้ไขลงคลังไม่สำเร็จ');
         }
       }
     } catch (err) {
-      setTranslationError(err instanceof Error ? err.message : 'AI บ.ก. ตรวจแก้ไม่สำเร็จ');
+      setTranslationError(err instanceof Error ? err.message : 'AI บ.ก. ตรวจรูปแบบไม่สำเร็จ');
     } finally {
       setEditorBusy(false);
     }
