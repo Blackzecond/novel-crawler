@@ -321,6 +321,83 @@ export async function translateNovelText(
   return result.content;
 }
 
+export interface NovelMemoryExtraction {
+  nodes: Array<{
+    node_type: 'character' | 'organization' | 'location' | 'technique' | 'item' | 'event' | 'concept' | 'other';
+    canonical_name: string;
+    source_terms: string[];
+    summary: string;
+    attributes: Record<string, unknown>;
+    importance: number;
+    evidence?: string;
+  }>;
+  edges: Array<{
+    source_name: string;
+    target_name: string;
+    relation_type: string;
+    description: string;
+    evidence?: string;
+  }>;
+}
+
+/** สกัดความจำถาวรจากชุดตอนที่แปลแล้ว ใช้เป็นงาน batch ไม่เรียกทุกตอน */
+export async function extractNovelMemory(
+  chapters: Array<{ order: number; title: string; sourceText: string }>,
+  existingMemory: string,
+  settings?: AiDetectSettings,
+): Promise<NovelMemoryExtraction> {
+  const cfg = settings ?? loadAiSettings();
+  if (!chapters.length) return { nodes: [], edges: [] };
+  const chapterInput = chapters.map((chapter) =>
+    `[ตอนที่ ${chapter.order + 1}: ${chapter.title}]\\n${chapter.sourceText.slice(0, 18000)}`
+  ).join('\\n\\n');
+  const systemPrompt = [
+    'You maintain a compact, factual memory graph for a long-running Chinese web novel translated into Thai.',
+    'Extract only durable facts useful for understanding later chapters: identities, aliases, affiliations, relationships, locations, cultivation facts, important objects, unresolved promises, secrets already revealed, and consequential events.',
+    'Do not summarize every scene. Exclude temporary actions, decorative details, speculation, and facts not supported by the supplied source.',
+    'Use exact Chinese names as canonical_name and source_terms. Write concise summaries and relation descriptions in Thai.',
+    'When existing memory is supplied, update or correct it using the new chapters; preserve older facts unless the new source explicitly changes or disproves them.',
+    'Do not invent entities or relations. Only create an edge when both endpoint entities are present in nodes or existing memory.',
+    'Return at most 30 nodes and 40 edges. Keep each summary concise and distinguish confirmed facts from uncertainty in attributes.',
+    'Return ONLY JSON: {"nodes":[{"node_type":"character|organization|location|technique|item|event|concept|other","canonical_name":"...","source_terms":["..."],"summary":"...","attributes":{},"importance":1,"evidence":"..."}],"edges":[{"source_name":"...","target_name":"...","relation_type":"...","description":"...","evidence":"..."}]}',
+  ].join(' ');
+  const result = await requestChatCompletion(cfg, [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: (existingMemory ? 'Existing memory to update:\\n' + existingMemory + '\\n\\n' : '') + 'New chapter sources:\\n' + chapterInput },
+  ], 8192, 0.1, 'medium');
+  const raw = result.content.slice(result.content.indexOf('{'), result.content.lastIndexOf('}') + 1);
+  if (!raw) throw new Error('AI ไม่ส่งข้อมูล Memory ในรูปแบบ JSON');
+  let parsed: any;
+  try { parsed = JSON.parse(raw); } catch { throw new Error('รูปแบบ Memory JSON ไม่ถูกต้อง'); }
+  const allowed = new Set(['character', 'organization', 'location', 'technique', 'item', 'event', 'concept', 'other']);
+  const nodes = (Array.isArray(parsed?.nodes) ? parsed.nodes : []).flatMap((item: any) => {
+    const canonicalName = typeof item?.canonical_name === 'string' ? item.canonical_name.trim() : '';
+    const summary = typeof item?.summary === 'string' ? item.summary.trim() : '';
+    if (!canonicalName || !summary || !allowed.has(item?.node_type)) return [];
+    return [{
+      node_type: item.node_type,
+      canonical_name: canonicalName,
+      source_terms: Array.isArray(item.source_terms) ? item.source_terms.filter((term: unknown): term is string => typeof term === 'string' && term.trim()).slice(0, 12) : [],
+      summary,
+      attributes: item.attributes && typeof item.attributes === 'object' && !Array.isArray(item.attributes) ? item.attributes : {},
+      importance: Math.max(1, Math.min(5, Number.isFinite(Number(item.importance)) ? Math.round(Number(item.importance)) : 3)),
+      ...(typeof item.evidence === 'string' ? { evidence: item.evidence.slice(0, 500) } : {}),
+    }];
+  }).slice(0, 30);
+  const edges = (Array.isArray(parsed?.edges) ? parsed.edges : []).flatMap((item: any) => {
+    const source_name = typeof item?.source_name === 'string' ? item.source_name.trim() : '';
+    const target_name = typeof item?.target_name === 'string' ? item.target_name.trim() : '';
+    const relation_type = typeof item?.relation_type === 'string' ? item.relation_type.trim() : '';
+    if (!source_name || !target_name || !relation_type || source_name === target_name) return [];
+    return [{
+      source_name, target_name, relation_type: relation_type.slice(0, 80),
+      description: typeof item.description === 'string' ? item.description.slice(0, 500) : '',
+      ...(typeof item.evidence === 'string' ? { evidence: item.evidence.slice(0, 500) } : {}),
+    }];
+  }).slice(0, 40);
+  return { nodes, edges };
+}
+
 /**
  * AI บรรณาธิการตรวจคำแปลไทยทั้งตอนเทียบกับต้นฉบับจีนทั้งตอนในคำขอเดียว
  * ผู้ใช้เป็นผู้กดเรียกเอง ไม่มีการทำงานอัตโนมัติ และไม่แบ่งตอน
