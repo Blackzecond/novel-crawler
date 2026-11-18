@@ -321,6 +321,48 @@ export async function translateNovelText(
   return result.content;
 }
 
+
+export interface ThaiTranslationInspection {
+  passed: boolean;
+  unsupportedCharacters: string[];
+}
+
+/** ตรวจอักขระในเครื่อง: อนุญาตอักษรไทย ตัวเลข เครื่องหมาย และช่องว่าง */
+export function inspectThaiTranslation(text: string): ThaiTranslationInspection {
+  const allowed = /^[\\p{Script=Thai}\\p{Number}\\p{Punctuation}\\p{Symbol}\\p{Mark}\\s\\u200D]$/u;
+  const unsupported = new Set<string>();
+  for (const character of Array.from(text)) {
+    if (character === '\\uFFFD' || !allowed.test(character)) unsupported.add(character);
+  }
+  return { passed: unsupported.size === 0, unsupportedCharacters: [...unsupported].slice(0, 24) };
+}
+
+/** ตรวจเฉพาะคำแปลไทย ไม่มีการส่งต้นฉบับจีนหรือข้อมูลประกอบอื่น */
+export async function proofreadThaiFormatting(
+  draftTranslation: string,
+  settings?: AiDetectSettings,
+): Promise<string> {
+  const cfg = settings ?? loadAiSettings();
+  if (!draftTranslation.trim()) throw new Error('ไม่มีคำแปลสำหรับตรวจรูปแบบ');
+  const systemPrompt = [
+    'คุณเป็น AI บรรณาธิการสำหรับตรวจรูปแบบข้อความคำแปลภาษาไทยเท่านั้น',
+    'ข้อมูลที่ได้รับมีเพียงคำแปลภาษาไทย ไม่มีต้นฉบับภาษาจีน และห้ามร้องขอหรือสมมติว่ามีต้นฉบับ',
+    'ห้ามแปลใหม่ ห้ามเขียนใหม่ ห้ามเกลาสำนวน ห้ามเปลี่ยนคำศัพท์ ชื่อบุคคล ความหมาย น้ำเสียง หรือเนื้อหาของประโยค',
+    'คงข้อความภาษาไทยทุกคำตามเดิม แก้ได้เฉพาะอักษรจากภาษาอื่นที่หลุดมาอย่างชัดเจน อักขระผิดรูปแบบ ช่องว่างซ้ำ และการแบ่งย่อหน้าหรือบรรทัดว่างที่ผิดปกติ',
+    'ห้ามเดาคำภาษาไทยมาแทนอักษรต่างภาษา หากไม่แน่ใจว่าเป็นอักขระที่หลุดมาหรือเป็นส่วนหนึ่งของข้อความ ให้คงข้อความเดิมไว้',
+    'รักษาลำดับประโยคและย่อหน้าเดิมให้มากที่สุด ไม่รวมย่อหน้าที่แยกกันโดยตั้งใจ',
+    'ส่งกลับเฉพาะข้อความฉบับตรวจรูปแบบแล้วทั้งหมด ห้ามใส่คำเกริ่น คำอธิบาย รายงาน หรือ Markdown code fence',
+  ].join('\\n');
+  const result = await requestChatCompletion(
+    cfg,
+    [{ role: 'system', content: systemPrompt }, { role: 'user', content: draftTranslation }],
+    estimateOutputTokens(draftTranslation),
+    0.1,
+    'high',
+  );
+  return result.content;
+}
+
 export interface NovelMemoryExtraction {
   nodes: Array<{
     node_type: 'character' | 'organization' | 'location' | 'technique' | 'item' | 'event' | 'concept' | 'other';
