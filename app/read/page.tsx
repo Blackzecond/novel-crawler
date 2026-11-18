@@ -735,10 +735,6 @@ export default function ReaderPage() {
   const handleRestorePreProofread = async () => {
     if (!article?.preProofreadText || !projectId || !currentChapterId) return;
     const restored = article.preProofreadText;
-    const updatedArticle = { ...article, translatedText: restored, preProofreadText: undefined };
-    setArticle(updatedArticle);
-    chapterCacheRef.current.set(`${projectId}:${url}`, updatedArticle);
-    setShowTranslation(true);
     try {
       await getStore().updateChapter(projectId, currentChapterId, {
         translatedText: restored,
@@ -746,6 +742,10 @@ export default function ReaderPage() {
         status: 'translated',
         error: undefined,
       });
+      const updatedArticle = { ...article, translatedText: restored, preProofreadText: undefined };
+      setArticle(updatedArticle);
+      chapterCacheRef.current.set(`${projectId}:${url}`, updatedArticle);
+      setShowTranslation(true);
       setReaderProject((current) => current?.id === projectId ? {
         ...current,
         chapters: current.chapters.map((item) => item.id === currentChapterId
@@ -753,7 +753,7 @@ export default function ReaderPage() {
           : item),
       } : current);
     } catch (restoreError) {
-      setTranslationError('คืนฉบับก่อนตรวจแล้ว แต่บันทึกลงคลังไม่สำเร็จ: ' + (restoreError instanceof Error ? restoreError.message : String(restoreError)));
+      setTranslationError('คืนฉบับก่อนตรวจไม่สำเร็จ: ' + (restoreError instanceof Error ? restoreError.message : String(restoreError)));
     }
   };
 
