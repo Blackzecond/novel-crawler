@@ -30,6 +30,8 @@ interface ArticleData {
   preProofreadText?: string;
   prevUrl: string | null;
   nextUrl: string | null;
+  /** Real Supabase chapter UUID once a catalog placeholder has been persisted. */
+  chapterId?: string;
 }
 
 interface HistoryItem {
@@ -49,6 +51,7 @@ export default function ReaderPage() {
   const [readerProject, setReaderProject] = useState<NovelProject | null>(null);
   const chapterCacheRef = useRef<Map<string, ArticleData>>(new Map());
   const prefetchingRef = useRef<Set<string>>(new Set());
+  const activeChapterUrlRef = useRef<string>('');
   const [showToc, setShowToc] = useState(false);
   const [showGlossary, setShowGlossary] = useState(false);
   const [glossaryNotice, setGlossaryNotice] = useState('');
@@ -223,6 +226,7 @@ export default function ReaderPage() {
   const fetchArticle = async (targetUrl: string, forceRender = false, projectIdOverride?: string | null) => {
     if (!targetUrl) return;
     const activeProjectId = projectIdOverride === undefined ? projectId : projectIdOverride;
+    activeChapterUrlRef.current = targetUrl;
     setLoading(true); setError(''); setUrl(targetUrl); setAutoScroll(false);
     const cacheKey = `${activeProjectId ?? 'standalone'}:${targetUrl}`;
     if (forceRender) chapterCacheRef.current.delete(cacheKey);
@@ -234,15 +238,25 @@ export default function ReaderPage() {
           setTranslationError('');
           setShowTranslation(false);
           const memoryChapter = readerProject?.chapters.find((item) => item.url === targetUrl);
-          setCurrentChapterId(memoryChapter?.id ?? null);
-          if (activeProjectId && memoryChapter) {
-            void getStore().updateProject(activeProjectId, { lastReadChapterId: memoryChapter.id })
+          const cachedChapterId = inMemoryArticle.chapterId
+            ?? (memoryChapter && !memoryChapter.id.startsWith('catalog:') ? memoryChapter.id : null);
+          // A catalog placeholder is not a database UUID; do not treat it as a
+          // persisted chapter while ensureChapter is still pending.
+          if (activeProjectId && !cachedChapterId) {
+            chapterCacheRef.current.delete(cacheKey);
+          } else {
+            setCurrentChapterId(cachedChapterId);
+          }
+          if (activeProjectId && memoryChapter && !memoryChapter.id.startsWith('catalog:')) {
+            void getStore().updateProject(activeProjectId, { lastReadChapterId: cachedChapterId ?? memoryChapter.id })
               .catch((progressError) => console.warn('Could not update last-read progress:', progressError));
           }
-          syncReaderUrl(targetUrl, activeProjectId);
-          saveToHistory(targetUrl, inMemoryArticle.title);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-          return;
+          if (!(activeProjectId && !cachedChapterId)) {
+            syncReaderUrl(targetUrl, activeProjectId);
+            saveToHistory(targetUrl, inMemoryArticle.title);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+          }
         }
       }
 
@@ -265,7 +279,7 @@ export default function ReaderPage() {
         if (cached?.readerContent !== undefined && project.chapters.findIndex((item) => item.url === targetUrl) < project.chapters.length - 1) {
           const index = project.chapters.findIndex((item) => item.url === targetUrl);
           const cachedArticle: ArticleData = {
-            title: chapter.title, content: cached.readerContent,
+            title: chapter.title, chapterId: chapter.id, content: cached.readerContent,
             translatedText: cached.translatedText,
             preProofreadText: cached.preProofreadText,
             textContent: cached.originalText ?? cached.readerContent.replace(/<[^>]*>/g, ' ').trim(),
@@ -366,10 +380,13 @@ export default function ReaderPage() {
           }
         }
       }
-      let articleData: ArticleData = data;
+      let articleData: ArticleData = {
+        ...data,
+        chapterId: chapter && !chapter.id.startsWith('catalog:') ? chapter.id : undefined,
+      };
       if (activeProjectId && project && chapter) {
         const index = project.chapters.findIndex((item) => item.url === targetUrl);
-        articleData = { ...data, title: chapter.title || data.title,
+        articleData = { ...articleData, title: chapter.title || data.title,
           prevUrl: index > 0 ? project.chapters[index - 1].url : data.prevUrl ?? null,
           nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : data.nextUrl ?? null };
       }
@@ -377,7 +394,7 @@ export default function ReaderPage() {
       // Render first. Saving to Storage/DB runs in the background so network persistence
       // cannot hold the reader on its loading screen after parsing has succeeded.
       chapterCacheRef.current.set(cacheKey, articleData);
-      setCurrentChapterId(chapter?.id ?? null);
+      setCurrentChapterId(chapter?.id && !chapter.id.startsWith('catalog:') ? chapter.id : null);
       setTranslationError('');
       setShowTranslation(false);
       setArticle(articleData);
@@ -424,7 +441,12 @@ export default function ReaderPage() {
               error: undefined,
             });
             if (!savedChapter) throw new Error('บันทึกเนื้อหาบทไม่สำเร็จ');
-            setCurrentChapterId(savedChapter.id);
+            const savedArticle = { ...articleData, chapterId: savedChapter.id };
+            chapterCacheRef.current.set(cacheKey, savedArticle);
+            if (activeChapterUrlRef.current === targetUrl) {
+              setCurrentChapterId(savedChapter.id);
+              setArticle((current) => current && activeChapterUrlRef.current === targetUrl ? savedArticle : current);
+            }
             setReaderProject((current) => current?.id === activeProjectId ? {
               ...current,
               lastReadChapterId: savedChapter.id,
@@ -549,10 +571,12 @@ export default function ReaderPage() {
             apiError.code = payload.code;
             throw apiError;
           }
-          data = payload;
-          if (!data?.content || !data?.textContent) {
+          const candidate = payload;
+          if (typeof candidate?.content !== 'string' || !candidate.content.trim()
+            || typeof candidate?.textContent !== 'string' || !candidate.textContent.trim()) {
             throw new Error('Server returned an empty chapter');
           }
+          data = candidate;
         } catch (error) {
           serverError = error;
         }
@@ -635,14 +659,14 @@ export default function ReaderPage() {
       const chapterIndex = project?.chapters.findIndex((item) => item.url === targetUrl) ?? -1;
       const prefetchedArticle: ArticleData = {
         ...data,
+        chapterId: chapter && !chapter.id.startsWith('catalog:') ? chapter.id : undefined,
         title: chapter?.title || data.title,
         prevUrl: chapterIndex > 0 ? project!.chapters[chapterIndex - 1].url : data.prevUrl ?? null,
         nextUrl: chapterIndex >= 0 && chapterIndex < (project?.chapters.length ?? 0) - 1
           ? project!.chapters[chapterIndex + 1].url
           : data.nextUrl ?? null,
       };
-      chapterCacheRef.current.set(cacheKey, prefetchedArticle);
-
+      let cacheableArticle = prefetchedArticle;
       if (activeProjectId && project && chapter) {
         const saved = await getStore().updateChapter(activeProjectId, chapter.id, {
           url: chapter.url,
@@ -653,16 +677,18 @@ export default function ReaderPage() {
           status: 'fetched',
           error: undefined,
         });
-        if (saved) {
-          setReaderProject((current) => current?.id === activeProjectId ? {
-            ...current,
-            chapters: [
-              ...current.chapters.filter((item) => item.url !== targetUrl),
-              saved,
-            ].sort((a, b) => a.order - b.order),
-          } : current);
-        }
+        if (!saved) throw new Error('บันทึกเนื้อหาบทที่ดึงล่วงหน้าไม่สำเร็จ');
+        cacheableArticle = { ...prefetchedArticle, chapterId: saved.id };
+        setReaderProject((current) => current?.id === activeProjectId ? {
+          ...current,
+          chapters: [
+            ...current.chapters.filter((item) => item.url !== targetUrl),
+            saved,
+          ].sort((a, b) => a.order - b.order),
+        } : current);
       }
+      // Cache only after persistence succeeds, and keep the real UUID beside content.
+      chapterCacheRef.current.set(cacheKey, cacheableArticle);
     } catch (prefetchError) {
       console.info('Next chapter prefetch skipped:', prefetchError);
     } finally {
