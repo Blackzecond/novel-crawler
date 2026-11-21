@@ -76,30 +76,44 @@ async function currentUserId(): Promise<string> {
 }
 
 async function loadProjectRows(projectId?: string) {
-  const supabase = getSupabase();
-  let query = supabase.from('novel_projects').select('*').order('updated_at', { ascending: false });
-  if (projectId) query = query.eq('id', projectId);
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data ?? []) as ProjectRow[];
+  const supabase = getSupabase(); const pageSize = 500; const rows: ProjectRow[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    let query = supabase.from('novel_projects').select('*').order('updated_at', { ascending: false }).order('id');
+    if (projectId) query = query.eq('id', projectId);
+    const { data, error } = await query.range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []) as ProjectRow[]; rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
 }
 
 async function loadChapters(projectIds: string[]): Promise<ChapterRow[]> {
   if (!projectIds.length) return [];
-  const { data, error } = await getSupabase()
-    .from('novel_chapters').select('*').in('project_id', projectIds).order('chapter_order');
-  if (error) throw error;
-  return (data ?? []) as ChapterRow[];
+  const pageSize = 500; const rows: ChapterRow[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await getSupabase().from('novel_chapters').select('*')
+      .in('project_id', projectIds).order('chapter_order').order('id').range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []) as ChapterRow[]; rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
 }
 
 async function loadGlossary(projectIds: string[]): Promise<Map<string, { terms: Record<string, string>; types: Record<string, 'character' | 'term'> }>> {
   const result = new Map<string, { terms: Record<string, string>; types: Record<string, 'character' | 'term'> }>();
   if (!projectIds.length) return result;
-  const { data, error } = await getSupabase()
-    .from('glossary_entries').select('project_id, source_term, translated_term, term_type')
-    .in('project_id', projectIds);
-  if (error) throw error;
-  for (const row of (data ?? []) as GlossaryRow[]) {
+  const pageSize = 500; const rows: GlossaryRow[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await getSupabase().from('glossary_entries')
+      .select('project_id, source_term, translated_term, term_type').in('project_id', projectIds)
+      .order('project_id').order('source_term').range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []) as GlossaryRow[]; rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  for (const row of rows) {
     const value = result.get(row.project_id) ?? { terms: {}, types: {} };
     value.terms[row.source_term] = row.translated_term;
     value.types[row.source_term] = row.term_type === 'character' ? 'character' : 'term';
@@ -111,11 +125,16 @@ async function loadGlossary(projectIds: string[]): Promise<Map<string, { terms: 
 async function loadWordReplacements(projectIds: string[]): Promise<Map<string, WordReplacement[]>> {
   const result = new Map<string, WordReplacement[]>();
   if (!projectIds.length) return result;
-  const { data, error } = await getSupabase().from('glossary_replacements')
-    .select('id, project_id, variants, replacement_text, use_regex, created_at')
-    .in('project_id', projectIds).order('created_at');
-  if (error) throw error;
-  for (const row of (data ?? []) as Array<ReplacementRow & { project_id: string }>) {
+  const pageSize = 500; const rows: Array<ReplacementRow & { project_id: string }> = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await getSupabase().from('glossary_replacements')
+      .select('id, project_id, variants, replacement_text, use_regex, created_at')
+      .in('project_id', projectIds).order('project_id').order('created_at').order('id').range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []) as Array<ReplacementRow & { project_id: string }>; rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  for (const row of rows) {
     const items = result.get(row.project_id) ?? [];
     items.push({ id: row.id, variants: row.variants ?? [], replacement: row.replacement_text, useRegex: row.use_regex });
     result.set(row.project_id, items);
@@ -600,10 +619,15 @@ export const supabaseStore: NovelStore = {
     }
     await Promise.all(uploads);
     if (patch.title !== undefined) update.title = patch.title;
+    let finalStatus = patch.status ?? row.status;
     if (patch.status !== undefined) {
-      update.status = patch.status;
-      if (patch.status === 'fetched') update.fetched_at = new Date().toISOString();
-      if (patch.status === 'translated') update.translated_at = new Date().toISOString();
+      // A slow source-content upload must not downgrade a translation completed in parallel.
+      const latestRow = await getChapterRow(projectId, actualChapterId);
+      const rank = (status: NovelChapter['status']) => status === 'translated' ? 2 : status === 'fetched' ? 1 : 0;
+      if (latestRow && rank(latestRow.status) > rank(finalStatus)) finalStatus = latestRow.status;
+      update.status = finalStatus;
+      if (finalStatus === 'fetched') update.fetched_at = new Date().toISOString();
+      if (finalStatus === 'translated' && latestRow?.status !== 'translated') update.translated_at = new Date().toISOString();
     }
     if ('error' in patch) update.error_message = patch.error ?? null;
 
@@ -616,7 +640,7 @@ export const supabaseStore: NovelStore = {
       ...row,
       title: patch.title ?? row.title,
       chapter_order: patch.order ?? row.chapter_order,
-      status: patch.status ?? row.status,
+      status: finalStatus,
       error_message: 'error' in patch ? patch.error ?? null : row.error_message,
       original_storage_provider: patch.originalText !== undefined ? 'supabase' : row.original_storage_provider,
       original_storage_path: originalPath,

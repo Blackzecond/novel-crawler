@@ -15,17 +15,10 @@ export class FetchTransportError extends Error {
   }
 }
 
+import { isCloudflareChallengeMarkup } from '@/lib/readerIntegrity.mjs';
+
 export function isChallengePage(html: string): boolean {
-  const value = html.toLowerCase();
-  // Novel prose often contains phrases such as "Just a moment, she said".
-  // Require Cloudflare-specific challenge markup rather than ordinary copy.
-  return [
-    'cf-challenge', 'cf-chl-', 'challenge-platform', '/cdn-cgi/challenge-platform/',
-    '__cf_chl_', 'cf-browser-verification', 'id="challenge-form"', "id='challenge-form'",
-    'cf-turnstile', 'name="cf-turnstile-response"',
-    '正在验证浏览器', '检查您是否为机器人', '检查您不是机器人',
-    'ตรวจสอบว่าคุณไม่ใช่บอต', 'กำลังตรวจสอบว่าคุณไม่ใช่บอต',
-  ].some((marker) => value.includes(marker));
+  return isCloudflareChallengeMarkup({ html });
 }
 
 function isChallengeResponse(response: Response, html: string): boolean {
