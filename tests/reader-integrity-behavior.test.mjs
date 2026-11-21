@@ -22,3 +22,11 @@ test('TOC confidence rejects menu pairs but accepts short chapter lists', () => 
   assert.equal(isLikelyChapterGroup([{ title: 'Chapter 1' }, { title: 'Chapter 2' }]), true);
   assert.equal(isChapterTitle('บทที่ 1'), true);
 });
+
+test('replacement order is persisted by increasing created_at timestamps', async () => {
+  const { withStableReplacementOrder } = await import('../lib/readerIntegrity.mjs');
+  const rows = withStableReplacementOrder([{ id: 'a' }, { id: 'b' }, { id: 'c' }], 1000);
+  assert.deepEqual(rows.map((row) => row.created_at), [
+    '1970-01-01T00:00:01.000Z', '1970-01-01T00:00:01.001Z', '1970-01-01T00:00:01.002Z',
+  ]);
+});
