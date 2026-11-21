@@ -966,7 +966,8 @@ export default function ReaderPage() {
     const isActive = () => isReaderTargetCurrent({ requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current }, { requestId, url: targetUrl, projectId: targetProjectId });
     setEditorBusy(true); setTranslationError('');
     try {
-      const originalDraft = targetArticle.translatedText;
+      const originalDraft = targetArticle.translatedText ?? '';
+      if (!originalDraft) return;
       const edited = await proofreadThaiFormatting(originalDraft, settings);
       let targetChapterId = targetArticle.chapterId ?? currentChapterId;
       if (targetProjectId && !targetChapterId) {
