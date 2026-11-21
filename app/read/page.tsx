@@ -386,7 +386,7 @@ export default function ReaderPage() {
       };
       if (activeProjectId && project && chapter) {
         const index = project.chapters.findIndex((item) => item.url === targetUrl);
-        articleData = { ...data, title: chapter.title || data.title,
+        articleData = { ...articleData, title: chapter.title || data.title,
           prevUrl: index > 0 ? project.chapters[index - 1].url : data.prevUrl ?? null,
           nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : data.nextUrl ?? null };
       }
