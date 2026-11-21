@@ -1,5 +1,6 @@
 import type { GlossaryDetection, GlossaryMetadata, NewProjectData, NovelChapter, NovelProject, NovelStore, WordReplacement } from '@/lib/storage';
 import { getSupabase } from '@/lib/supabase';
+import { importNovelMemoryBundle } from '@/lib/novelMemory';
 
 const BUCKET = 'novel-content';
 
@@ -416,6 +417,7 @@ export const supabaseStore: NovelStore = {
           glossaryDetection: raw.glossaryDetection && typeof raw.glossaryDetection === 'object' ? raw.glossaryDetection : { characters: raw.glossaryMode === 'auto', terms: raw.glossaryMode === 'auto' },
           lastReadChapterId: newLastRead?.id,
         });
+        if (raw.aiMemory) await importNovelMemoryBundle(created.id, raw.aiMemory);
         imported++;
       } catch {
         skipped++;
