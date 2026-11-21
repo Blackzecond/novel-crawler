@@ -8,6 +8,7 @@ test('stale reader requests cannot repaint the active chapter', async () => {
  assert.match(s,/const requestId = \+\+readerRequestRef\.current/);
  assert.match(s,/if \(!isCurrentRequest\(\)\) return;/);
  assert.match(s,/if \(isCurrentRequest\(\)\) setLoading\(false\)/);
+ assert.match(s,/if \(isActiveTranslation\(\)\) \{\s*setArticle\(updatedArticle\)/);
 });
 test('history is scoped by project and restores its project context', async () => {
  const s=await read('../app/read/page.tsx'); const c=await read('../lib/cloudPreferences.ts');

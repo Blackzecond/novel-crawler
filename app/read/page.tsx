@@ -299,7 +299,7 @@ export default function ReaderPage() {
           setShowTranslation(false);
           setArticle(cachedArticle);
           syncReaderUrl(targetUrl, activeProjectId);
-          saveToHistory(targetUrl, cachedArticle.title);
+          saveToHistory(targetUrl, cachedArticle.title, activeProjectId);
           void getStore().updateProject(activeProjectId, { lastReadChapterId: chapter.id }).catch((progressError) => console.warn('Could not update last-read progress:', progressError));
           window.scrollTo({ top: 0, behavior: 'smooth' }); return;
         }
@@ -797,9 +797,11 @@ export default function ReaderPage() {
       }
 
       const updatedArticle = { ...targetArticle, translatedText: translated, preProofreadText: preProofreadText || undefined };
-      setArticle(updatedArticle);
-      chapterCacheRef.current.set(`${targetProjectId ?? 'standalone'}:${targetUrl}`, updatedArticle);
-      setShowTranslation(true);
+      if (isActiveTranslation()) {
+        setArticle(updatedArticle);
+        chapterCacheRef.current.set(`${targetProjectId ?? 'standalone'}:${targetUrl}`, updatedArticle);
+        setShowTranslation(true);
+      }
 
       if (targetProjectId && targetChapterId) {
         try {

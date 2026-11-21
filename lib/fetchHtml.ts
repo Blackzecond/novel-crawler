@@ -17,13 +17,26 @@ export class FetchTransportError extends Error {
 
 export function isChallengePage(html: string): boolean {
   const value = html.toLowerCase();
-  // Novel prose often contains phrases such as "Just a moment, she said".
-  // Require Cloudflare-specific challenge markup rather than ordinary copy.
-  return [
-    'cf-challenge', 'cf-chl-', 'challenge-platform', '/cdn-cgi/challenge-platform/',
-    '__cf_chl_', 'cf-browser-verification', 'id="challenge-form"', "id='challenge-form'",
-    'cf-turnstile', 'name="cf-turnstile-response"',
-  ].some((marker) => value.includes(marker));
+  return (
+    value.includes('正在验证浏览器') ||
+    value.includes('安全验证') ||
+    value.includes('网站使用安全服务') ||
+    value.includes('网站使用安全服务来防止恶意机器人') ||
+    value.includes('检查您是否为机器人') ||
+    value.includes('检查您不是机器人') ||
+    value.includes('เว็บไซต์นี้ใช้บริการรักษาความปลอดภัย') ||
+    value.includes('ตรวจสอบว่าคุณไม่ใช่บอต') ||
+    value.includes('กำลังตรวจสอบว่าคุณไม่ใช่บอต') ||
+    value.includes('just a moment') ||
+    value.includes('verify you are human') ||
+    value.includes('performing security verification') ||
+    value.includes('checking your browser') ||
+    value.includes('checking if the site connection is secure') ||
+    value.includes('cf-challenge') ||
+    value.includes('cf-chl-') ||
+    value.includes('challenge-platform') ||
+    value.includes('/cdn-cgi/challenge-platform/')
+  );
 }
 
 function isChallengeResponse(response: Response, html: string): boolean {

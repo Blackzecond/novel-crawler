@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     const mergedChapters: { url: string; title: string; order: number }[] = [];
     let novelTitle: string | null = null;
     for (const page of pageSources) {
-      const result = extractChapterList(page.html, page.url, 1);
+      const result = extractChapterList(page.html, page.url, pageSources.length > 1 ? 2 : 6);
       novelTitle = novelTitle || result.novelTitle;
       for (const chapter of result.chapters) {
         if (seenChapterUrls.has(chapter.url)) continue;
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     }
     const toc = { novelTitle, chapters: mergedChapters };
 
-    if (toc.chapters.length >= 1) {
+    if (toc.chapters.length >= 6) {
       return NextResponse.json({
         type: 'directory',
         novelTitle: toc.novelTitle,
