@@ -33,6 +33,7 @@ jobs:
             git commit -m "chore: sync npm lockfile for Android plugin"
             git push origin "HEAD:${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
           fi
+      - run: npm test
       - run: npx tsc --noEmit
       - run: npm run build
 

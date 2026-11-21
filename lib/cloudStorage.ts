@@ -1,3 +1,4 @@
+import { createId } from '@/lib/storage';
 import type { GlossaryDetection, GlossaryMetadata, NewProjectData, NovelChapter, NovelProject, NovelStore, WordReplacement } from '@/lib/storage';
 import { getSupabase } from '@/lib/supabase';
 
@@ -373,6 +374,7 @@ export const supabaseStore: NovelStore = {
             error: oldChapter.error,
             originalText: oldChapter.originalText,
             translatedText: oldChapter.translatedText,
+            preProofreadText: oldChapter.preProofreadText,
             readerContent: oldChapter.readerContent,
           };
           await this.updateChapter(created.id, newId, patch);
@@ -384,7 +386,10 @@ export const supabaseStore: NovelStore = {
         await this.updateProject(created.id, {
           glossary,
           translationProfile: ['modern','xianxia','wuxia','fantasy','scifi'].includes(raw.translationProfile) ? raw.translationProfile : 'general',
-          wordReplacements: Array.isArray(raw.wordReplacements) ? raw.wordReplacements : [],
+          wordReplacements: Array.isArray(raw.wordReplacements)
+            ? raw.wordReplacements.map((rule: WordReplacement) => ({ ...rule, id: createId() }))
+            : [],
+          glossaryTypes: raw.glossaryTypes && typeof raw.glossaryTypes === 'object' ? raw.glossaryTypes : {},
           glossaryMode: raw.glossaryMode === 'auto' ? 'auto' : 'manual',
           glossaryMetadata: raw.glossaryMetadata && typeof raw.glossaryMetadata === 'object' ? raw.glossaryMetadata : {},
           glossaryDetection: raw.glossaryDetection && typeof raw.glossaryDetection === 'object' ? raw.glossaryDetection : { characters: raw.glossaryMode === 'auto', terms: raw.glossaryMode === 'auto' },
