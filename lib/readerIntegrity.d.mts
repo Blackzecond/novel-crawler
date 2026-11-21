@@ -8,3 +8,5 @@ export function isChapterTitle(title: string): boolean;
 export function isLikelyChapterGroup(items: Array<{ title: string }>): boolean;
 
 export function withStableReplacementOrder<T extends object>(items: T[], baseTime?: number): Array<T & { created_at: string }>;
+
+export function resolveChapterStatus<T extends string>(current: T, requested?: T, clearsTranslation?: boolean): T;
