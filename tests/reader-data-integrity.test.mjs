@@ -33,6 +33,7 @@ test('imported replacement rules get fresh primary keys', async () => {
 test('natural-language CAPTCHA phrases are not challenge signals', async () => {
  const s=await read('../lib/fetchHtml.ts'); const f=s.slice(s.indexOf('export function isChallengePage'),s.indexOf('function isChallengeResponse'));
  assert.doesNotMatch(f,/just a moment|verify you are human|checking your browser/); assert.match(f,/challenge-platform/);
+ assert.match(f,/正在验证浏览器/); assert.doesNotMatch(f,/statusLooksBlocked && hasCloudflareRay/);
 });
 test('one-to-five chapter directory groups can be recognized', async () => {
  const s=await read('../lib/sites.ts'); const t=await read('../app/api/toc/route.ts');

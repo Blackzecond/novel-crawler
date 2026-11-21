@@ -731,7 +731,7 @@ export default function ReaderPage() {
     setTranslationBusy(true);
     setTranslationError('');
     try {
-      const latestProject = projectId ? await getStore().getProject(targetProjectId) : null;
+      const latestProject = targetProjectId ? await getStore().getProject(targetProjectId) : null;
       const glossary = latestProject?.glossary ?? readerProject?.glossary ?? {};
       const replacements = latestProject?.wordReplacements ?? readerProject?.wordReplacements ?? [];
       const sourceText = applyWordReplacements(targetArticle.textContent, replacements);
@@ -745,7 +745,7 @@ export default function ReaderPage() {
             return '';
           })
         : '';
-      const conversationState = projectId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
+      const conversationState = targetProjectId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
         ? await loadTranslationInteractionState(targetProjectId, settings.model).catch((stateError) => {
             console.warn('Could not load Gemini conversation summary:', stateError);
             return { interactionId: undefined, count: 0, summary: '' };
@@ -755,7 +755,7 @@ export default function ReaderPage() {
         conversationState.summary ? '[สรุปบริบทการแปลก่อนหน้า]\n' + conversationState.summary : '',
         graphMemoryContext,
       ].filter(Boolean).join('\n\n');
-      const previousInteractionId = projectId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
+      const previousInteractionId = targetProjectId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
         ? (conversationState.interactionId ?? await loadTranslationInteractionId(targetProjectId, settings.model).catch((stateError) => {
             console.warn('Could not load Gemini interaction state:', stateError);
             return undefined;
@@ -766,7 +766,7 @@ export default function ReaderPage() {
         previousInteractionId,
         memoryContext,
         translationProfile: latestProject?.translationProfile ?? 'general',
-        storeInteraction: Boolean(projectId),
+        storeInteraction: Boolean(targetProjectId),
         onInteractionId: (id) => { nextInteractionId = id; },
       }), replacements);
       if (targetProjectId && nextInteractionId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')) {
