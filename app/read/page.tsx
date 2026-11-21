@@ -242,16 +242,16 @@ export default function ReaderPage() {
             ?? (memoryChapter && !memoryChapter.id.startsWith('catalog:') ? memoryChapter.id : null);
           // A catalog placeholder is not a database UUID; do not treat it as a
           // persisted chapter while ensureChapter is still pending.
-          if (activeProjectId && !cachedChapterId && memoryChapter?.id.startsWith('catalog:')) {
+          if (activeProjectId && !cachedChapterId) {
             chapterCacheRef.current.delete(cacheKey);
           } else {
             setCurrentChapterId(cachedChapterId);
           }
-          if (activeProjectId && memoryChapter) {
-            void getStore().updateProject(activeProjectId, { lastReadChapterId: memoryChapter.id })
+          if (activeProjectId && memoryChapter && !memoryChapter.id.startsWith('catalog:')) {
+            void getStore().updateProject(activeProjectId, { lastReadChapterId: cachedChapterId ?? memoryChapter.id })
               .catch((progressError) => console.warn('Could not update last-read progress:', progressError));
           }
-          if (!(activeProjectId && !cachedChapterId && memoryChapter?.id.startsWith('catalog:'))) {
+          if (!(activeProjectId && !cachedChapterId)) {
             syncReaderUrl(targetUrl, activeProjectId);
             saveToHistory(targetUrl, inMemoryArticle.title);
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -279,7 +279,7 @@ export default function ReaderPage() {
         if (cached?.readerContent !== undefined && project.chapters.findIndex((item) => item.url === targetUrl) < project.chapters.length - 1) {
           const index = project.chapters.findIndex((item) => item.url === targetUrl);
           const cachedArticle: ArticleData = {
-            title: chapter.title, content: cached.readerContent,
+            title: chapter.title, chapterId: chapter.id, content: cached.readerContent,
             translatedText: cached.translatedText,
             preProofreadText: cached.preProofreadText,
             textContent: cached.originalText ?? cached.readerContent.replace(/<[^>]*>/g, ' ').trim(),
@@ -380,7 +380,10 @@ export default function ReaderPage() {
           }
         }
       }
-      let articleData: ArticleData = data;
+      let articleData: ArticleData = {
+        ...data,
+        chapterId: chapter && !chapter.id.startsWith('catalog:') ? chapter.id : undefined,
+      };
       if (activeProjectId && project && chapter) {
         const index = project.chapters.findIndex((item) => item.url === targetUrl);
         articleData = { ...data, title: chapter.title || data.title,
