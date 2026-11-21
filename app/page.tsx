@@ -303,7 +303,13 @@ export default function ProjectsHomePage() {
       const completeProjects = await Promise.all(projects.map(async (project) => {
         const chapters = await Promise.all(project.chapters.map(async (chapter) => {
           const content = chapter.status === 'pending' ? null : await getStore().getChapterContent(project.id, chapter.id);
-          return content ? { ...chapter, originalText: content.originalText, translatedText: content.translatedText } : chapter;
+          return content ? {
+            ...chapter,
+            originalText: content.originalText,
+            translatedText: content.translatedText,
+            preProofreadText: content.preProofreadText,
+            readerContent: content.readerContent,
+          } : chapter;
         }));
         return { ...project, chapters };
       }));
