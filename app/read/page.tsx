@@ -59,6 +59,7 @@ export default function ReaderPage() {
   const historyRef = useRef<HistoryItem[]>([]);
   const historyWriteRef = useRef<Promise<void>>(Promise.resolve());
   const historyMutationRef = useRef(0);
+  const historyClearRef = useRef(0);
   const [showToc, setShowToc] = useState(false);
   const [showGlossary, setShowGlossary] = useState(false);
   const [glossaryNotice, setGlossaryNotice] = useState('');
@@ -104,6 +105,7 @@ export default function ReaderPage() {
     })();
     const localSettings = loadReaderSettings();
     const initialHistoryRevision = historyMutationRef.current;
+    const initialHistoryClear = historyClearRef.current;
     historyRef.current = localHistory;
     setHistory(localHistory);
     setFontSize(localSettings.fontSize);
@@ -118,8 +120,8 @@ export default function ReaderPage() {
           loadCloudReaderSettings(),
         ]);
         if (cloudHistory && cloudHistory.length > 0) {
-          const clearedWhileLoading = historyMutationRef.current !== initialHistoryRevision && historyRef.current.length === 0;
-          const merged = clearedWhileLoading ? [] : mergeReadingHistory(historyRef.current, cloudHistory);
+          const clearedWhileLoading = historyClearRef.current !== initialHistoryClear;
+          const merged = clearedWhileLoading ? mergeReadingHistory(historyRef.current) : mergeReadingHistory(historyRef.current, cloudHistory);
           historyRef.current = merged; setHistory(merged);
           localStorage.setItem('novel_history', JSON.stringify(merged));
           historyWriteRef.current = historyWriteRef.current.catch(() => undefined).then(() => saveCloudReadingHistory(merged))
@@ -216,6 +218,7 @@ export default function ReaderPage() {
 
   const clearHistory = () => {
     historyMutationRef.current++;
+    historyClearRef.current++;
     historyRef.current = []; setHistory([]);
     localStorage.removeItem('novel_history');
     historyWriteRef.current = historyWriteRef.current.catch(() => undefined).then(() => saveCloudReadingHistory([]))
@@ -909,12 +912,12 @@ export default function ReaderPage() {
             } catch (memoryUpdateError) {
               console.warn('Batched novel memory update skipped:', memoryUpdateError);
             }
-          } else {
+          } else if (isActiveTranslation()) {
             setTranslationError('แปลสำเร็จแล้ว แต่ยังบันทึกคำแปลลงคลังไม่ได้ คำแปลนี้ยังแสดงอยู่ใน Reader');
           }
         } catch (saveError) {
           console.warn('Could not save translated chapter:', saveError);
-          setTranslationError('แปลสำเร็จแล้ว แต่บันทึกคำแปลไม่สำเร็จ คำแปลนี้ยังแสดงอยู่ใน Reader');
+          if (isActiveTranslation()) setTranslationError('แปลสำเร็จแล้ว แต่บันทึกคำแปลไม่สำเร็จ คำแปลนี้ยังแสดงอยู่ใน Reader');
         }
       }
       if (proofreadWarning && isActiveTranslation()) setTranslationError(proofreadWarning);
