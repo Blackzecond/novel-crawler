@@ -11,6 +11,7 @@ import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { applySavedTheme, loadReaderSettings, saveReaderSettings } from '@/lib/readerPrefs';
 import { loadCloudReaderSettings, saveCloudReaderSettings } from '@/lib/cloudPreferences';
 import { fetchWithNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
+import { exportNovelMemoryBundle } from '@/lib/novelMemory';
 
 // เว็บต้นฉบับจีนยอดนิยม — กดเพื่อใส่โดเมนต้นทางในช่อง URL
 // (วางเฉพาะลิงก์หน้าสารบัญ/目录 เช่น https://www.uukanshu.cc/b/123/ จึงจะจับรายการบทได้)
@@ -312,7 +313,8 @@ export default function ProjectsHomePage() {
             readerContent: content.readerContent,
           } : chapter;
         }));
-        return { ...project, chapters };
+        const aiMemory = await exportNovelMemoryBundle(project.id);
+        return { ...project, chapters, ...(aiMemory ? { aiMemory } : {}) };
       }));
       const blob = new Blob([JSON.stringify(completeProjects, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
