@@ -104,7 +104,7 @@ public class BrowserFetchPlugin extends Plugin {
             @Override
             public void run() {
                 if (finished[0]) return;
-                String probeScript = "(()=>{const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const l=b.toLowerCase();const challenge=l.includes('just a moment')||l.includes('verify you are human')||l.includes('performing security verification')||l.includes('checking your browser')||l.includes('checking if the site connection is secure')||t.toLowerCase().includes('just a moment')||b.includes('正在验证浏览器')||u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-160);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig})})()";
+                String probeScript = "(()=>{const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const l=b.toLowerCase();const challenge=l.includes('just a moment')||l.includes('verify you are human')||l.includes('performing security verification')||l.includes('checking your browser')||l.includes('checking if the site connection is secure')||t.toLowerCase().includes('just a moment')||b.includes('正在验证浏览器')||b.includes('网站使用安全服务')||b.includes('检查您是否为机器人')||b.includes('เว็บไซต์นี้ใช้บริการรักษาความปลอดภัย')||b.includes('ตรวจสอบว่าคุณไม่ใช่บอต')||u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-160);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig})})()";
                 webView.evaluateJavascript(probeScript, value -> {
                     if (finished[0]) return;
                     try {
@@ -151,6 +151,8 @@ public class BrowserFetchPlugin extends Plugin {
                                     || lower.contains("cf-chl-")
                                     || lower.contains("challenge-platform")
                                     || bodyText.contains("正在验证浏览器")
+                                    || bodyText.contains("เว็บไซต์นี้ใช้บริการรักษาความปลอดภัย")
+                                    || bodyText.contains("ตรวจสอบว่าคุณไม่ใช่บอต")
                                     || pageUrl.toLowerCase(Locale.ROOT).contains("/cdn-cgi/challenge-platform/");
                                 if (challenge || html.length() < 300 || bodyText.trim().length() < 80) {
                                     finishBackgroundPrefetch(call, webView, host, handler, pollTask[0], timeoutTask, finished,
@@ -384,8 +386,6 @@ public class BrowserFetchPlugin extends Plugin {
                 navigationId[0]++;
                 stablePolls[0] = 0;
                 lastSignature[0] = "";
-                challengeSeen[0] = false;
-                challengeClearedAt[0] = 0L;
                 handler.removeCallbacks(pollTask[0]);
                 status.setText("กำลังโหลดหน้าเว็บและตรวจสอบ CAPTCHA…");
             }
