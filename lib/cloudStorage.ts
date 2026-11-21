@@ -1,6 +1,6 @@
 import type { GlossaryDetection, GlossaryMetadata, NewProjectData, NovelChapter, NovelProject, NovelStore, WordReplacement } from '@/lib/storage';
 import { getSupabase } from '@/lib/supabase';
-import { importNovelMemoryBundle } from '@/lib/novelMemory';
+import { importNovelMemoryBundle, type NovelMemoryBackup } from '@/lib/novelMemory';
 import { withStableReplacementOrder } from '@/lib/readerIntegrity.mjs';
 
 const BUCKET = 'novel-content';
@@ -363,6 +363,7 @@ export const supabaseStore: NovelStore = {
     let imported = 0;
     let skipped = 0;
     for (const raw of incoming) {
+      const aiMemory = (raw as NovelProject & { aiMemory?: NovelMemoryBackup }).aiMemory;
       if (!raw || typeof raw !== 'object' || !raw.id || !Array.isArray(raw.chapters)) {
         skipped++;
         continue;
@@ -418,7 +419,7 @@ export const supabaseStore: NovelStore = {
           glossaryDetection: raw.glossaryDetection && typeof raw.glossaryDetection === 'object' ? raw.glossaryDetection : { characters: raw.glossaryMode === 'auto', terms: raw.glossaryMode === 'auto' },
           lastReadChapterId: newLastRead?.id,
         });
-        if (raw.aiMemory) await importNovelMemoryBundle(created.id, raw.aiMemory);
+        if (aiMemory) await importNovelMemoryBundle(created.id, aiMemory);
         imported++;
       } catch {
         skipped++;
