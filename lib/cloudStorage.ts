@@ -1,7 +1,7 @@
 import type { GlossaryDetection, GlossaryMetadata, NewProjectData, NovelChapter, NovelProject, NovelStore, WordReplacement } from '@/lib/storage';
 import { getSupabase } from '@/lib/supabase';
 import { importNovelMemoryBundle, type NovelMemoryBackup } from '@/lib/novelMemory';
-import { withStableReplacementOrder } from '@/lib/readerIntegrity.mjs';
+import { withStableReplacementOrder, resolveChapterStatus } from '@/lib/readerIntegrity.mjs';
 
 const BUCKET = 'novel-content';
 
@@ -630,8 +630,8 @@ export const supabaseStore: NovelStore = {
     if (patch.status !== undefined) {
       // A slow source-content upload must not downgrade a translation completed in parallel.
       const latestRow = await getChapterRow(projectId, actualChapterId);
-      const rank = (status: NovelChapter['status']) => status === 'translated' ? 2 : status === 'fetched' ? 1 : 0;
-      if (latestRow && rank(latestRow.status) > rank(finalStatus)) finalStatus = latestRow.status;
+      const clearsTranslation = patch.translatedText === '' && patch.preProofreadText === '';
+      finalStatus = resolveChapterStatus(latestRow?.status ?? row.status, patch.status, clearsTranslation);
       update.status = finalStatus;
       if (finalStatus === 'fetched') update.fetched_at = new Date().toISOString();
       if (finalStatus === 'translated' && latestRow?.status !== 'translated') update.translated_at = new Date().toISOString();
