@@ -28,7 +28,7 @@ test('backup includes reader HTML and pre-proofread draft; import restores gloss
  assert.match(c,/preProofreadText: oldChapter\.preProofreadText/); assert.match(c,/glossaryTypes: raw\.glossaryTypes/);
 });
 test('imported replacement rules get fresh primary keys', async () => {
- const c=await read('../lib/cloudStorage.ts'); assert.match(c,/wordReplacements: Array\.isArray\(raw\.wordReplacements\)[\s\S]*?id: createId\(\)/);
+ const c=await read('../lib/cloudStorage.ts'); assert.match(c,/wordReplacements: Array\.isArray\(raw\.wordReplacements\)[\s\S]*?id: crypto.randomUUID\(\)/);
 });
 test('natural-language CAPTCHA phrases are not challenge signals', async () => {
  const s=await read('../lib/fetchHtml.ts'); const f=s.slice(s.indexOf('export function isChallengePage'),s.indexOf('function isChallengeResponse'));
@@ -36,6 +36,6 @@ test('natural-language CAPTCHA phrases are not challenge signals', async () => {
 });
 test('one-to-five chapter directory groups can be recognized', async () => {
  const s=await read('../lib/sites.ts'); const t=await read('../app/api/toc/route.ts');
- assert.match(s,/extractChapterList\(html, baseUrl, minGroupSize = 1\)/); assert.match(s,/items\.length === 1 && !CHAPTER_TITLE_RE/);
+ assert.match(s,/extractChapterList\(html: string, baseUrl: string, minGroupSize = 1\)/); assert.match(s,/items\.length === 1 && !CHAPTER_TITLE_RE/);
  assert.match(t,/extractChapterList\(page\.html, page\.url, 1\)/); assert.match(t,/toc\.chapters\.length >= 1/);
 });
