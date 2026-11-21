@@ -1,4 +1,5 @@
 import { supabaseStore } from '@/lib/cloudStorage';
+import { resolveChapterStatus } from '@/lib/readerIntegrity.mjs';
 
 // ชั้นเก็บข้อมูลโปรเจกต์แปล — วันนี้ใช้ localStorage, วันหลังผูก Supabase
 // ทุกเมธอดเป็น async และออกแบบ signature ให้เปลี่ยนเป็น backend adapter ได้โดยไม่แก้ UI:
@@ -315,12 +316,9 @@ export const localStorageStore: NovelStore = {
     const chapter = target.chapters.find((c) => c.id === chapterId);
     if (!chapter) return null;
 
-    // อนุญาตให้แปลาสถานะขึ้นไป เช่น pending → fetched → translated เท่านั้น
-    const maxRank = Math.max(
-      chapter.status === 'translated' ? 2 : chapter.status === 'fetched' ? 1 : 0,
-      patch.status === 'translated' ? 2 : patch.status === 'fetched' ? 1 : patch.status === 'pending' ? 0 : -1
-    );
-    chapter.status = maxRank === 2 ? 'translated' : maxRank === 1 ? 'fetched' : 'pending';
+    // Keep translated status monotonic unless a forced source refresh explicitly clears the translation.
+    const clearsTranslation = patch.translatedText === '' && patch.preProofreadText === '';
+    chapter.status = resolveChapterStatus(chapter.status, patch.status, clearsTranslation);
     if ('originalText' in patch) chapter.originalText = patch.originalText;
     if ('translatedText' in patch) chapter.translatedText = patch.translatedText;
     if ('preProofreadText' in patch) chapter.preProofreadText = patch.preProofreadText;
