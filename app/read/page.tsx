@@ -417,6 +417,9 @@ export default function ReaderPage() {
               order: ensuredChapter.order,
               originalText: data.textContent,
               readerContent: data.content,
+              // A forced re-fetch may replace corrupted source content; discard any
+              // translation tied to the previous body instead of showing stale text.
+              ...(forceRender ? { translatedText: '', preProofreadText: '' } : {}),
               status: 'fetched',
               error: undefined,
             });
