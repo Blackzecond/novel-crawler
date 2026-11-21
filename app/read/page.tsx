@@ -58,6 +58,7 @@ export default function ReaderPage() {
   const activeProjectIdRef = useRef<string | null>(null);
   const historyRef = useRef<HistoryItem[]>([]);
   const historyWriteRef = useRef<Promise<void>>(Promise.resolve());
+  const historyMutationRef = useRef(0);
   const [showToc, setShowToc] = useState(false);
   const [showGlossary, setShowGlossary] = useState(false);
   const [glossaryNotice, setGlossaryNotice] = useState('');
@@ -102,6 +103,7 @@ export default function ReaderPage() {
       } catch { return []; }
     })();
     const localSettings = loadReaderSettings();
+    const initialHistoryRevision = historyMutationRef.current;
     historyRef.current = localHistory;
     setHistory(localHistory);
     setFontSize(localSettings.fontSize);
@@ -116,14 +118,17 @@ export default function ReaderPage() {
           loadCloudReaderSettings(),
         ]);
         if (cloudHistory && cloudHistory.length > 0) {
-          const merged = mergeReadingHistory(historyRef.current, cloudHistory);
+          const clearedWhileLoading = historyMutationRef.current !== initialHistoryRevision && historyRef.current.length === 0;
+          const merged = clearedWhileLoading ? [] : mergeReadingHistory(historyRef.current, cloudHistory);
           historyRef.current = merged; setHistory(merged);
           localStorage.setItem('novel_history', JSON.stringify(merged));
-          historyWriteRef.current = historyWriteRef.current.catch(() => undefined).then(() => saveCloudReadingHistory(merged));
+          historyWriteRef.current = historyWriteRef.current.catch(() => undefined).then(() => saveCloudReadingHistory(merged))
+            .catch((syncError) => console.warn('Could not sync hydrated reading history:', syncError));
         } else if (historyRef.current.length > 0) {
           const merged = mergeReadingHistory(historyRef.current);
           historyRef.current = merged; setHistory(merged);
-          await saveCloudReadingHistory(merged);
+          historyWriteRef.current = historyWriteRef.current.catch(() => undefined).then(() => saveCloudReadingHistory(merged));
+          await historyWriteRef.current;
         }
         if (cloudSettings && Object.keys(cloudSettings).length > 0) {
           const merged = { ...localSettings, ...cloudSettings };
@@ -201,6 +206,7 @@ export default function ReaderPage() {
   }, [autoScroll, scrollSpeed]);
 
   const saveToHistory = (itemUrl: string, itemTitle: string, itemProjectId: string | null = projectId) => {
+    historyMutationRef.current++;
     const newHistory = mergeReadingHistory([{ url: itemUrl, title: itemTitle, readAt: Date.now(), projectId: itemProjectId }, ...historyRef.current]);
     historyRef.current = newHistory; setHistory(newHistory);
     localStorage.setItem('novel_history', JSON.stringify(newHistory));
@@ -209,6 +215,7 @@ export default function ReaderPage() {
   };
 
   const clearHistory = () => {
+    historyMutationRef.current++;
     historyRef.current = []; setHistory([]);
     localStorage.removeItem('novel_history');
     historyWriteRef.current = historyWriteRef.current.catch(() => undefined).then(() => saveCloudReadingHistory([]))
@@ -235,7 +242,10 @@ export default function ReaderPage() {
     if (!targetUrl) return;
     const activeProjectId = projectIdOverride === undefined ? projectId : projectIdOverride;
     const requestId = ++readerRequestRef.current;
-    const isCurrentRequest = () => readerRequestRef.current === requestId;
+    const isCurrentRequest = () => isReaderTargetCurrent(
+      { requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current },
+      { requestId, url: targetUrl, projectId: activeProjectId },
+    );
     activeChapterUrlRef.current = targetUrl;
     activeProjectIdRef.current = activeProjectId;
     if (projectId !== activeProjectId) { setDetectedGlossary(null); setGlossaryNotice(''); }
@@ -294,12 +304,12 @@ export default function ReaderPage() {
         if (!isCurrentRequest()) return;
         if (cached && (cached.readerContent !== undefined || cached.originalText !== undefined)) {
           const index = project.chapters.findIndex((item) => item.url === targetUrl);
-          const cachedHtml = cached.readerContent ?? (cached.originalText ?? '').split(/\\n{2,}/).map((paragraph: string) => `<p>${escapeReaderText(paragraph).replace(/\\n/g, '<br>')}</p>`).join('');
+          const cachedHtml = cached.readerContent ?? (cached.originalText ?? '').split(/\n{2,}/).map((paragraph: string) => `<p>${escapeReaderText(paragraph).replace(/\n/g, '<br>')}</p>`).join('');
           const cachedArticle: ArticleData = {
             title: chapter.title, chapterId: chapter.id, content: cachedHtml,
             translatedText: cached.translatedText,
             preProofreadText: cached.preProofreadText,
-            textContent: cached.originalText ?? cached.readerContent.replace(/<[^>]*>/g, ' ').trim(),
+            textContent: cached.originalText ?? (cached.readerContent ?? '').replace(/<[^>]*>/g, ' ').trim(),
             prevUrl: index > 0 ? project.chapters[index - 1].url : null,
             nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : null,
           };
@@ -313,6 +323,17 @@ export default function ReaderPage() {
           syncReaderUrl(targetUrl, activeProjectId);
           saveToHistory(targetUrl, cachedArticle.title, activeProjectId);
           void getStore().updateProject(activeProjectId, { lastReadChapterId: chapter.id }).catch((progressError) => console.warn('Could not update last-read progress:', progressError));
+          if (index === project.chapters.length - 1) {
+            // Recheck a cached final chapter in the background for newly published next chapters.
+            void fetch('/api/parse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: targetUrl }) })
+              .then(async (response) => response.ok ? response.json() : null)
+              .then((fresh) => {
+                if (!fresh?.nextUrl) return;
+                const refreshed = { ...cachedArticle, nextUrl: fresh.nextUrl };
+                chapterCacheRef.current.set(cacheKey, refreshed);
+                if (isCurrentRequest()) setArticle((current) => current?.chapterId === chapter.id ? refreshed : current);
+              }).catch((refreshError) => console.info('Final chapter navigation refresh skipped:', refreshError));
+          }
           window.scrollTo({ top: 0, behavior: 'smooth' }); return;
         }
       }
@@ -484,7 +505,9 @@ export default function ReaderPage() {
             if ((project!.glossaryDetection?.characters || project!.glossaryDetection?.terms) && hasAiKey() && data.textContent) {
               try {
                 const pairs = await detectNamedTerms(data.textContent, undefined, project!.glossaryDetection);
+                if (!isCurrentRequest()) return;
                 const latest = await getStore().getProject(activeProjectId);
+                if (!isCurrentRequest()) return;
                 if (latest) {
                   const glossary = { ...latest.glossary };
                   const glossaryTypes = { ...latest.glossaryTypes };
@@ -731,7 +754,7 @@ export default function ReaderPage() {
   }, [article?.nextUrl, projectId, readerProject, url]);
 
   const handleTranslate = async () => {
-    if (!article || translationBusy || editorBusy) return;
+    if (!article || loading || translationBusy || editorBusy) return;
     const settings = loadAiSettings();
     if (!hasAiKey(settings)) {
       setTranslationError('ยังไม่ได้ตั้งค่า API สำหรับการแปล กรุณากรอก Base URL, Model และ API Key ก่อน');
@@ -742,7 +765,10 @@ export default function ReaderPage() {
     let targetChapterId = article.chapterId ?? currentChapterId;
     const targetUrl = url;
     let targetArticle = article;
-    const isActiveTranslation = () => readerRequestRef.current === translationRequestId && activeChapterUrlRef.current === targetUrl;
+    const isActiveTranslation = () => isReaderTargetCurrent(
+      { requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current },
+      { requestId: translationRequestId, url: targetUrl, projectId: targetProjectId },
+    );
     setTranslationBusy(true);
     setTranslationError('');
     try {
@@ -893,7 +919,7 @@ export default function ReaderPage() {
       }
       if (proofreadWarning && isActiveTranslation()) setTranslationError(proofreadWarning);
     } catch (err) {
-      if (readerRequestRef.current === translationRequestId) setTranslationError(err instanceof Error ? err.message : 'แปลไม่สำเร็จ');
+      if (isActiveTranslation()) setTranslationError(err instanceof Error ? err.message : 'แปลไม่สำเร็จ');
     } finally { if (isActiveTranslation()) setTranslationBusy(false); }
   };
   const handleRestorePreProofread = async () => {
@@ -920,7 +946,7 @@ export default function ReaderPage() {
   };
 
   const handleEditTranslation = async () => {
-    if (!article?.translatedText || editorBusy || translationBusy) return;
+    if (!article?.translatedText || loading || editorBusy || translationBusy) return;
     const settings = loadAiSettings();
     if (!hasAiKey(settings)) {
       setTranslationError('ยังไม่ได้ตั้งค่า API สำหรับ AI บ.ก. กรุณาตั้งค่า API ก่อน');
@@ -951,9 +977,11 @@ export default function ReaderPage() {
   };
 
   const updateReaderGlossaryTerm = async (source: string, translated: string, type?: 'character' | 'term') => {
-    if (!projectId) return;
+    const targetProjectId = projectId, targetUrl = url, requestId = readerRequestRef.current;
+    const isActive = () => isReaderTargetCurrent({ requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current }, { requestId, url: targetUrl, projectId: targetProjectId });
+    if (!targetProjectId || loading) return;
     try {
-      const latest = await getStore().getProject(projectId);
+      const latest = await getStore().getProject(targetProjectId);
       if (!latest) throw new Error('ไม่พบโปรเจกต์');
       const glossary = { ...latest.glossary };
       const glossaryTypes = { ...latest.glossaryTypes };
@@ -964,12 +992,12 @@ export default function ReaderPage() {
         glossary[source] = translated.trim();
         if (type) glossaryTypes[source] = type;
       }
-      const updated = await getStore().updateProject(projectId, { glossary, glossaryTypes });
+      const updated = await getStore().updateProject(targetProjectId, { glossary, glossaryTypes });
       if (!updated) throw new Error('บันทึกคลังศัพท์ไม่สำเร็จ');
-      setReaderProject(updated);
-      setGlossaryNotice(`บันทึกแล้ว: ${source}${translated.trim() ? ' → ' + translated.trim() : ' (ลบออกแล้ว)'}`);
+      setReaderProject((current) => current?.id === targetProjectId ? updated : current);
+      if (isActive()) setGlossaryNotice(`บันทึกแล้ว: ${source}${translated.trim() ? ' → ' + translated.trim() : ' (ลบออกแล้ว)'}`);
     } catch (err) {
-      setGlossaryNotice(`บันทึกไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
+      if (isActive()) setGlossaryNotice(`บันทึกไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -999,28 +1027,28 @@ export default function ReaderPage() {
     const updated = await getStore().updateProject(targetProjectId, { glossary, glossaryTypes, glossaryMetadata });
     if (!updated) throw new Error('บันทึกการแก้ไขคลังศัพท์ไม่สำเร็จ');
     setReaderProject((current) => current?.id === targetProjectId ? updated : current);
-    if (projectId === targetProjectId) setGlossaryNotice(`บันทึกการแก้ไขศัพท์แล้ว ${items.filter((item) => item.zh.trim() && item.th.trim()).length} รายการ`);
+    if (activeProjectIdRef.current === targetProjectId) setGlossaryNotice(`บันทึกการแก้ไขศัพท์แล้ว ${items.filter((item) => item.zh.trim() && item.th.trim()).length} รายการ`);
     setDetectedGlossary(null);
   };
 
   const addReaderGlossaryTerm = async () => {
     const source = readerGlossaryZh.trim();
     const translated = readerGlossaryTh.trim();
-    if (!projectId || !source || !translated) return;
+    const targetProjectId = projectId, targetUrl = url, requestId = readerRequestRef.current;
+    const isActive = () => isReaderTargetCurrent({ requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current }, { requestId, url: targetUrl, projectId: targetProjectId });
+    if (!targetProjectId || !source || !translated || loading) return;
     try {
-      const latest = await getStore().getProject(projectId);
+      const latest = await getStore().getProject(targetProjectId);
       if (!latest) throw new Error('ไม่พบโปรเจกต์');
-      const updated = await getStore().updateProject(projectId, {
+      const updated = await getStore().updateProject(targetProjectId, {
         glossary: { ...latest.glossary, [source]: translated },
         glossaryTypes: { ...latest.glossaryTypes, [source]: readerGlossaryType },
       });
       if (!updated) throw new Error('บันทึกคลังศัพท์ไม่สำเร็จ');
-      setReaderProject(updated);
-      setReaderGlossaryZh('');
-      setReaderGlossaryTh('');
-      setGlossaryNotice(`เพิ่มและบันทึกแล้ว: ${source} → ${translated}`);
+      setReaderProject((current) => current?.id === targetProjectId ? updated : current);
+      if (isActive()) { setReaderGlossaryZh(''); setReaderGlossaryTh(''); setGlossaryNotice(`เพิ่มและบันทึกแล้ว: ${source} → ${translated}`); }
     } catch (err) {
-      setGlossaryNotice(`เพิ่มศัพท์ไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
+      if (isActive()) setGlossaryNotice(`เพิ่มศัพท์ไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 

@@ -43,7 +43,7 @@ export function extractChapterList(html: string, baseUrl: string, minGroupSize =
   const links: { url: string; title: string }[] = [];
   for (const a of Array.from(document.querySelectorAll('a')) as any[]) {
     const href = a.getAttribute('href');
-    const rel = (a.getAttribute('rel') || '').toLowerCase().split(/\\s+/);
+    const rel = (a.getAttribute('rel') || '').toLowerCase().split(/\s+/);
     if (!href || href.startsWith('#') || href.startsWith('javascript:') || rel.includes('prev') || rel.includes('next')) continue;
     const abs = new URL(href, base);
     if (!sameSite(abs, base)) continue;
