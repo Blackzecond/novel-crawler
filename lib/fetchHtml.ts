@@ -20,6 +20,13 @@ export function isChallengePage(html: string): boolean {
   return (
     value.includes('正在验证浏览器') ||
     value.includes('安全验证') ||
+    value.includes('网站使用安全服务') ||
+    value.includes('网站使用安全服务来防止恶意机器人') ||
+    value.includes('检查您是否为机器人') ||
+    value.includes('检查您不是机器人') ||
+    value.includes('เว็บไซต์นี้ใช้บริการรักษาความปลอดภัย') ||
+    value.includes('ตรวจสอบว่าคุณไม่ใช่บอต') ||
+    value.includes('กำลังตรวจสอบว่าคุณไม่ใช่บอต') ||
     value.includes('just a moment') ||
     value.includes('verify you are human') ||
     value.includes('performing security verification') ||
