@@ -720,6 +720,8 @@ export default function ReaderPage() {
       const chapterIndex = project?.chapters.findIndex((item) => item.url === targetUrl) ?? -1;
       const prefetchedArticle: ArticleData = {
         ...data,
+        sourceUrl: targetUrl,
+        projectId: activeProjectId,
         chapterId: chapter && !chapter.id.startsWith('catalog:') ? chapter.id : undefined,
         title: chapter?.title || data.title,
         prevUrl: chapterIndex > 0 ? project!.chapters[chapterIndex - 1].url : data.prevUrl ?? null,
