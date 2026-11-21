@@ -6,3 +6,5 @@ export function escapeReaderText(value: string): string;
 export function isCloudflareChallengeMarkup(input?: { url?: string; html?: string; body?: string }): boolean;
 export function isChapterTitle(title: string): boolean;
 export function isLikelyChapterGroup(items: Array<{ title: string }>): boolean;
+
+export function withStableReplacementOrder<T extends Record<string, unknown>>(items: T[], baseTime?: number): Array<T & { created_at: string }>;
