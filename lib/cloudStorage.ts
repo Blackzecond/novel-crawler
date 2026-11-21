@@ -363,11 +363,11 @@ export const supabaseStore: NovelStore = {
     let imported = 0;
     let skipped = 0;
     for (const raw of incoming) {
-      const aiMemory = (raw as NovelProject & { aiMemory?: NovelMemoryBackup }).aiMemory;
       if (!raw || typeof raw !== 'object' || !raw.id || !Array.isArray(raw.chapters)) {
         skipped++;
         continue;
       }
+      const aiMemory = (raw as NovelProject & { aiMemory?: NovelMemoryBackup }).aiMemory;
       let created: NovelProject | null = null;
       try {
         created = await this.createProject({
