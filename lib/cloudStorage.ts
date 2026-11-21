@@ -1,6 +1,7 @@
 import type { GlossaryDetection, GlossaryMetadata, NewProjectData, NovelChapter, NovelProject, NovelStore, WordReplacement } from '@/lib/storage';
 import { getSupabase } from '@/lib/supabase';
 import { importNovelMemoryBundle } from '@/lib/novelMemory';
+import { withStableReplacementOrder } from '@/lib/readerIntegrity.mjs';
 
 const BUCKET = 'novel-content';
 
@@ -299,15 +300,15 @@ export const supabaseStore: NovelStore = {
       }
       if (patch.wordReplacements.length) {
         // created_at is also the stable persisted order for rules; write it from array position.
-        const orderBase = Date.now();
-        const rows = patch.wordReplacements.map((item, index) => ({
+        const orderedRules = withStableReplacementOrder(patch.wordReplacements);
+        const rows = orderedRules.map((item) => ({
           id: item.id,
           user_id: userId,
           project_id: id,
           variants: item.variants,
           replacement_text: item.replacement,
           use_regex: item.useRegex,
-          created_at: new Date(orderBase + index).toISOString(),
+          created_at: item.created_at,
           updated_at: new Date().toISOString(),
         }));
         const { error: upsertError } = await supabase.from('glossary_replacements').upsert(rows, { onConflict: 'id' });
