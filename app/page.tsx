@@ -303,6 +303,7 @@ export default function ProjectsHomePage() {
       const completeProjects = await Promise.all(projects.map(async (project) => {
         const chapters = await Promise.all(project.chapters.map(async (chapter) => {
           const content = chapter.status === 'pending' ? null : await getStore().getChapterContent(project.id, chapter.id);
+          if (chapter.status !== 'pending' && !content) throw new Error(`อ่านข้อมูลสำรองของบท “${chapter.title}” ในเรื่อง “${project.title}” ไม่สำเร็จ`);
           return content ? {
             ...chapter,
             originalText: content.originalText,
