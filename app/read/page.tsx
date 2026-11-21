@@ -739,7 +739,7 @@ export default function ReaderPage() {
         console.warn('Global dictionary matching skipped:', dictionaryError);
         return [];
       });
-      const graphMemoryContext = projectId
+      const graphMemoryContext = targetProjectId
         ? await loadNovelMemoryContext(targetProjectId, sourceText).catch((memoryError) => {
             console.warn('Novel memory retrieval skipped:', memoryError);
             return '';
