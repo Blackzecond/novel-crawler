@@ -498,58 +498,111 @@ export default function ReaderPage() {
     prefetchingRef.current.add(cacheKey);
     try {
       let data: any = null;
-      let serverError: unknown = null;
-      try {
-        const res = await fetch('/api/parse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: targetUrl }),
-        });
-        const contentType = res.headers.get('content-type');
-        if (!contentType?.includes('application/json')) {
-          throw new Error(`Server fetch failed: HTTP ${res.status}`);
-        }
-        const payload = await res.json();
-        if (!res.ok) {
-          const apiError = new Error(payload.error || `Server fetch failed: ${res.status}`) as Error & { status?: number; code?: string };
-          apiError.status = res.status;
-          apiError.code = payload.code;
-          throw apiError;
-        }
-        data = payload;
-        if (!data?.content || !data?.textContent) {
-          throw new Error('Server returned an empty chapter');
-        }
-      } catch (error) {
-        serverError = error;
-      }
+      const preferNative = Boolean(activeProjectId && prefersNativeBrowser(activeProjectId));
 
-      // If server fetch is blocked (e.g. Cloudflare on twkan), use the
-      // app's existing WebView session in a hidden, non-interactive WebView.
-      if (!data) {
-        const failure = serverError as Error & { status?: number; code?: string };
-        if (failure.code !== 'WEBVIEW_REQUIRED' && failure.code !== 'DIRECT_FETCH_FAILED') {
-          if (serverError) console.info('Next chapter prefetch skipped:', serverError);
-          return;
+      // Once this project has needed the app WebView, keep auto-prefetch on that
+      // same cookie session. Never fall back to server fetch from this path.
+      if (preferNative) {
+        try {
+          const nativePage = await prefetchWithNativeBrowser(targetUrl);
+          if (nativePage) {
+            const nativeRes = await fetch('/api/parse', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                url: targetUrl,
+                pageUrl: nativePage.url,
+                html: nativePage.html,
+              }),
+            });
+            const contentType = nativeRes.headers.get('content-type');
+            const payload = contentType?.includes('application/json')
+              ? await nativeRes.json()
+              : null;
+            if (nativeRes.ok && payload?.content && payload?.textContent) {
+              data = payload;
+              if (activeProjectId) rememberNativeBrowser(activeProjectId);
+            } else if (payload?.code === 'WEBVIEW_REQUIRED' || nativeRes.status === 428) {
+              if (activeProjectId) rememberNativeBrowser(activeProjectId);
+            }
+          }
+        } catch (nativePrefetchError) {
+          console.info('Next chapter WebView prefetch skipped; interactive verification will be available when opened:', nativePrefetchError);
         }
-        const nativePage = await prefetchWithNativeBrowser(targetUrl);
-        if (!nativePage) {
-          if (serverError) console.info('Next chapter prefetch skipped:', serverError);
-          return;
+        if (!data) return;
+      } else {
+        let serverError: unknown = null;
+        try {
+          const res = await fetch('/api/parse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: targetUrl }),
+          });
+          const contentType = res.headers.get('content-type');
+          if (!contentType?.includes('application/json')) {
+            throw new Error(`Server fetch failed: HTTP ${res.status}`);
+          }
+          const payload = await res.json();
+          if (!res.ok) {
+            const apiError = new Error(payload.error || `Server fetch failed: ${res.status}`) as Error & { status?: number; code?: string };
+            apiError.status = res.status;
+            apiError.code = payload.code;
+            throw apiError;
+          }
+          data = payload;
+          if (!data?.content || !data?.textContent) {
+            throw new Error('Server returned an empty chapter');
+          }
+        } catch (error) {
+          serverError = error;
         }
-        const nativeRes = await fetch('/api/parse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: targetUrl,
-            pageUrl: nativePage.url,
-            html: nativePage.html,
-          }),
-        });
-        if (!nativeRes.ok || !nativeRes.headers.get('content-type')?.includes('application/json')) return;
-        data = await nativeRes.json();
-        if (!data?.content || !data?.textContent) return;
-        if (activeProjectId) rememberNativeBrowser(activeProjectId);
+
+        if (!data) {
+          const failure = serverError as Error & { status?: number; code?: string };
+          if (failure.code !== 'WEBVIEW_REQUIRED' && failure.code !== 'DIRECT_FETCH_FAILED'
+            && failure.status !== 428) {
+            if (serverError) console.info('Next chapter prefetch skipped:', serverError);
+            return;
+          }
+
+          // A confirmed CAPTCHA is enough to switch this project to the WebView
+          // strategy immediately, even if hidden capture cannot clear it.
+          if (failure.code === 'WEBVIEW_REQUIRED' || failure.status === 428) {
+            if (activeProjectId) rememberNativeBrowser(activeProjectId);
+          }
+
+          try {
+            const nativePage = await prefetchWithNativeBrowser(targetUrl);
+            if (!nativePage) {
+              if (serverError) console.info('Next chapter prefetch skipped:', serverError);
+              return;
+            }
+            const nativeRes = await fetch('/api/parse', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                url: targetUrl,
+                pageUrl: nativePage.url,
+                html: nativePage.html,
+              }),
+            });
+            const contentType = nativeRes.headers.get('content-type');
+            const payload = contentType?.includes('application/json')
+              ? await nativeRes.json()
+              : null;
+            if (!nativeRes.ok || !payload?.content || !payload?.textContent) {
+              if (payload?.code === 'WEBVIEW_REQUIRED' || nativeRes.status === 428) {
+                if (activeProjectId) rememberNativeBrowser(activeProjectId);
+              }
+              return;
+            }
+            data = payload;
+            if (activeProjectId) rememberNativeBrowser(activeProjectId);
+          } catch (nativePrefetchError) {
+            console.info('Next chapter hidden WebView prefetch skipped:', nativePrefetchError);
+            return;
+          }
+        }
       }
 
       if (activeProjectId && project) {
