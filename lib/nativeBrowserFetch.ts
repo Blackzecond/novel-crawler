@@ -10,8 +10,13 @@ export interface NativeBrowserPage {
 
 const strategyKey = (projectId: string) => `novel-fetch-strategy-v1:${projectId}`;
 
+function supportsNativeBrowser(): boolean {
+  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
+}
+
 export function prefersNativeBrowser(projectId: string): boolean {
-  if (typeof window === 'undefined') return false;
+  // Ignore stale WebView preferences on web/PWA, where the native plugin is unavailable.
+  if (typeof window === 'undefined' || !supportsNativeBrowser()) return false;
   try {
     return window.localStorage.getItem(strategyKey(projectId)) === 'webview';
   } catch {
@@ -20,7 +25,7 @@ export function prefersNativeBrowser(projectId: string): boolean {
 }
 
 export function rememberNativeBrowser(projectId: string): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || !supportsNativeBrowser()) return;
   try {
     window.localStorage.setItem(strategyKey(projectId), 'webview');
   } catch {
@@ -33,7 +38,7 @@ export function rememberNativeBrowser(projectId: string): void {
  * Returns null on web/PWA so callers can preserve the server-only flow.
  */
 export async function fetchWithNativeBrowser(url: string, options: { expandToc?: boolean } = {}): Promise<NativeBrowserPage | null> {
-  if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') {
+  if (!supportsNativeBrowser()) {
     return null;
   }
 
@@ -47,7 +52,7 @@ export async function fetchWithNativeBrowser(url: string, options: { expandToc?:
  * Returns null on web/PWA; rejects when the page cannot be captured safely.
  */
 export async function prefetchWithNativeBrowser(url: string): Promise<NativeBrowserPage | null> {
-  if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') {
+  if (!supportsNativeBrowser()) {
     return null;
   }
   return BrowserFetch.prefetch({ url });

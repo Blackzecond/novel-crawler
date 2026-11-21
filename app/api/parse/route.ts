@@ -17,9 +17,17 @@ function processNovelContent(rawHtml: string) {
   }
 
   const { document } = parseHTML(`<div>${clean}</div>`);
-  const paragraphs = Array.from(document.querySelectorAll('p'))
+  let paragraphs = Array.from(document.querySelectorAll('p'))
     .map((p: any) => (p.textContent || '').trim())
     .filter((text: string) => text.length > 0);
+
+  // Some novels are structured as lists rather than paragraphs. Preserve each
+  // list item as a paragraph instead of returning a successful empty article.
+  if (!paragraphs.length) {
+    paragraphs = Array.from(document.querySelectorAll('li'))
+      .map((item: any) => (item.textContent || '').trim())
+      .filter((text: string) => text.length > 0);
+  }
 
   const plainText = paragraphs.join('\n\n');
   const formattedHtml = paragraphs.map((text: string) => `<p>${text}</p>`).join('');
@@ -70,6 +78,12 @@ export async function POST(req: NextRequest) {
     }
 
     const { formattedHtml, plainText } = processNovelContent(article.content);
+    if (!plainText.trim() || !formattedHtml.trim()) {
+      return NextResponse.json(
+        { error: 'ดึงหน้าเว็บได้ แต่ไม่พบข้อความเนื้อหาที่อ่านได้' },
+        { status: 422 }
+      );
+    }
 
     return NextResponse.json({
       title: article.title || 'ไม่มีชื่อเรื่อง',
