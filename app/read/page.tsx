@@ -552,7 +552,7 @@ export default function ReaderPage() {
         if (article?.sourceUrl) {
           setUrl(article.sourceUrl);
           activeChapterUrlRef.current = article.sourceUrl;
-          activeProjectIdRef.current = article.projectId ?? projectId;
+          activeProjectIdRef.current = article.projectId !== undefined ? article.projectId : projectId;
         }
       }
     } finally {
@@ -759,9 +759,9 @@ export default function ReaderPage() {
 
   // Start fetching the next chapter as soon as the current chapter is available.
   useEffect(() => {
-    if (!article?.nextUrl) return;
+    if (loading || !article?.nextUrl) return;
     void prefetchNextChapter(article.nextUrl, projectId, readerProject, url);
-  }, [article?.nextUrl, projectId, readerProject, url]);
+  }, [loading, article?.nextUrl, projectId, readerProject, url]);
 
   const handleTranslate = async () => {
     if (!article || loading || translationBusy || editorBusy) return;
@@ -1013,6 +1013,8 @@ export default function ReaderPage() {
 
   const saveDetectedGlossaryEdits = async (items: DetectedGlossaryItem[]) => {
     const targetProjectId = detectedGlossary?.projectId ?? projectId;
+    const targetModalChapterId = detectedGlossary?.chapterId;
+    const targetModalSourceLabel = detectedGlossary?.sourceLabel;
     if (!targetProjectId) return;
     const latest = await getStore().getProject(targetProjectId);
     if (!latest) throw new Error('ไม่พบโปรเจกต์');
@@ -1038,7 +1040,7 @@ export default function ReaderPage() {
     if (!updated) throw new Error('บันทึกการแก้ไขคลังศัพท์ไม่สำเร็จ');
     setReaderProject((current) => current?.id === targetProjectId ? updated : current);
     if (activeProjectIdRef.current === targetProjectId) setGlossaryNotice(`บันทึกการแก้ไขศัพท์แล้ว ${items.filter((item) => item.zh.trim() && item.th.trim()).length} รายการ`);
-    setDetectedGlossary(null);
+    setDetectedGlossary((current) => current?.projectId === targetProjectId && current?.chapterId === targetModalChapterId && current?.sourceLabel === targetModalSourceLabel ? null : current);
   };
 
   const addReaderGlossaryTerm = async () => {
