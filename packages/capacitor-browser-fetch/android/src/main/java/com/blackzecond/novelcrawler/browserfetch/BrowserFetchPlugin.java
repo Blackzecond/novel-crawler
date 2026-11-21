@@ -274,6 +274,8 @@ public class BrowserFetchPlugin extends Plugin {
         final Handler handler = new Handler(Looper.getMainLooper());
         final String[] lastSignature = { "" };
         final int[] stablePolls = { 0 };
+        final boolean[] challengeSeen = { false };
+        final long[] challengeClearedAt = { 0L };
         final int[] navigationId = { 0 };
         final JSONArray capturedTocPages = new JSONArray();
         final Set<String> visitedTocPages = new HashSet<>();
@@ -326,21 +328,33 @@ public class BrowserFetchPlugin extends Plugin {
             public void run() {
                 if (finished[0] || captureInProgress[0] || !dialog.isShowing()) return;
                 final int currentNavigation = navigationId[0];
-                String probeScript = "(()=>{const expandToc="+expandToc+";let moreLoading=false;if(expandToc){const nodes=[...document.querySelectorAll('button,a,[role=button],.more,.show-all,.all-chapters')];for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!txt||el.dataset.ncExpandedOnce==='1')continue;if(/全部章节|查看全部章节|展开全部|显示全部|全部展开|展开目录|查看目录/.test(txt)){el.dataset.ncExpandedOnce='1';el.click();break;}}for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!/加载更多|显示更多|展开更多|更多章节/.test(txt))continue;const rect=el.getBoundingClientRect();if(rect.width>0&&rect.height>0&&getComputedStyle(el).display!=='none'){const count=Number(el.dataset.ncLoadMoreCount||'0');if(count<30){moreLoading=true;el.dataset.ncLoadMoreCount=String(count+1);el.click();}break;}}}const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const l=b.toLowerCase();const challenge=l.includes('just a moment')||l.includes('verify you are human')||l.includes('performing security verification')||l.includes('checking your browser')||l.includes('checking if the site connection is secure')||t.toLowerCase().includes('just a moment')||b.includes('正在验证浏览器')||u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-180);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig,moreLoading:moreLoading})})()";
+                String probeScript = "(()=>{const expandToc="+expandToc+";let moreLoading=false;if(expandToc){const nodes=[...document.querySelectorAll('button,a,[role=button],.more,.show-all,.all-chapters')];for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!txt||el.dataset.ncExpandedOnce==='1')continue;if(/全部章节|查看全部章节|展开全部|显示全部|全部展开|展开目录|查看目录/.test(txt)){el.dataset.ncExpandedOnce='1';el.click();break;}}for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!/加载更多|显示更多|展开更多|更多章节/.test(txt))continue;const rect=el.getBoundingClientRect();if(rect.width>0&&rect.height>0&&getComputedStyle(el).display!=='none'){const count=Number(el.dataset.ncLoadMoreCount||'0');if(count<30){moreLoading=true;el.dataset.ncLoadMoreCount=String(count+1);el.click();}break;}}}const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const l=b.toLowerCase();const challenge=l.includes('just a moment')||l.includes('verify you are human')||l.includes('performing security verification')||l.includes('checking your browser')||l.includes('checking if the site connection is secure')||t.toLowerCase().includes('just a moment')||b.includes('正在验证浏览器')||b.includes('网站使用安全服务')||b.includes('检查您是否为机器人')||b.includes('เว็บไซต์นี้ใช้บริการรักษาความปลอดภัย')||b.includes('ตรวจสอบว่าคุณไม่ใช่บอต')||u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-180);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig,moreLoading:moreLoading})})()";
                 webView.evaluateJavascript(probeScript, value -> {
                     if (finished[0] || captureInProgress[0] || currentNavigation != navigationId[0]) return;
                     try {
                         Object decoded = new JSONTokener(value).nextValue();
                         JSONObject probe = new JSONObject(String.valueOf(decoded));
                         if (probe.optBoolean("challenge", true)) {
+                            challengeSeen[0] = true;
+                            challengeClearedAt[0] = 0L;
                             stablePolls[0] = 0;
                             lastSignature[0] = "";
-                            status.setText("พบหรือกำลังตรวจสอบ CAPTCHA — หากมีหน้าตรวจสอบ กรุณาทำให้ผ่าน ระบบจะดึงเนื้อหาให้อัตโนมัติ");
+                            status.setText("พบหรือกำลังตรวจสอบ CAPTCHA — กรุณายืนยันให้ผ่าน ระบบจะรอเนื้อหาโหลดก่อนดึงให้อัตโนมัติ");
                         } else if (probe.optBoolean("moreLoading") || !probe.optBoolean("ready") || probe.optInt("bodyLength") < 180 || probe.optInt("htmlLength") < 1000) {
                             stablePolls[0] = 0;
                             lastSignature[0] = "";
                             status.setText(expandToc ? "กำลังขยายรายการตอนทั้งหมดและรอให้โหลดครบ…" : "ผ่านหน้าตรวจสอบแล้ว — กำลังรอเนื้อหาบทโหลดให้ครบ…");
                         } else {
+                            if (challengeSeen[0]) {
+                                if (challengeClearedAt[0] == 0L) challengeClearedAt[0] = System.currentTimeMillis();
+                                if (System.currentTimeMillis() - challengeClearedAt[0] < 2000L) {
+                                    stablePolls[0] = 0;
+                                    lastSignature[0] = "";
+                                    status.setText("ผ่าน CAPTCHA แล้ว — กำลังรอเนื้อหาโหลดเพิ่มอีก 2 วินาที…");
+                                    handler.postDelayed(this, 350);
+                                    return;
+                                }
+                            }
                             String signature = probe.optString("signature", "");
                             if (signature.equals(lastSignature[0])) {
                                 stablePolls[0]++;
@@ -348,7 +362,7 @@ public class BrowserFetchPlugin extends Plugin {
                                 lastSignature[0] = signature;
                                 stablePolls[0] = 1;
                             }
-                            if (stablePolls[0] >= (expandToc ? 3 : 1)) {
+                            if (stablePolls[0] >= 3) {
                                 status.setText("ตรวจพบหน้าเว็บปกติและเนื้อหานิ่งแล้ว — กำลังดึงเนื้อหาอัตโนมัติ…");
                                 extractPage(call, webView, dialog, status, finished, captureInProgress, handler, pollTask[0], expandToc, capturedTocPages, visitedTocPages);
                                 return;
@@ -370,6 +384,8 @@ public class BrowserFetchPlugin extends Plugin {
                 navigationId[0]++;
                 stablePolls[0] = 0;
                 lastSignature[0] = "";
+                challengeSeen[0] = false;
+                challengeClearedAt[0] = 0L;
                 handler.removeCallbacks(pollTask[0]);
                 status.setText("กำลังโหลดหน้าเว็บและตรวจสอบ CAPTCHA…");
             }
@@ -454,6 +470,10 @@ public class BrowserFetchPlugin extends Plugin {
 
                 boolean challenge = lowerText.contains("just a moment")
                     || bodyText.contains("正在验证浏览器")
+                    || bodyText.contains("网站使用安全服务")
+                    || bodyText.contains("检查您是否为机器人")
+                    || bodyText.contains("เว็บไซต์นี้ใช้บริการรักษาความปลอดภัย")
+                    || bodyText.contains("ตรวจสอบว่าคุณไม่ใช่บอต")
                     || lowerText.contains("verify you are human")
                     || lowerText.contains("performing security verification")
                     || lowerText.contains("checking your browser")
