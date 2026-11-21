@@ -33,6 +33,8 @@ interface ArticleData {
   nextUrl: string | null;
   /** Real Supabase chapter UUID once a catalog placeholder has been persisted. */
   chapterId?: string;
+  sourceUrl?: string;
+  projectId?: string | null;
 }
 
 interface HistoryItem {
@@ -58,7 +60,6 @@ export default function ReaderPage() {
   const activeProjectIdRef = useRef<string | null>(null);
   const historyRef = useRef<HistoryItem[]>([]);
   const historyWriteRef = useRef<Promise<void>>(Promise.resolve());
-  const historyMutationRef = useRef(0);
   const historyClearRef = useRef(0);
   const [showToc, setShowToc] = useState(false);
   const [showGlossary, setShowGlossary] = useState(false);
@@ -104,7 +105,6 @@ export default function ReaderPage() {
       } catch { return []; }
     })();
     const localSettings = loadReaderSettings();
-    const initialHistoryRevision = historyMutationRef.current;
     const initialHistoryClear = historyClearRef.current;
     historyRef.current = localHistory;
     setHistory(localHistory);
@@ -208,7 +208,6 @@ export default function ReaderPage() {
   }, [autoScroll, scrollSpeed]);
 
   const saveToHistory = (itemUrl: string, itemTitle: string, itemProjectId: string | null = projectId) => {
-    historyMutationRef.current++;
     const newHistory = mergeReadingHistory([{ url: itemUrl, title: itemTitle, readAt: Date.now(), projectId: itemProjectId }, ...historyRef.current]);
     historyRef.current = newHistory; setHistory(newHistory);
     localStorage.setItem('novel_history', JSON.stringify(newHistory));
@@ -217,7 +216,6 @@ export default function ReaderPage() {
   };
 
   const clearHistory = () => {
-    historyMutationRef.current++;
     historyClearRef.current++;
     historyRef.current = []; setHistory([]);
     localStorage.removeItem('novel_history');
@@ -295,7 +293,6 @@ export default function ReaderPage() {
           : await getStore().getProject(activeProjectId);
         if (!isCurrentRequest()) return;
         if (project) {
-          setReaderProject(project);
           chapter = project.chapters.find((item) => item.url === targetUrl) ?? null;
         }
       }
@@ -309,7 +306,7 @@ export default function ReaderPage() {
           const index = project.chapters.findIndex((item) => item.url === targetUrl);
           const cachedHtml = cached.readerContent ?? (cached.originalText ?? '').split(/\n{2,}/).map((paragraph: string) => `<p>${escapeReaderText(paragraph).replace(/\n/g, '<br>')}</p>`).join('');
           const cachedArticle: ArticleData = {
-            title: chapter.title, chapterId: chapter.id, content: cachedHtml,
+            title: chapter.title, chapterId: chapter.id, sourceUrl: targetUrl, projectId: activeProjectId, content: cachedHtml,
             translatedText: cached.translatedText,
             preProofreadText: cached.preProofreadText,
             textContent: cached.originalText ?? (cached.readerContent ?? '').replace(/<[^>]*>/g, ' ').trim(),
@@ -426,6 +423,8 @@ export default function ReaderPage() {
       if (!isCurrentRequest()) return;
       let articleData: ArticleData = {
         ...data,
+        sourceUrl: targetUrl,
+        projectId: activeProjectId,
         chapterId: chapter && !chapter.id.startsWith('catalog:') ? chapter.id : undefined,
       };
       if (activeProjectId && project && chapter) {
@@ -547,7 +546,15 @@ export default function ReaderPage() {
       saveToHistory(targetUrl, articleData.title, activeProjectId);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
-      if (isCurrentRequest()) setError(err.message);
+      if (isCurrentRequest()) {
+        setError(err.message);
+        setLoading(false);
+        if (article?.sourceUrl) {
+          setUrl(article.sourceUrl);
+          activeChapterUrlRef.current = article.sourceUrl;
+          activeProjectIdRef.current = article.projectId ?? projectId;
+        }
+      }
     } finally {
       if (isCurrentRequest()) setLoading(false);
     }
