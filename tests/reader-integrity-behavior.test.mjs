@@ -30,3 +30,10 @@ test('replacement order is persisted by increasing created_at timestamps', async
     '1970-01-01T00:00:01.000Z', '1970-01-01T00:00:01.001Z', '1970-01-01T00:00:01.002Z',
   ]);
 });
+
+test('forced source refresh can clear translated status while ordinary fetch cannot downgrade it', async () => {
+  const { resolveChapterStatus } = await import('../lib/readerIntegrity.mjs');
+  assert.equal(resolveChapterStatus('translated', 'fetched'), 'translated');
+  assert.equal(resolveChapterStatus('translated', 'fetched', true), 'fetched');
+  assert.equal(resolveChapterStatus('pending', 'fetched'), 'fetched');
+});
