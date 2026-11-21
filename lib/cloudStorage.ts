@@ -4,7 +4,7 @@ import { getSupabase } from '@/lib/supabase';
 const BUCKET = 'novel-content';
 
 type ProjectRow = {
-  id: string; title: string; source_url: string; host: string;
+  id: string; title: string; source_url: string; host: string; translation_profile?: NovelProject['translationProfile'] | null;
   glossary_mode: 'manual' | 'auto'; glossary_metadata?: Record<string, GlossaryMetadata> | null; glossary_detection?: GlossaryDetection | null; last_read_chapter_id: string | null;
   chapter_catalog: { url: string; title: string; order: number }[] | null;
   created_at: string; updated_at: string;
@@ -53,6 +53,7 @@ function mapProject(row: ProjectRow, fetchedChapters: NovelChapter[], glossary: 
   return {
     id: row.id,
     title: row.title,
+    translationProfile: row.translation_profile ?? 'general',
     sourceUrl: row.source_url,
     host: row.host,
     glossary,
@@ -226,6 +227,7 @@ export const supabaseStore: NovelStore = {
     const { data: row, error } = await supabase.from('novel_projects').insert({
       user_id: userId,
       title: data.title,
+      translation_profile: 'general',
       source_url: data.sourceUrl,
       host: data.host,
       glossary_mode: 'manual',
@@ -255,6 +257,7 @@ export const supabaseStore: NovelStore = {
     const supabase = getSupabase();
     const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (patch.title !== undefined) update.title = patch.title;
+    if (patch.translationProfile !== undefined) update.translation_profile = patch.translationProfile;
     if (patch.glossaryMode !== undefined) update.glossary_mode = patch.glossaryMode;
     if (patch.glossaryMetadata !== undefined) update.glossary_metadata = patch.glossaryMetadata;
     if (patch.glossaryDetection !== undefined) { update.glossary_detection = patch.glossaryDetection; update.glossary_mode = patch.glossaryDetection.characters || patch.glossaryDetection.terms ? 'auto' : 'manual'; }
@@ -380,6 +383,7 @@ export const supabaseStore: NovelStore = {
         const newLastRead = oldLastRead ? refreshed?.chapters.find((chapter) => chapter.url === oldLastRead.url && chapter.status !== 'pending') : undefined;
         await this.updateProject(created.id, {
           glossary,
+          translationProfile: ['modern','xianxia','wuxia','fantasy','scifi'].includes(raw.translationProfile) ? raw.translationProfile : 'general',
           wordReplacements: Array.isArray(raw.wordReplacements) ? raw.wordReplacements : [],
           glossaryMode: raw.glossaryMode === 'auto' ? 'auto' : 'manual',
           glossaryMetadata: raw.glossaryMetadata && typeof raw.glossaryMetadata === 'object' ? raw.glossaryMetadata : {},

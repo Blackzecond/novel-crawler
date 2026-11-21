@@ -1,4 +1,5 @@
 import type { GlobalDictionaryPromptTerm } from '@/lib/globalDictionary';
+import type { TranslationProfile } from '@/lib/storage';
 // AI provider layer for Novel Crawler.
 // API keys remain in this browser's localStorage. Gemini uses the native Interactions API; other providers use OpenAI-compatible Chat Completions.
 
@@ -271,6 +272,7 @@ export async function translateNovelText(
   options: {
     previousInteractionId?: string;
     memoryContext?: string;
+    translationProfile?: TranslationProfile;
     storeInteraction?: boolean;
     onInteractionId?: (id: string) => void;
   } = {},
@@ -281,8 +283,18 @@ export async function translateNovelText(
   const relevantGlossary = Object.fromEntries(
     Object.entries(glossary).filter(([source, target]) => source.trim() && target.trim() && text.includes(source)),
   );
+  const profileInstructions: Record<TranslationProfile, string[]> = {
+    general: ['ใช้ภาษาไทยมาตรฐานแบบนิยายแปล เลือกระดับภาษาให้ตรงกับบริบทต้นฉบับ โดยไม่สมมติยุคสมัยหรือแนวเรื่อง'],
+    modern: ['ใช้ภาษาไทยเป็นธรรมชาติ เหมาะกับบริบทปัจจุบัน', 'ห้ามใช้คำหยาบและสแลง หากมีคำอังกฤษให้แปลหรือถอดความเป็นไทย', 'ห้ามใส่วงเล็บอธิบาย'],
+    xianxia: ['ใช้ภาษาทางการหรือกึ่งทางการ สอดคล้องกับโลกเทพเซียนและบริบทโบราณ', 'หลีกเลี่ยงภาษาพูด คำสแลง และภาษาอังกฤษ', 'ถ่ายทอดสำนวนจีนเป็นไทยให้เหมาะกับบริบทโบราณโดยไม่ขยายความ', 'ห้ามใส่วงเล็บอธิบาย'],
+    wuxia: ['ใช้ภาษาทางการหรือกึ่งทางการ สอดคล้องกับยุทธภพและกำลังภายใน', 'รักษาศัพท์ยุทธภพและลำดับอาวุโสให้สม่ำเสมอ หลีกเลี่ยงสแลงและภาษาอังกฤษ', 'ห้ามใส่วงเล็บอธิบาย'],
+    fantasy: ['ใช้ภาษาไทยให้เข้ากับโลกแฟนตาซีและระบบเวทมนตร์ของเรื่อง', 'รักษาชื่อเผ่าพันธุ์ เวทมนตร์ สิ่งประดิษฐ์ และระบบพลังให้สม่ำเสมอ', 'ไม่สร้างคำอธิบายระบบที่ต้นฉบับไม่ได้ระบุ'],
+    scifi: ['ใช้ภาษาไทยให้เหมาะกับบริบทนิยายวิทยาศาสตร์', 'รักษาความหมายของศัพท์เทคโนโลยี วิทยาศาสตร์ และระบบต่าง ๆ ให้แม่นยำ', 'หลีกเลี่ยงการขยายความหรืออธิบายศัพท์ที่ต้นฉบับไม่ได้อธิบาย'],
+  };
+  const selectedProfile = options.translationProfile ?? 'general';
   const systemPrompt = [
-    'คุณเป็นนักแปลนิยายจีนเป็นภาษาไทยระดับมืออาชีพ เชี่ยวชาญนิยายเว็บจีนร่วมสมัยและนิยายแนวเซียน/แฟนตาซี',
+    'คุณเป็นนักแปลนิยายจีนเป็นภาษาไทยระดับมืออาชีพ',
+    ...profileInstructions[selectedProfile],
     'แปลต้นฉบับภาษาจีนทั้งตอนเป็นภาษาไทย โดยรักษาความหมาย รายละเอียด และบริบทของต้นฉบับ',
     'อ่านและทำความเข้าใจต้นฉบับทั้งตอนก่อนแปล ใช้บริบทของทั้งตอนตัดสินความหมายของคำ สรรพนาม ศัพท์เฉพาะ และบทสนทนา',
     'ใช้ภาษาไทยที่กระชับ เป็นธรรมชาติแบบนิยายแปล ห้ามถอดโครงสร้างประโยคจีนจนภาษาไทยแข็งหรือผิดธรรมชาติ',
@@ -361,6 +373,34 @@ export async function proofreadThaiFormatting(
     'high',
   );
   return result.content;
+}
+
+/** สรุปบริบทของ Gemini ก่อนเริ่ม interaction chain ใหม่ โดยต่อจาก interaction เดิม */
+export async function summarizeGeminiTranslationHistory(
+  previousInteractionId: string,
+  previousSummary: string,
+  durableMemory: string,
+  settings?: AiDetectSettings,
+): Promise<{ summary: string; interactionId: string }> {
+  const cfg = settings ?? loadAiSettings();
+  if (inferAiProvider(cfg.baseUrl) !== 'gemini') throw new Error('การสรุปประวัติรองรับเฉพาะ Gemini Interactions');
+  const result = await requestChatCompletion(cfg, [
+    { role: 'system', content: [
+      'คุณกำลังสรุปบริบทของงานแปลนิยายจีนระยะยาว เพื่อส่งต่อให้ interaction chain ใหม่',
+      'สรุปเฉพาะข้อเท็จจริงที่มีประโยชน์ต่อการแปลตอนถัดไป เช่น ตัวตนและความสัมพันธ์ตัวละคร รูปสะกดชื่อ/ศัพท์ที่ตกลงใช้ เหตุการณ์ค้างอยู่ และข้อกำหนดการแปลที่ผู้ใช้ระบุ',
+      'ห้ามแต่งเติม ห้ามคาดเดา และห้ามสรุปเนื้อหาทั่วไปที่ไม่ช่วยรักษาความต่อเนื่อง',
+      'หากข้อมูลใหม่ขัดกับสรุปเดิม ให้ยึดข้อมูลล่าสุดที่มีหลักฐาน',
+      'เขียนภาษาไทยแบบกระชับ แบ่งหัวข้อสั้น ๆ และไม่เกิน 5000 ตัวอักษร',
+      'ส่งเฉพาะสรุป ไม่ต้องมีคำเกริ่นหรือคำอธิบาย',
+    ].join('\n') },
+    { role: 'user', content: [
+      previousSummary ? '[สรุปความจำเดิม]\n' + previousSummary : '',
+      durableMemory ? '[ความจำถาวรจากกราฟนิยาย]\n' + durableMemory : '',
+      'โปรดสรุปบริบทการสนทนาและงานแปลทั้งหมดใน interaction chain ก่อนหน้านี้ให้พร้อมใช้งานต่อ',
+    ].filter(Boolean).join('\n\n') },
+  ], 7000, 0.1, 'high', { store: true, previousInteractionId });
+  if (!result.interactionId) throw new Error('Gemini ไม่ส่ง interaction ID สำหรับเริ่ม chain ใหม่');
+  return { summary: result.content.slice(0, 5000), interactionId: result.interactionId };
 }
 
 export interface NovelMemoryExtraction {

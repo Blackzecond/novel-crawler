@@ -8,9 +8,9 @@ import {
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 import { applyWordReplacements, applyWordReplacementsToHtml } from '@/lib/wordReplacements';
-import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, extractNovelMemory, inspectThaiTranslation, proofreadThaiFormatting } from '@/lib/ai';
+import { loadAiSettings, hasAiKey, detectNamedTerms, translateNovelText, extractNovelMemory, inspectThaiTranslation, proofreadThaiFormatting, summarizeGeminiTranslationHistory } from '@/lib/ai';
 import { findRelevantGlobalDictionaryTerms, loadGlobalDictionaryEntries } from '@/lib/globalDictionary';
-import { loadNovelMemoryContext, loadTranslationInteractionId, saveTranslationInteractionId, loadMemoryExtractionCheckpoint, loadNovelMemoryForExtraction, saveNovelMemoryGraph, compactTranslationHistoryIfNeeded } from '@/lib/novelMemory';
+import { loadNovelMemoryContext, loadTranslationInteractionId, saveTranslationInteractionId, loadTranslationInteractionState, saveTranslationCompaction, loadMemoryExtractionCheckpoint, loadNovelMemoryForExtraction, saveNovelMemoryGraph } from '@/lib/novelMemory';
 import {
   loadReaderSettings, saveReaderSettings, applySavedTheme,
   readerDefaults, ReaderFont, ReaderTheme,
@@ -617,22 +617,33 @@ export default function ReaderPage() {
         console.warn('Global dictionary matching skipped:', dictionaryError);
         return [];
       });
-      const memoryContext = projectId
+      const graphMemoryContext = projectId
         ? await loadNovelMemoryContext(projectId, sourceText).catch((memoryError) => {
             console.warn('Novel memory retrieval skipped:', memoryError);
             return '';
           })
         : '';
+      const conversationState = projectId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
+        ? await loadTranslationInteractionState(projectId, settings.model).catch((stateError) => {
+            console.warn('Could not load Gemini conversation summary:', stateError);
+            return { interactionId: undefined, count: 0, summary: '' };
+          })
+        : { interactionId: undefined, count: 0, summary: '' };
+      const memoryContext = [
+        conversationState.summary ? '[สรุปบริบทการแปลก่อนหน้า]\n' + conversationState.summary : '',
+        graphMemoryContext,
+      ].filter(Boolean).join('\n\n');
       const previousInteractionId = projectId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
-        ? await loadTranslationInteractionId(projectId, settings.model).catch((stateError) => {
+        ? (conversationState.interactionId ?? await loadTranslationInteractionId(projectId, settings.model).catch((stateError) => {
             console.warn('Could not load Gemini interaction state:', stateError);
             return undefined;
-          })
+          }))
         : undefined;
       let nextInteractionId: string | undefined;
       const rawTranslated = applyWordReplacements(await translateNovelText(sourceText, settings, glossary, dictionaryTerms, {
         previousInteractionId,
         memoryContext,
+        translationProfile: latestProject?.translationProfile ?? 'general',
         storeInteraction: Boolean(projectId),
         onInteractionId: (id) => { nextInteractionId = id; },
       }), replacements);
@@ -709,8 +720,15 @@ export default function ReaderPage() {
                   const existingMemory = await loadNovelMemoryForExtraction(projectId);
                   const extracted = await extractNovelMemory(memorySources, existingMemory, settings);
                   await saveNovelMemoryGraph(projectId, provider, settings.model, pendingChapters[4].order, extracted);
-                  if (provider === 'gemini' && (extracted.nodes.length > 0 || existingMemory.trim())) {
-                    await compactTranslationHistoryIfNeeded(projectId, settings.model);
+                  if (provider === 'gemini') {
+                    const state = await loadTranslationInteractionState(projectId, settings.model);
+                    if (state.count >= 10 && state.interactionId) {
+                      // สร้าง summary ต่อจาก chain เก่าก่อน แล้วค่อยบันทึก ID ใหม่และ reset counter
+                      const compacted = await summarizeGeminiTranslationHistory(
+                        state.interactionId, state.summary, await loadNovelMemoryForExtraction(projectId), settings,
+                      );
+                      await saveTranslationCompaction(projectId, settings.model, compacted.summary, compacted.interactionId);
+                    }
                   }
                 }
               }

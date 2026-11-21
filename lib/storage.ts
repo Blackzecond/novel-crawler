@@ -29,8 +29,11 @@ export interface WordReplacement {
 export interface GlossaryMetadata { gender?: string; category?: string; notes?: string; }
 export interface GlossaryDetection { characters: boolean; terms: boolean; }
 
+export type TranslationProfile = 'general' | 'modern' | 'xianxia' | 'wuxia' | 'fantasy' | 'scifi';
+
 export interface NovelProject {
   id: string;
+  translationProfile: TranslationProfile;
   title: string;
   sourceUrl: string;
   host: string;
@@ -68,7 +71,7 @@ export interface NovelStore {
   renameProject(id: string, title: string): Promise<NovelProject | null>;
   updateProject(
     id: string,
-    patch: Partial<Pick<NovelProject, 'title' | 'glossary' | 'glossaryTypes' | 'glossaryMetadata' | 'glossaryDetection' | 'glossaryMode' | 'lastReadChapterId' | 'wordReplacements'>>
+    patch: Partial<Pick<NovelProject, 'title' | 'translationProfile' | 'glossary' | 'glossaryTypes' | 'glossaryMetadata' | 'glossaryDetection' | 'glossaryMode' | 'lastReadChapterId' | 'wordReplacements'>>
   ): Promise<NovelProject | null>;
   deleteGlossaryTerms(projectId: string, sourceTerms: string[]): Promise<NovelProject | null>;
   deleteChapters(projectId: string, chapterIds: string[]): Promise<NovelProject | null>;
@@ -108,6 +111,7 @@ function normalizeProject(p: any): NovelProject | null {
   return {
     id: String(p.id),
     title: String(p.title ?? 'ไม่มีชื่อเรื่อง'),
+    translationProfile: ['modern','xianxia','wuxia','fantasy','scifi'].includes(p.translationProfile) ? p.translationProfile : 'general',
     sourceUrl: String(p.sourceUrl ?? ''),
     host: String(p.host ?? ''),
     glossary: p.glossary && typeof p.glossary === 'object' ? p.glossary : {},
@@ -163,6 +167,7 @@ export const localStorageStore: NovelStore = {
     const project: NovelProject = {
       id: createId(),
       title: data.title,
+      translationProfile: 'general',
       sourceUrl: data.sourceUrl,
       host: data.host,
       glossary: data.glossary ?? {},
@@ -195,6 +200,7 @@ export const localStorageStore: NovelStore = {
     const target = projects.find((p) => p.id === id);
     if (!target) return null;
     if (patch.title !== undefined) target.title = patch.title;
+    if (patch.translationProfile !== undefined) target.translationProfile = patch.translationProfile;
     if (patch.glossary !== undefined) target.glossary = patch.glossary;
     if (patch.glossaryTypes !== undefined) target.glossaryTypes = patch.glossaryTypes;
     if (patch.glossaryMetadata !== undefined) target.glossaryMetadata = patch.glossaryMetadata;

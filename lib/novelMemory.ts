@@ -56,6 +56,27 @@ export async function saveTranslationInteractionId(
   if (error) throw error;
 }
 
+export async function loadTranslationInteractionState(projectId: string, model: string): Promise<{ interactionId?: string; count: number; summary: string }> {
+  const { data, error } = await getSupabase().from('novel_ai_conversations')
+    .select('last_interaction_id,interaction_count,conversation_summary')
+    .eq('project_id', projectId).eq('task_type', 'translation').eq('provider', 'gemini').eq('model', model).maybeSingle();
+  if (error) throw error;
+  return {
+    interactionId: data?.last_interaction_id ?? undefined,
+    count: Number(data?.interaction_count ?? 0),
+    summary: typeof data?.conversation_summary === 'string' ? data.conversation_summary : '',
+  };
+}
+
+export async function saveTranslationCompaction(
+  projectId: string, model: string, summary: string, newInteractionId: string,
+): Promise<void> {
+  const { error } = await getSupabase().from('novel_ai_conversations')
+    .update({ last_interaction_id: newInteractionId, interaction_count: 0, conversation_summary: summary, updated_at: new Date().toISOString() })
+    .eq('project_id', projectId).eq('task_type', 'translation').eq('provider', 'gemini').eq('model', model);
+  if (error) throw error;
+}
+
 type MemoryNode = {
   id: string;
   node_type: string;
@@ -279,24 +300,3 @@ export async function saveNovelMemoryGraph(
   if (checkpointError) throw checkpointError;
 }
 
-export async function compactTranslationHistoryIfNeeded(
-  projectId: string,
-  model: string,
-): Promise<boolean> {
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('novel_ai_conversations')
-    .select('id,interaction_count')
-    .eq('project_id', projectId)
-    .eq('task_type', 'translation')
-    .eq('provider', 'gemini')
-    .eq('model', model)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data || Number(data.interaction_count ?? 0) < 10) return false;
-  const { error: updateError } = await supabase.from('novel_ai_conversations')
-    .update({ last_interaction_id: null, interaction_count: 0, updated_at: new Date().toISOString() })
-    .eq('id', data.id);
-  if (updateError) throw updateError;
-  return true;
-}
