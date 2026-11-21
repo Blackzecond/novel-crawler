@@ -20,7 +20,7 @@ import {
   loadCloudReadingHistory, saveCloudReadingHistory,
 } from '@/lib/cloudPreferences';
 import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
-import { fetchWithNativeBrowser, prefetchWithNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
+import { fetchWithNativeBrowser, prefetchWithNativeBrowser, prefersNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 
 interface ArticleData {
   title: string;
@@ -225,6 +225,7 @@ export default function ReaderPage() {
     const activeProjectId = projectIdOverride === undefined ? projectId : projectIdOverride;
     setLoading(true); setError(''); setUrl(targetUrl); setAutoScroll(false);
     const cacheKey = `${activeProjectId ?? 'standalone'}:${targetUrl}`;
+    if (forceRender) chapterCacheRef.current.delete(cacheKey);
     try {
       if (!forceRender) {
         const inMemoryArticle = chapterCacheRef.current.get(cacheKey);
@@ -300,49 +301,69 @@ export default function ReaderPage() {
         return fallbackData;
       };
 
-      // Direct Fetch is always first. Only a confirmed challenge opens the visible
-      // WebView; transport failures may use the hidden session, while parse errors stop.
+      // Once this project has passed CAPTCHA in the app WebView, prefer that same
+      // app-private cookie session for later chapters. Server fetches cannot read
+      // Android WebView cookies and would otherwise trigger a fresh challenge each time.
       let data = null;
-      try {
-        const res = await fetch('/api/parse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: targetUrl, forceRender }),
-        });
-        const contentType = res.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          const rawText = await res.text().catch(() => '');
-          throw new Error(`Server ตอบกลับผิดพลาด (${res.status}): ${rawText.slice(0, 100)}...`);
-        }
-        const payload = await res.json();
-        if (!res.ok) {
-          const apiError = new Error(payload.error || 'เกิดข้อผิดพลาด') as Error & { status?: number; code?: string };
-          apiError.status = res.status;
-          apiError.code = payload.code;
-          throw apiError;
-        }
-        data = payload;
-      } catch (serverError) {
-        const failure = serverError as Error & { status?: number; code?: string };
-        let nativePage = null;
-        if (failure.code === 'WEBVIEW_REQUIRED' || failure.status === 428) {
-          nativePage = await fetchWithNativeBrowser(targetUrl);
-        } else if (failure.code === 'DIRECT_FETCH_FAILED') {
-          nativePage = await prefetchWithNativeBrowser(targetUrl);
-        } else {
-          throw serverError;
-        }
-        if (!nativePage) throw serverError;
+      if (activeProjectId && prefersNativeBrowser(activeProjectId)) {
         try {
-          const nativeData = await parseNativePage(nativePage);
-          if (!nativeData) throw serverError;
-          data = nativeData;
-        } catch (nativeError) {
-          const nativeFailure = nativeError as Error & { status?: number; code?: string };
-          if (nativeFailure.code !== 'WEBVIEW_REQUIRED' && nativeFailure.status !== 428) throw nativeError;
+          const nativePage = await prefetchWithNativeBrowser(targetUrl);
+          if (nativePage) data = await parseNativePage(nativePage);
+        } catch (nativePrefetchError) {
+          console.info('Native session prefetch needs visible verification:', nativePrefetchError);
+        }
+        if (!data) {
           const visiblePage = await fetchWithNativeBrowser(targetUrl);
-          if (!visiblePage) throw nativeError;
+          if (!visiblePage) throw new Error('ไม่สามารถเปิด WebView เพื่อดึงเนื้อหาใหม่ได้');
           data = await parseNativePage(visiblePage);
+        }
+      }
+
+      // Before the app has a verified WebView session, try direct fetch first.
+      // Confirmed challenges use the visible WebView; transport errors may use its
+      // hidden instance, which shares the same Android CookieManager.
+      if (!data) {
+        try {
+          const res = await fetch('/api/parse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: targetUrl, forceRender }),
+          });
+          const contentType = res.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            const rawText = await res.text().catch(() => '');
+            throw new Error(`Server ตอบกลับผิดพลาด (${res.status}): ${rawText.slice(0, 100)}...`);
+          }
+          const payload = await res.json();
+          if (!res.ok) {
+            const apiError = new Error(payload.error || 'เกิดข้อผิดพลาด') as Error & { status?: number; code?: string };
+            apiError.status = res.status;
+            apiError.code = payload.code;
+            throw apiError;
+          }
+          data = payload;
+        } catch (serverError) {
+          const failure = serverError as Error & { status?: number; code?: string };
+          let nativePage = null;
+          if (failure.code === 'WEBVIEW_REQUIRED' || failure.status === 428) {
+            nativePage = await fetchWithNativeBrowser(targetUrl);
+          } else if (failure.code === 'DIRECT_FETCH_FAILED') {
+            nativePage = await prefetchWithNativeBrowser(targetUrl);
+          } else {
+            throw serverError;
+          }
+          if (!nativePage) throw serverError;
+          try {
+            const nativeData = await parseNativePage(nativePage);
+            if (!nativeData) throw serverError;
+            data = nativeData;
+          } catch (nativeError) {
+            const nativeFailure = nativeError as Error & { status?: number; code?: string };
+            if (nativeFailure.code !== 'WEBVIEW_REQUIRED' && nativeFailure.status !== 428) throw nativeError;
+            const visiblePage = await fetchWithNativeBrowser(targetUrl);
+            if (!visiblePage) throw nativeError;
+            data = await parseNativePage(visiblePage);
+          }
         }
       }
       let articleData: ArticleData = data;
@@ -1168,7 +1189,7 @@ export default function ReaderPage() {
               onClick={() => fetchArticle(url, true)}
               className="h-9 px-3 bg-danger-fg text-white text-xs font-medium rounded-lg hover:brightness-110 inline-flex items-center gap-1.5 cursor-pointer"
             >
-              <RotateCcw className="w-3 h-3" /> ลองใหม่ (Force Full Render)
+              <RotateCcw className="w-3 h-3" /> ดึงเนื้อหาใหม่
             </button>
           </div>
         )}
@@ -1181,6 +1202,9 @@ export default function ReaderPage() {
               {/* Action Toolbar */}
               <div className="flex flex-nowrap items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-1.5">
+                  <button type="button" onClick={() => fetchArticle(url, true)} disabled={loading} aria-label={loading ? "กำลังดึงเนื้อหาใหม่" : "ดึงเนื้อหาใหม่"} title="ดึงเนื้อหาใหม่จากเว็บไซต์ต้นทาง" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-fg transition-colors hover:border-accent-line hover:bg-card disabled:opacity-50">
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                  </button>
                   <button type="button" onClick={handleCopy} aria-label={copied ? "คัดลอกแล้ว" : "คัดลอกเนื้อหา"} title={copied ? "คัดลอกแล้ว" : "คัดลอกเนื้อหา"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-fg transition-colors hover:border-accent-line hover:bg-card">
                     {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
                   </button>
