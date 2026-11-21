@@ -297,13 +297,16 @@ export const supabaseStore: NovelStore = {
         if (deleteError) throw deleteError;
       }
       if (patch.wordReplacements.length) {
-        const rows = patch.wordReplacements.map((item) => ({
+        // created_at is also the stable persisted order for rules; write it from array position.
+        const orderBase = Date.now();
+        const rows = patch.wordReplacements.map((item, index) => ({
           id: item.id,
           user_id: userId,
           project_id: id,
           variants: item.variants,
           replacement_text: item.replacement,
           use_regex: item.useRegex,
+          created_at: new Date(orderBase + index).toISOString(),
           updated_at: new Date().toISOString(),
         }));
         const { error: upsertError } = await supabase.from('glossary_replacements').upsert(rows, { onConflict: 'id' });
