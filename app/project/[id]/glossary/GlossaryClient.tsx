@@ -160,15 +160,15 @@ export default function GlossaryPage({ id }: { id: string }) {
   return <main className="min-h-screen bg-bg text-fg">
     <header className="mx-auto max-w-4xl px-4 pt-7 pb-4">
       <Link href={`/project/${id}`} className="inline-flex items-center gap-2 text-sm text-muted hover:text-fg"><ArrowLeft className="h-4 w-4" /> กลับไปยังสารบัญ</Link>
-      <div className="mt-8 flex items-center gap-3"><h1 className="text-3xl font-bold">Glossary</h1><span className="text-sm text-muted">{project.title}</span></div>
+      <div className="mt-8 flex items-center gap-3"><h1 className="text-3xl font-bold">ศัพท์ของเรื่องนี้</h1><span className="text-sm text-muted">{project.title}</span></div>
       <div className="mt-6 flex flex-wrap gap-2">
-        <button onClick={exportCsv} className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-card px-4 text-sm"><Download className="h-4 w-4"/> Export CSV</button>
-        <button onClick={() => fileRef.current?.click()} disabled={busy} className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-card px-4 text-sm"><FileUp className="h-4 w-4"/> Import CSV</button>
+        <button onClick={exportCsv} className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-card px-4 text-sm"><Download className="h-4 w-4"/> ส่งออก CSV</button>
+        <button onClick={() => fileRef.current?.click()} disabled={busy} className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-card px-4 text-sm"><FileUp className="h-4 w-4"/> นำเข้า CSV</button>
         <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={e => void importCsv(e.target.files?.[0])}/>
       </div>
       <section className="mt-4 rounded-2xl border border-line bg-card p-4 space-y-3">
-        <div><p className="text-sm font-semibold">Detect before every chapter</p><p className="mt-1 text-xs text-muted">เลือกประเภทศัพท์ที่ให้ AI ตรวจจับอัตโนมัติเมื่อเปิดบทใหม่</p></div>
-        {([{key:'characters' as const,label:'Characters',hint:'ชื่อตัวละคร',icon:UserRound},{key:'terms' as const,label:'Terms',hint:'สถานที่ สำนัก องค์กร สิ่งของ และศัพท์เฉพาะ',icon:BookOpen}]).map(option=>{
+        <div><p className="text-sm font-semibold">ตรวจจับศัพท์อัตโนมัติ</p><p className="mt-1 text-xs text-muted">เลือกประเภทศัพท์ที่ให้ AI ตรวจจับอัตโนมัติเมื่อเปิดบทใหม่</p></div>
+        {([{key:'characters' as const,label:'ตัวละคร',hint:'ชื่อตัวละคร',icon:UserRound},{key:'terms' as const,label:'ศัพท์เฉพาะ',hint:'สถานที่ สำนัก องค์กร สิ่งของ และคำเฉพาะของเรื่อง',icon:BookOpen}]).map(option=>{
           const enabled=project.glossaryDetection?.[option.key]===true;
           const Icon=option.icon;
           return <div key={option.key} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-bg px-3 py-2.5">
@@ -178,13 +178,13 @@ export default function GlossaryPage({ id }: { id: string }) {
         })}
       </section>
       <div className="mt-6 rounded-2xl border border-line bg-card p-1.5 flex gap-1">
-        {(['characters','terms','replacements'] as const).map(value => <button key={value} onClick={() => {setTab(value);setSelected([]);setQuery('');}} className={`flex-1 rounded-xl py-3 text-sm ${tab===value?'bg-accent-soft text-accent-soft-fg font-semibold':'text-muted'}`}>{value==='characters'?'Characters':value==='terms'?'Terms':'Replacements'}</button>)}
+        {(['characters','terms','replacements'] as const).map(value => <button key={value} onClick={() => {setTab(value);setSelected([]);setQuery('');}} className={`flex-1 rounded-xl py-3 text-sm ${tab===value?'bg-accent-soft text-accent-soft-fg font-semibold':'text-muted'}`}>{value==='characters'?'ตัวละคร':value==='terms'?'ศัพท์เฉพาะ':'กฎแทนคำ'}</button>)}
       </div>
     </header>
     <section className="mx-auto max-w-4xl px-4 pb-12">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[180px] flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={`Search ${tab}...`} className="h-11 w-full rounded-xl border border-line bg-card pl-10 pr-3 text-sm outline-none"/></div>
-        <button onClick={()=>tab==='replacements' ? setEditingReplacement({id:createId(),variants:[''],replacement:'',useRegex:false}) : setEditing({source:'',translated:'',type:tab==='characters'?'character':'term',gender:'unknown',category:'other',notes:''})} className="inline-flex h-11 items-center gap-2 rounded-full bg-accent px-5 text-sm font-medium text-accent-fg"><Plus className="h-4 w-4"/> Add</button>
+        <div className="relative min-w-[180px] flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={tab === "characters" ? "ค้นหาตัวละคร..." : tab === "terms" ? "ค้นหาศัพท์เฉพาะ..." : "ค้นหากฎแทนคำ..."} className="h-11 w-full rounded-xl border border-line bg-card pl-10 pr-3 text-sm outline-none"/></div>
+        <button onClick={()=>tab==='replacements' ? setEditingReplacement({id:createId(),variants:[''],replacement:'',useRegex:false}) : setEditing({source:'',translated:'',type:tab==='characters'?'character':'term',gender:'unknown',category:'other',notes:''})} className="inline-flex h-11 items-center gap-2 rounded-full bg-accent px-5 text-sm font-medium text-accent-fg"><Plus className="h-4 w-4"/> เพิ่ม</button>
       </div>
       <div className="mt-4 flex items-center justify-between text-xs text-muted">
         <span>{tab==='replacements'?(project.wordReplacements??[]).length:visible.length} รายการ</span>
