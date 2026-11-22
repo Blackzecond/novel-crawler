@@ -539,8 +539,8 @@ export default function ReaderPage() {
                     if (!isCurrentRequest()) return;
                     setReaderProject((current) => current?.id === activeProjectId ? updatedProject : current);
                     const names = added.map((pair) => pair.zh + ' → ' + pair.th).join(', ');
-                    setGlossaryNotice(`จับศัพท์อัตโนมัติและบันทึกแล้ว ${added.length} รายการจากบท “${savedChapter.title}”: ${names}`);
-                    setDetectedGlossary({ items: added.map((pair) => ({ zh: pair.zh, th: pair.th, type: pair.type, gender: pair.gender ?? 'unknown', category: pair.category ?? 'other', notes: '' })), sourceLabel: savedChapter.title, projectId: activeProjectId, chapterId: savedChapter.id });
+                    setGlossaryNotice(`เพิ่มศัพท์ ${added.length} คำจากบท “${savedChapter.title}”`);
+                    
                   } else if (isCurrentRequest()) {
                     setGlossaryNotice(pairs.length ? 'จับศัพท์อัตโนมัติแล้ว แต่ไม่มีรายการใหม่ (คำเดิมไม่ถูกเพิ่มซ้ำ)' : 'จับศัพท์อัตโนมัติแล้ว — ไม่พบคำใหม่ในบทนี้');
                   }
@@ -1211,7 +1211,7 @@ export default function ReaderPage() {
           </div>
         </div>
       </header>
-      {glossaryNotice && <div role="status" className="mx-auto max-w-3xl px-4 pt-3 text-xs leading-relaxed text-accent-soft-fg sm:px-6"><div className="rounded-lg border border-accent-line bg-accent-soft px-3 py-2"><BookMarked className="mr-1.5 inline h-3.5 w-3.5" />{glossaryNotice}</div></div>}
+      {glossaryNotice && <div role="status" className="mx-auto max-w-[44rem] px-5 pt-3 text-xs leading-relaxed text-accent-soft-fg"><div className="flex items-center justify-between gap-3 rounded-lg border border-accent-line bg-accent-soft px-3 py-2"><span><BookMarked className="mr-1.5 inline h-3.5 w-3.5" />{glossaryNotice}</span>{projectId && <a href={`/project/${encodeURIComponent(projectId)}/glossary`} className="shrink-0 font-semibold underline underline-offset-2">ตรวจดู</a>}</div></div>}
 
       {projectId && (
         <div className="max-w-[44rem] mx-auto px-5 pt-2">
