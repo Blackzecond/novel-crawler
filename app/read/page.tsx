@@ -538,7 +538,7 @@ export default function ReaderPage() {
                     if (!updatedProject) throw new Error('บันทึกคลังศัพท์ไม่สำเร็จ');
                     if (!isCurrentRequest()) return;
                     setReaderProject((current) => current?.id === activeProjectId ? updatedProject : current);
-                    const names = added.map((pair) => pair.zh + ' → ' + pair.th).join(', ');
+                    
                     setGlossaryNotice(`เพิ่มศัพท์ ${added.length} คำจากบท “${savedChapter.title}”`);
                     
                   } else if (isCurrentRequest()) {
@@ -1129,7 +1129,7 @@ export default function ReaderPage() {
   ] as const;
 
   return (
-    <div className={`min-h-screen bg-bg text-fg transition-colors duration-200 ${fontClasses[fontFamily]}`}>
+    <div className={`min-h-screen bg-bg text-fg transition-colors duration-200`}>
       {/* Header Bar — บางเบา คุมสูงตายตัว */}
       <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-md">
         <div className="max-w-[44rem] mx-auto flex items-center gap-2 h-14 px-3 sm:px-5">
@@ -1372,7 +1372,7 @@ export default function ReaderPage() {
         {article && (
           <article className="space-y-5">
             <div className="space-y-4 border-b border-line pb-5">
-              <h1 className="text-2xl sm:text-3xl font-bold leading-tight">{article.title}</h1>
+              <h1 className={`text-2xl sm:text-3xl font-bold leading-tight ${fontClasses[fontFamily]}`}>{article.title}</h1>
 
               {/* Reader controls: edition switching never invokes translation. */}
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1430,14 +1430,14 @@ export default function ReaderPage() {
 
             {/* Article Content Render */}
             {showTranslation && article.translatedText ? (
-              <div className="space-y-4 leading-[1.75]" style={{ fontSize: `${fontSize}px` }}>
+              <div className={`space-y-4 leading-[1.75] ${fontClasses[fontFamily]}`} style={{ fontSize: `${fontSize}px` }}>
                 {article.translatedText.split(/\n\s*\n/).map((paragraph, index) => (
                   <p key={index} className="mb-4 whitespace-pre-wrap">{paragraph}</p>
                 ))}
               </div>
             ) : (
               <div
-                className="space-y-4 [&>p]:mb-4 [&>p]:block leading-[1.75]"
+                className={`space-y-4 [&>p]:mb-4 [&>p]:block leading-[1.75] ${fontClasses[fontFamily]}`}
                 style={{ fontSize: `${fontSize}px` }}
                 dangerouslySetInnerHTML={{ __html: applyWordReplacementsToHtml(article.content, readerProject?.wordReplacements ?? []) }}
               />
