@@ -345,11 +345,13 @@ export default function ProjectsHomePage() {
               </button>
             )}
           </div>
-          <nav aria-label="เมนูหลัก" className="flex w-full min-w-0 items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:w-auto sm:flex-1 sm:justify-end sm:gap-2">
+          <nav aria-label="เมนูหลัก" className="flex w-full min-w-0 items-center justify-center overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:w-auto sm:flex-1 sm:justify-end">
+            <div className="mx-auto flex w-max min-w-full items-center justify-center gap-1 sm:gap-2">
             <a href="/read" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs"><BookOpen className="h-4 w-4" />อ่านด่วน</a>
             <a href="/dictionary" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs"><BookOpen className="h-4 w-4" />พจนานุกรม</a>
             <a href="/glossary-sets" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs"><Library className="h-4 w-4" />ชุดศัพท์</a>
             <a href="/settings/ai" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs" title="ตั้งค่า API สำหรับการแปลและจับศัพท์"><Sparkles className="h-4 w-4" />ตั้งค่า AI</a>
+            </div>
           </nav>
         </div>
       </header>
