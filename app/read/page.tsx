@@ -1191,7 +1191,6 @@ export default function ReaderPage() {
                 <Settings className="w-4 h-4" />
               </button>
             </div>
-          </div>
         </div>
       </header>
       {glossaryNotice && <div role="status" className="mx-auto max-w-[44rem] px-5 pt-3 text-xs leading-relaxed text-accent-soft-fg"><div className="flex items-center justify-between gap-3 rounded-lg border border-accent-line bg-accent-soft px-3 py-2"><span><BookMarked className="mr-1.5 inline h-3.5 w-3.5" />{glossaryNotice}</span>{projectId && <a href={`/project/${encodeURIComponent(projectId)}/glossary`} className="shrink-0 font-semibold underline underline-offset-2">ตรวจดู</a>}</div></div>}
