@@ -99,6 +99,7 @@ export default function GlossarySetsPage() {
       if (insertError) throw insertError;
       setSetName(''); setSetDescription('');
       setNotice('สร้างชุดคลังศัพท์แล้ว');
+      setMobileShowSet(true);
       await load(data.id);
     } catch (err) { setError(err instanceof Error ? err.message : 'สร้างชุดศัพท์ไม่สำเร็จ'); }
     finally { setBusy(false); }
@@ -162,7 +163,8 @@ export default function GlossarySetsPage() {
       }));
       const { error: importError } = await supabase.from('glossary_entries').upsert(rows, { onConflict: 'project_id,source_term' });
       if (importError) throw importError;
-      setNotice(`นำเข้า ${terms.length} คำไปยังโปรเจกต์แล้ว (คำที่มีชื่อจีนซ้ำจะถูกอัปเดต)`);
+      const destinationName = projects.find((project) => project.id === targetProject)?.title ?? 'นิยายปลายทาง';
+      setNotice(`นำเข้า ${terms.length} คำไปยัง “${destinationName}” แล้ว (คำที่มีชื่อจีนซ้ำจะถูกอัปเดต)`);
       setSelectedTerms([]);
     } catch (err) { setError(err instanceof Error ? err.message : 'นำเข้าคลังศัพท์ไม่สำเร็จ'); }
     finally { setBusy(false); }
@@ -249,6 +251,7 @@ export default function GlossarySetsPage() {
                     </select>
                   </label>
                   {!targetProject && <p className="text-xs text-muted">ต้องเลือกนิยายปลายทางก่อนนำเข้าคำศัพท์</p>}
+                  {projects.length === 0 && <p className="text-xs text-muted">ยังไม่มีโปรเจกต์นิยายในบัญชีนี้</p>}
                   <p className="text-xs text-muted">คำจีนที่ซ้ำจะอัปเดตคำแปลในนิยายปลายทางที่เลือกเท่านั้น</p>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <button onClick={() => void importEntries(false)} disabled={busy || !targetProject || !selectedTerms.length} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line px-3 text-xs font-semibold hover:bg-surface disabled:opacity-40"><FilePlus2 className="h-4 w-4" />นำเข้าที่เลือก ({selectedTerms.length})</button>
