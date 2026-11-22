@@ -327,7 +327,7 @@ export default function ProjectsHomePage() {
     <div className="min-h-screen bg-bg text-fg transition-colors duration-200">
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-line/80 bg-card/85 backdrop-blur-xl">
-        <div className="max-w-5xl mx-auto flex items-center justify-between gap-3 px-4 sm:px-6 h-16">
+        <div className="max-w-5xl mx-auto flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6">
           <a href="/" className="flex items-center gap-3 min-w-0" aria-label="Novel Translator หน้าหลัก">
             <span className="h-10 w-10 inline-flex items-center justify-center rounded-2xl bg-accent text-accent-fg shadow-sm shadow-accent/20 shrink-0">
               <Library className="w-5 h-5" />
@@ -370,9 +370,7 @@ export default function ProjectsHomePage() {
         )}
         {/* ฟอร์มเพิ่มนิยายเปิดเมื่อผู้ใช้เรียก หรือเมื่อคลังว่างจริง */}
         {(showCreateForm || (mounted && !projectsError && projects.length === 0)) && (
-        <section id="new-project" className="relative isolate overflow-hidden rounded-3xl border border-accent-line/70 bg-card shadow-sm">
-          <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-br from-accent-soft via-card to-card" />
-          <div aria-hidden="true" className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-accent/10 blur-3xl" />
+        <section id="new-project" className="rounded-2xl border border-line bg-card shadow-sm">
           <div className="p-5 sm:p-8 space-y-5 sm:space-y-6">
           <div className="flex items-start gap-3">
             <span className="h-11 w-11 inline-flex items-center justify-center rounded-2xl bg-accent text-accent-fg shadow-md shadow-accent/20 shrink-0">
@@ -413,7 +411,7 @@ export default function ProjectsHomePage() {
           </form>
 
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            <span className="text-xs font-medium text-muted mr-1">เว็บที่รองรับตัวอย่าง</span>
+            <span className="text-xs font-medium text-muted mr-1">เว็บที่รองรับ</span>
             {EXAMPLE_SITES.map((site) => (
               <button
                 key={site.host}

@@ -525,9 +525,12 @@ export default function ProjectClient({ id }: { id: string }) {
           <Link href="/" className="inline-flex min-h-10 shrink-0 items-center gap-1 rounded-lg pr-2 text-sm font-medium text-muted hover:text-fg">
             <ChevronLeft className="h-4 w-4" /> ชั้นหนังสือ
           </Link>
-          <a href={project.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-line px-3 text-xs text-muted hover:bg-card hover:text-fg">
-            <ExternalLink className="h-4 w-4" /> ต้นฉบับ
-          </a>
+          <div className="flex shrink-0 items-center gap-2">
+            <a href="#manage-project" className="inline-flex min-h-10 items-center rounded-lg border border-line px-3 text-xs font-medium text-muted hover:bg-card hover:text-fg">จัดการเรื่อง</a>
+            <a href={project.sourceUrl} target="_blank" rel="noreferrer" aria-label="เปิดหน้าสารบัญต้นฉบับ" title="เปิดหน้าสารบัญต้นฉบับ" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-line text-muted hover:bg-card hover:text-fg">
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          </div>
         </div>
       </header>
 
@@ -594,11 +597,11 @@ export default function ProjectClient({ id }: { id: string }) {
             return (
               <div key={c.id} className="flex items-center gap-3 px-3 py-3 hover:bg-surface/50 sm:px-4">
                 {bulkDeleteMode && <input type="checkbox" checked={selected} onChange={(e) => setSelectedChapterIds(current => e.target.checked ? [...current, c.id] : current.filter(value => value !== c.id))} aria-label={`เลือกลบ ${c.title}`} className="h-4 w-4 shrink-0"/>}
-                <span className="hidden w-10 shrink-0 text-right text-xs tabular-nums text-muted sm:block">{c.order + 1}</span>
+                <span className="w-8 shrink-0 text-center text-xs tabular-nums text-muted">{c.order + 1}</span>
                 <Link href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(c.url)}`} className="min-w-0 flex-1 text-left">
                   <span className="line-clamp-2 block text-sm leading-snug">{c.title}</span>
                   {c.error && <span className="mt-0.5 block truncate text-xs text-danger-fg">{c.error}</span>}
-                  {isLastRead && <span className="mt-0.5 block text-[11px] text-accent-soft-fg">อ่านค้างไว้</span>}
+                  {isLastRead && <span className="mt-1 inline-flex rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent-soft-fg">อ่านค้างไว้</span>}
                 </Link>
                 <StatusBadge status={c.status}/>
                 <div className="relative shrink-0">
@@ -623,7 +626,7 @@ export default function ProjectClient({ id }: { id: string }) {
           )}
         </section>
 
-        <details className="group rounded-2xl border border-line bg-card">
+        <details id="manage-project" className="group rounded-2xl border border-line bg-card">
           <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-medium">
             <span>จัดการเรื่อง</span><ChevronDown className="h-4 w-4 text-muted transition-transform group-open:rotate-180" />
           </summary>
@@ -688,10 +691,6 @@ export default function ProjectClient({ id }: { id: string }) {
           </div>
         </details>
       </main>
-      {detectedGlossary && <DetectedGlossaryModal items={detectedGlossary.items} sourceLabel={detectedGlossary.sourceLabel} onClose={() => setDetectedGlossary(null)} onSave={saveDetectedGlossaryEdits} />}
-    </div>
-  );
-}
       {detectedGlossary && <DetectedGlossaryModal items={detectedGlossary.items} sourceLabel={detectedGlossary.sourceLabel} onClose={() => setDetectedGlossary(null)} onSave={saveDetectedGlossaryEdits} />}
     </div>
   );
