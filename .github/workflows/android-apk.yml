@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       server_url:
-        description: "URL ของ Novel Crawler ที่ deploy แล้ว เช่น https://your-app.vercel.app"
+        description: "URL ของ Novel Crawler ที่ deploy แล้ว เช่น https://your-app.vercel.app (กรอกโดเมนเปล่าได้)"
         required: true
         type: string
 
@@ -32,9 +32,21 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Validate app URL
+      - name: Normalize and validate app URL
+        shell: bash
         run: |
-          node -e "const u = new URL(process.env.CAPACITOR_SERVER_URL); if (!['https:', 'http:'].includes(u.protocol)) process.exit(1); console.log('Building wrapper for', u.origin)"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const raw = process.env.CAPACITOR_SERVER_URL?.trim();
+          if (!raw) throw new Error('App URL is required.');
+          const normalized = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`;
+          const url = new URL(normalized);
+          if (!['https:', 'http:'].includes(url.protocol) || !url.hostname || url.username || url.password) {
+            throw new Error('Enter a valid HTTP(S) app URL.');
+          }
+          fs.appendFileSync(process.env.GITHUB_ENV, `CAPACITOR_SERVER_URL=${url.origin}${url.pathname.replace(/\/$/, '')}\n`);
+          console.log('Building wrapper for', url.origin);
+          NODE
 
       - name: Add Android platform
         run: npx cap add android

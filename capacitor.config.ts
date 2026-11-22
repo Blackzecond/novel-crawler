@@ -1,20 +1,30 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
-const serverUrl = process.env.CAPACITOR_SERVER_URL?.trim();
+const rawServerUrl = process.env.CAPACITOR_SERVER_URL?.trim();
 
-if (process.env.CI === 'true' && !serverUrl) {
+if (process.env.CI === 'true' && !rawServerUrl) {
   throw new Error('CAPACITOR_SERVER_URL is required when building the Android wrapper.');
+}
+
+const serverUrl = rawServerUrl
+  ? (/^[a-z][a-z0-9+.-]*:\/\//i.test(rawServerUrl) ? rawServerUrl : `https://${rawServerUrl}`)
+  : undefined;
+
+const parsedServerUrl = serverUrl ? new URL(serverUrl) : undefined;
+
+if (parsedServerUrl && !['https:', 'http:'].includes(parsedServerUrl.protocol)) {
+  throw new Error('CAPACITOR_SERVER_URL must use http:// or https://.');
 }
 
 const config: CapacitorConfig = {
   appId: 'com.blackzecond.novelcrawler',
   appName: 'Novel Crawler',
   webDir: 'www',
-  server: serverUrl
+  server: parsedServerUrl
     ? {
-        url: serverUrl,
+        url: parsedServerUrl.origin + parsedServerUrl.pathname,
         cleartext: false,
-        allowNavigation: [new URL(serverUrl).hostname],
+        allowNavigation: [parsedServerUrl.hostname],
       }
     : undefined,
   android: {
