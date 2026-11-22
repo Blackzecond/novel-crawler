@@ -1,5 +1,7 @@
 import type { GlossaryDetection, GlossaryMetadata, NewProjectData, NovelChapter, NovelProject, NovelStore, WordReplacement } from '@/lib/storage';
 import { getSupabase } from '@/lib/supabase';
+import { importNovelMemoryBundle, type NovelMemoryBackup } from '@/lib/novelMemory';
+import { withStableReplacementOrder, resolveChapterStatus } from '@/lib/readerIntegrity.mjs';
 
 const BUCKET = 'novel-content';
 
@@ -76,30 +78,44 @@ async function currentUserId(): Promise<string> {
 }
 
 async function loadProjectRows(projectId?: string) {
-  const supabase = getSupabase();
-  let query = supabase.from('novel_projects').select('*').order('updated_at', { ascending: false });
-  if (projectId) query = query.eq('id', projectId);
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data ?? []) as ProjectRow[];
+  const supabase = getSupabase(); const pageSize = 500; const rows: ProjectRow[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    let query = supabase.from('novel_projects').select('*').order('updated_at', { ascending: false }).order('id');
+    if (projectId) query = query.eq('id', projectId);
+    const { data, error } = await query.range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []) as ProjectRow[]; rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
 }
 
 async function loadChapters(projectIds: string[]): Promise<ChapterRow[]> {
   if (!projectIds.length) return [];
-  const { data, error } = await getSupabase()
-    .from('novel_chapters').select('*').in('project_id', projectIds).order('chapter_order');
-  if (error) throw error;
-  return (data ?? []) as ChapterRow[];
+  const pageSize = 500; const rows: ChapterRow[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await getSupabase().from('novel_chapters').select('*')
+      .in('project_id', projectIds).order('chapter_order').order('id').range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []) as ChapterRow[]; rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
 }
 
 async function loadGlossary(projectIds: string[]): Promise<Map<string, { terms: Record<string, string>; types: Record<string, 'character' | 'term'> }>> {
   const result = new Map<string, { terms: Record<string, string>; types: Record<string, 'character' | 'term'> }>();
   if (!projectIds.length) return result;
-  const { data, error } = await getSupabase()
-    .from('glossary_entries').select('project_id, source_term, translated_term, term_type')
-    .in('project_id', projectIds);
-  if (error) throw error;
-  for (const row of (data ?? []) as GlossaryRow[]) {
+  const pageSize = 500; const rows: GlossaryRow[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await getSupabase().from('glossary_entries')
+      .select('project_id, source_term, translated_term, term_type').in('project_id', projectIds)
+      .order('project_id').order('source_term').range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []) as GlossaryRow[]; rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  for (const row of rows) {
     const value = result.get(row.project_id) ?? { terms: {}, types: {} };
     value.terms[row.source_term] = row.translated_term;
     value.types[row.source_term] = row.term_type === 'character' ? 'character' : 'term';
@@ -111,11 +127,16 @@ async function loadGlossary(projectIds: string[]): Promise<Map<string, { terms: 
 async function loadWordReplacements(projectIds: string[]): Promise<Map<string, WordReplacement[]>> {
   const result = new Map<string, WordReplacement[]>();
   if (!projectIds.length) return result;
-  const { data, error } = await getSupabase().from('glossary_replacements')
-    .select('id, project_id, variants, replacement_text, use_regex, created_at')
-    .in('project_id', projectIds).order('created_at');
-  if (error) throw error;
-  for (const row of (data ?? []) as Array<ReplacementRow & { project_id: string }>) {
+  const pageSize = 500; const rows: Array<ReplacementRow & { project_id: string }> = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await getSupabase().from('glossary_replacements')
+      .select('id, project_id, variants, replacement_text, use_regex, created_at')
+      .in('project_id', projectIds).order('project_id').order('created_at').order('id').range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []) as Array<ReplacementRow & { project_id: string }>; rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  for (const row of rows) {
     const items = result.get(row.project_id) ?? [];
     items.push({ id: row.id, variants: row.variants ?? [], replacement: row.replacement_text, useRegex: row.use_regex });
     result.set(row.project_id, items);
@@ -278,13 +299,16 @@ export const supabaseStore: NovelStore = {
         if (deleteError) throw deleteError;
       }
       if (patch.wordReplacements.length) {
-        const rows = patch.wordReplacements.map((item) => ({
+        // created_at is also the stable persisted order for rules; write it from array position.
+        const orderedRules = withStableReplacementOrder(patch.wordReplacements);
+        const rows = orderedRules.map((item) => ({
           id: item.id,
           user_id: userId,
           project_id: id,
           variants: item.variants,
           replacement_text: item.replacement,
           use_regex: item.useRegex,
+          created_at: item.created_at,
           updated_at: new Date().toISOString(),
         }));
         const { error: upsertError } = await supabase.from('glossary_replacements').upsert(rows, { onConflict: 'id' });
@@ -343,6 +367,7 @@ export const supabaseStore: NovelStore = {
         skipped++;
         continue;
       }
+      const aiMemory = (raw as NovelProject & { aiMemory?: NovelMemoryBackup }).aiMemory;
       let created: NovelProject | null = null;
       try {
         created = await this.createProject({
@@ -373,6 +398,7 @@ export const supabaseStore: NovelStore = {
             error: oldChapter.error,
             originalText: oldChapter.originalText,
             translatedText: oldChapter.translatedText,
+            preProofreadText: oldChapter.preProofreadText,
             readerContent: oldChapter.readerContent,
           };
           await this.updateChapter(created.id, newId, patch);
@@ -384,12 +410,16 @@ export const supabaseStore: NovelStore = {
         await this.updateProject(created.id, {
           glossary,
           translationProfile: ['modern','xianxia','wuxia','fantasy','scifi'].includes(raw.translationProfile) ? raw.translationProfile : 'general',
-          wordReplacements: Array.isArray(raw.wordReplacements) ? raw.wordReplacements : [],
+          wordReplacements: Array.isArray(raw.wordReplacements)
+            ? raw.wordReplacements.map((rule: WordReplacement) => ({ ...rule, id: crypto.randomUUID() }))
+            : [],
+          glossaryTypes: raw.glossaryTypes && typeof raw.glossaryTypes === 'object' ? raw.glossaryTypes : {},
           glossaryMode: raw.glossaryMode === 'auto' ? 'auto' : 'manual',
           glossaryMetadata: raw.glossaryMetadata && typeof raw.glossaryMetadata === 'object' ? raw.glossaryMetadata : {},
           glossaryDetection: raw.glossaryDetection && typeof raw.glossaryDetection === 'object' ? raw.glossaryDetection : { characters: raw.glossaryMode === 'auto', terms: raw.glossaryMode === 'auto' },
           lastReadChapterId: newLastRead?.id,
         });
+        if (aiMemory) await importNovelMemoryBundle(created.id, aiMemory);
         imported++;
       } catch {
         skipped++;
@@ -596,10 +626,15 @@ export const supabaseStore: NovelStore = {
     }
     await Promise.all(uploads);
     if (patch.title !== undefined) update.title = patch.title;
+    let finalStatus = patch.status ?? row.status;
     if (patch.status !== undefined) {
-      update.status = patch.status;
-      if (patch.status === 'fetched') update.fetched_at = new Date().toISOString();
-      if (patch.status === 'translated') update.translated_at = new Date().toISOString();
+      // A slow source-content upload must not downgrade a translation completed in parallel.
+      const latestRow = await getChapterRow(projectId, actualChapterId);
+      const clearsTranslation = patch.translatedText === '' && patch.preProofreadText === '';
+      finalStatus = resolveChapterStatus(latestRow?.status ?? row.status, patch.status, clearsTranslation);
+      update.status = finalStatus;
+      if (finalStatus === 'fetched') update.fetched_at = new Date().toISOString();
+      if (finalStatus === 'translated' && latestRow?.status !== 'translated') update.translated_at = new Date().toISOString();
     }
     if ('error' in patch) update.error_message = patch.error ?? null;
 
@@ -612,7 +647,7 @@ export const supabaseStore: NovelStore = {
       ...row,
       title: patch.title ?? row.title,
       chapter_order: patch.order ?? row.chapter_order,
-      status: patch.status ?? row.status,
+      status: finalStatus,
       error_message: 'error' in patch ? patch.error ?? null : row.error_message,
       original_storage_provider: patch.originalText !== undefined ? 'supabase' : row.original_storage_provider,
       original_storage_path: originalPath,

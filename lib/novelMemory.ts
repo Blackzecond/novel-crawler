@@ -1,4 +1,4 @@
-import { getSupabase } from '@/lib/supabase';
+import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 
 type ConversationRow = {
   last_interaction_id: string | null;
@@ -300,3 +300,108 @@ export async function saveNovelMemoryGraph(
   if (checkpointError) throw checkpointError;
 }
 
+
+
+export type NovelMemoryBackup = {
+  nodes: Array<Record<string, any>>;
+  edges: Array<Record<string, any>>;
+  conversations: Array<Record<string, any>>;
+};
+
+async function loadAllProjectRows(table: string, projectId: string, userId: string): Promise<Array<Record<string, any>>> {
+  const supabase = getSupabase();
+  const pageSize = 500;
+  const rows: Array<Record<string, any>> = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase.from(table).select('*').eq('project_id', projectId)
+      .eq('user_id', userId).order('id').range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []) as Array<Record<string, any>>;
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
+}
+
+/** Export graph memory and project conversation/checkpoint metadata for a complete project backup. */
+export async function exportNovelMemoryBundle(projectId: string): Promise<NovelMemoryBackup | null> {
+  if (!isSupabaseConfigured()) return null;
+  const supabase = getSupabase();
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError) throw authError;
+  if (!auth.user) return null;
+  const [nodes, edges, conversations] = await Promise.all([
+    loadAllProjectRows('novel_ai_memory_nodes', projectId, auth.user.id),
+    loadAllProjectRows('novel_ai_memory_edges', projectId, auth.user.id),
+    loadAllProjectRows('novel_ai_conversations', projectId, auth.user.id),
+  ]);
+  return { nodes, edges, conversations };
+}
+
+/** Restore project-scoped memory with fresh node/edge IDs. External Gemini interaction IDs are intentionally reset. */
+export async function importNovelMemoryBundle(projectId: string, bundle: NovelMemoryBackup | null | undefined): Promise<void> {
+  if (!bundle || !isSupabaseConfigured()) return;
+  const supabase = getSupabase();
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError || !auth.user) throw new Error('กรุณาเข้าสู่ระบบก่อนนำเข้าความจำ AI');
+  const now = new Date().toISOString();
+  const nodeIds = new Map<string, string>();
+  for (const node of bundle.nodes ?? []) if (typeof node.id === 'string') nodeIds.set(node.id, crypto.randomUUID());
+
+  const nodeRows = (bundle.nodes ?? []).flatMap((node) => {
+    const id = nodeIds.get(node.id);
+    if (!id || !node.canonical_name || !node.node_type) return [];
+    return [{
+      id, user_id: auth.user.id, project_id: projectId, node_type: node.node_type,
+      canonical_name: node.canonical_name, source_terms: Array.isArray(node.source_terms) ? node.source_terms : [],
+      summary: typeof node.summary === 'string' ? node.summary : '',
+      attributes: node.attributes && typeof node.attributes === 'object' ? node.attributes : {},
+      importance: Math.min(5, Math.max(1, Number(node.importance) || 3)),
+      first_chapter_order: Number.isFinite(node.first_chapter_order) ? node.first_chapter_order : null,
+      last_chapter_order: Number.isFinite(node.last_chapter_order) ? node.last_chapter_order : null,
+      evidence: typeof node.evidence === 'string' ? node.evidence : null,
+      created_at: typeof node.created_at === 'string' ? node.created_at : now, updated_at: now,
+    }];
+  });
+  for (let i = 0; i < nodeRows.length; i += 200) {
+    const { error } = await supabase.from('novel_ai_memory_nodes').insert(nodeRows.slice(i, i + 200));
+    if (error) throw error;
+  }
+
+  const edgeRows = (bundle.edges ?? []).flatMap((edge) => {
+    const sourceId = nodeIds.get(edge.source_node_id); const targetId = nodeIds.get(edge.target_node_id);
+    if (!sourceId || !targetId || sourceId === targetId || !edge.relation_type) return [];
+    return [{
+      id: crypto.randomUUID(), user_id: auth.user.id, project_id: projectId,
+      source_node_id: sourceId, target_node_id: targetId, relation_type: edge.relation_type,
+      description: typeof edge.description === 'string' ? edge.description : '',
+      first_chapter_order: Number.isFinite(edge.first_chapter_order) ? edge.first_chapter_order : null,
+      last_chapter_order: Number.isFinite(edge.last_chapter_order) ? edge.last_chapter_order : null,
+      evidence: typeof edge.evidence === 'string' ? edge.evidence : null,
+      created_at: typeof edge.created_at === 'string' ? edge.created_at : now, updated_at: now,
+    }];
+  });
+  for (let i = 0; i < edgeRows.length; i += 200) {
+    const { error } = await supabase.from('novel_ai_memory_edges').insert(edgeRows.slice(i, i + 200));
+    if (error) throw error;
+  }
+
+  const conversationRows = (bundle.conversations ?? []).flatMap((row) => {
+    if (!row.task_type || !row.provider || !row.model) return [];
+    return [{
+      user_id: auth.user.id, project_id: projectId, task_type: row.task_type,
+      provider: row.provider, model: row.model,
+      // Interaction IDs belong to the original external Gemini chain; continue from the imported summary instead.
+      last_interaction_id: null, interaction_count: 0,
+      last_chapter_order: Number.isFinite(row.last_chapter_order) ? row.last_chapter_order : null,
+      conversation_summary: typeof row.conversation_summary === 'string' ? row.conversation_summary : '',
+      updated_at: now,
+    }];
+  });
+  if (conversationRows.length) {
+    const { error } = await supabase.from('novel_ai_conversations').upsert(conversationRows, {
+      onConflict: 'project_id,task_type,provider,model',
+    });
+    if (error) throw error;
+  }
+}

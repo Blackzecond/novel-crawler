@@ -21,6 +21,7 @@ import {
 } from '@/lib/cloudPreferences';
 import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
 import { fetchWithNativeBrowser, prefetchWithNativeBrowser, prefersNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
+import { escapeReaderText, isReaderTargetCurrent, isArticleTargetCurrent, mergeReadingHistory } from '@/lib/readerIntegrity.mjs';
 
 interface ArticleData {
   title: string;
@@ -32,12 +33,15 @@ interface ArticleData {
   nextUrl: string | null;
   /** Real Supabase chapter UUID once a catalog placeholder has been persisted. */
   chapterId?: string;
+  sourceUrl?: string;
+  projectId?: string | null;
 }
 
 interface HistoryItem {
   url: string;
   title: string;
   readAt: number;
+  projectId?: string | null;
 }
 
 export default function ReaderPage() {
@@ -52,10 +56,15 @@ export default function ReaderPage() {
   const chapterCacheRef = useRef<Map<string, ArticleData>>(new Map());
   const prefetchingRef = useRef<Set<string>>(new Set());
   const activeChapterUrlRef = useRef<string>('');
+  const readerRequestRef = useRef(0);
+  const activeProjectIdRef = useRef<string | null>(null);
+  const historyRef = useRef<HistoryItem[]>([]);
+  const historyWriteRef = useRef<Promise<void>>(Promise.resolve());
+  const historyClearRef = useRef(0);
   const [showToc, setShowToc] = useState(false);
   const [showGlossary, setShowGlossary] = useState(false);
   const [glossaryNotice, setGlossaryNotice] = useState('');
-  const [detectedGlossary, setDetectedGlossary] = useState<{ items: DetectedGlossaryItem[]; sourceLabel?: string } | null>(null);
+  const [detectedGlossary, setDetectedGlossary] = useState<{ items: DetectedGlossaryItem[]; sourceLabel?: string; projectId?: string | null; chapterId?: string } | null>(null);
   const [readerGlossaryZh, setReaderGlossaryZh] = useState('');
   const [readerGlossaryTh, setReaderGlossaryTh] = useState('');
   const [readerGlossaryType, setReaderGlossaryType] = useState<'character' | 'term'>('term');
@@ -96,6 +105,8 @@ export default function ReaderPage() {
       } catch { return []; }
     })();
     const localSettings = loadReaderSettings();
+    const initialHistoryClear = historyClearRef.current;
+    historyRef.current = localHistory;
     setHistory(localHistory);
     setFontSize(localSettings.fontSize);
     setFontFamily(localSettings.fontFamily);
@@ -109,11 +120,17 @@ export default function ReaderPage() {
           loadCloudReaderSettings(),
         ]);
         if (cloudHistory && cloudHistory.length > 0) {
-          setHistory(cloudHistory);
-          localStorage.setItem('novel_history', JSON.stringify(cloudHistory));
-        } else if (localHistory.length > 0) {
-          // First sync: preserve history that already exists on this device.
-          await saveCloudReadingHistory(localHistory);
+          const clearedWhileLoading = historyClearRef.current !== initialHistoryClear;
+          const merged = clearedWhileLoading ? mergeReadingHistory(historyRef.current) : mergeReadingHistory(historyRef.current, cloudHistory);
+          historyRef.current = merged; setHistory(merged);
+          localStorage.setItem('novel_history', JSON.stringify(merged));
+          historyWriteRef.current = historyWriteRef.current.catch(() => undefined).then(() => saveCloudReadingHistory(merged))
+            .catch((syncError) => console.warn('Could not sync hydrated reading history:', syncError));
+        } else if (historyRef.current.length > 0) {
+          const merged = mergeReadingHistory(historyRef.current);
+          historyRef.current = merged; setHistory(merged);
+          historyWriteRef.current = historyWriteRef.current.catch(() => undefined).then(() => saveCloudReadingHistory(merged));
+          await historyWriteRef.current;
         }
         if (cloudSettings && Object.keys(cloudSettings).length > 0) {
           const merged = { ...localSettings, ...cloudSettings };
@@ -190,21 +207,20 @@ export default function ReaderPage() {
     };
   }, [autoScroll, scrollSpeed]);
 
-  const saveToHistory = (itemUrl: string, itemTitle: string) => {
-    const newHistory = [
-      { url: itemUrl, title: itemTitle, readAt: Date.now() },
-      ...history.filter((h) => h.url !== itemUrl),
-    ].slice(0, 20); // เก็บไว้สูงสุด 20 เรื่องล่าสุด
-
-    setHistory(newHistory);
+  const saveToHistory = (itemUrl: string, itemTitle: string, itemProjectId: string | null = projectId) => {
+    const newHistory = mergeReadingHistory([{ url: itemUrl, title: itemTitle, readAt: Date.now(), projectId: itemProjectId }, ...historyRef.current]);
+    historyRef.current = newHistory; setHistory(newHistory);
     localStorage.setItem('novel_history', JSON.stringify(newHistory));
-    void saveCloudReadingHistory(newHistory).catch((syncError) => console.warn('Could not sync reading history:', syncError));
+    historyWriteRef.current = historyWriteRef.current.catch(() => undefined).then(() => saveCloudReadingHistory(newHistory))
+      .catch((syncError) => console.warn('Could not sync reading history:', syncError));
   };
 
   const clearHistory = () => {
-    setHistory([]);
+    historyClearRef.current++;
+    historyRef.current = []; setHistory([]);
     localStorage.removeItem('novel_history');
-    void saveCloudReadingHistory([]).catch((syncError) => console.warn('Could not clear cloud reading history:', syncError));
+    historyWriteRef.current = historyWriteRef.current.catch(() => undefined).then(() => saveCloudReadingHistory([]))
+      .catch((syncError) => console.warn('Could not clear cloud reading history:', syncError));
   };
 
   // Keep the current chapter in the address bar so refresh restores the chapter being read.
@@ -226,14 +242,24 @@ export default function ReaderPage() {
   const fetchArticle = async (targetUrl: string, forceRender = false, projectIdOverride?: string | null) => {
     if (!targetUrl) return;
     const activeProjectId = projectIdOverride === undefined ? projectId : projectIdOverride;
+    const requestId = ++readerRequestRef.current;
+    const isCurrentRequest = () => isReaderTargetCurrent(
+      { requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current },
+      { requestId, url: targetUrl, projectId: activeProjectId },
+    );
     activeChapterUrlRef.current = targetUrl;
+    activeProjectIdRef.current = activeProjectId;
+    if (projectId !== activeProjectId) {
+      setDetectedGlossary(null); setGlossaryNotice('');
+    }
+    setTranslationBusy(false); setEditorBusy(false);
     setLoading(true); setError(''); setUrl(targetUrl); setAutoScroll(false);
     const cacheKey = `${activeProjectId ?? 'standalone'}:${targetUrl}`;
     if (forceRender) chapterCacheRef.current.delete(cacheKey);
     try {
       if (!forceRender) {
         const inMemoryArticle = chapterCacheRef.current.get(cacheKey);
-        if (inMemoryArticle) {
+        if (inMemoryArticle && (!activeProjectId || readerProject?.id === activeProjectId)) {
           setArticle(inMemoryArticle);
           setTranslationError('');
           setShowTranslation(false);
@@ -247,13 +273,15 @@ export default function ReaderPage() {
           } else {
             setCurrentChapterId(cachedChapterId);
           }
+          if (!activeProjectId) setReaderProject(null);
           if (activeProjectId && memoryChapter && !memoryChapter.id.startsWith('catalog:')) {
             void getStore().updateProject(activeProjectId, { lastReadChapterId: cachedChapterId ?? memoryChapter.id })
               .catch((progressError) => console.warn('Could not update last-read progress:', progressError));
           }
           if (!(activeProjectId && !cachedChapterId)) {
+            setProjectId(activeProjectId);
             syncReaderUrl(targetUrl, activeProjectId);
-            saveToHistory(targetUrl, inMemoryArticle.title);
+            saveToHistory(targetUrl, inMemoryArticle.title, activeProjectId);
             window.scrollTo({ top: 0, behavior: 'smooth' });
             return;
           }
@@ -266,8 +294,8 @@ export default function ReaderPage() {
         project = readerProject?.id === activeProjectId
           ? readerProject
           : await getStore().getProject(activeProjectId);
+        if (!isCurrentRequest()) return;
         if (project) {
-          setReaderProject(project);
           chapter = project.chapters.find((item) => item.url === targetUrl) ?? null;
         }
       }
@@ -276,24 +304,39 @@ export default function ReaderPage() {
           includeOriginalText: true,
           includeTranslatedText: true,
         });
-        if (cached?.readerContent !== undefined && project.chapters.findIndex((item) => item.url === targetUrl) < project.chapters.length - 1) {
+        if (!isCurrentRequest()) return;
+        if (cached && (cached.readerContent !== undefined || cached.originalText !== undefined)) {
           const index = project.chapters.findIndex((item) => item.url === targetUrl);
+          const cachedHtml = cached.readerContent ?? (cached.originalText ?? '').split(/\n{2,}/).map((paragraph: string) => `<p>${escapeReaderText(paragraph).replace(/\n/g, '<br>')}</p>`).join('');
           const cachedArticle: ArticleData = {
-            title: chapter.title, chapterId: chapter.id, content: cached.readerContent,
+            title: chapter.title, chapterId: chapter.id, sourceUrl: targetUrl, projectId: activeProjectId, content: cachedHtml,
             translatedText: cached.translatedText,
             preProofreadText: cached.preProofreadText,
-            textContent: cached.originalText ?? cached.readerContent.replace(/<[^>]*>/g, ' ').trim(),
+            textContent: cached.originalText ?? (cached.readerContent ?? '').replace(/<[^>]*>/g, ' ').trim(),
             prevUrl: index > 0 ? project.chapters[index - 1].url : null,
             nextUrl: index >= 0 && index < project.chapters.length - 1 ? project.chapters[index + 1].url : null,
           };
           chapterCacheRef.current.set(cacheKey, cachedArticle);
+          setProjectId(activeProjectId);
+          setReaderProject(project);
           setCurrentChapterId(chapter.id);
           setTranslationError('');
           setShowTranslation(false);
           setArticle(cachedArticle);
           syncReaderUrl(targetUrl, activeProjectId);
-          saveToHistory(targetUrl, cachedArticle.title);
+          saveToHistory(targetUrl, cachedArticle.title, activeProjectId);
           void getStore().updateProject(activeProjectId, { lastReadChapterId: chapter.id }).catch((progressError) => console.warn('Could not update last-read progress:', progressError));
+          if (index === project.chapters.length - 1) {
+            // Recheck a cached final chapter in the background for newly published next chapters.
+            void fetch('/api/parse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: targetUrl }) })
+              .then(async (response) => response.ok ? response.json() : null)
+              .then((fresh) => {
+                if (!fresh?.nextUrl) return;
+                const refreshed = { ...cachedArticle, nextUrl: fresh.nextUrl };
+                chapterCacheRef.current.set(cacheKey, refreshed);
+                if (isCurrentRequest()) setArticle((current) => current?.chapterId === chapter.id ? refreshed : current);
+              }).catch((refreshError) => console.info('Final chapter navigation refresh skipped:', refreshError));
+          }
           window.scrollTo({ top: 0, behavior: 'smooth' }); return;
         }
       }
@@ -380,8 +423,11 @@ export default function ReaderPage() {
           }
         }
       }
+      if (!isCurrentRequest()) return;
       let articleData: ArticleData = {
         ...data,
+        sourceUrl: targetUrl,
+        projectId: activeProjectId,
         chapterId: chapter && !chapter.id.startsWith('catalog:') ? chapter.id : undefined,
       };
       if (activeProjectId && project && chapter) {
@@ -394,6 +440,8 @@ export default function ReaderPage() {
       // Render first. Saving to Storage/DB runs in the background so network persistence
       // cannot hold the reader on its loading screen after parsing has succeeded.
       chapterCacheRef.current.set(cacheKey, articleData);
+      setProjectId(activeProjectId);
+      setReaderProject(project);
       setCurrentChapterId(chapter?.id && !chapter.id.startsWith('catalog:') ? chapter.id : null);
       setTranslationError('');
       setShowTranslation(false);
@@ -441,11 +489,19 @@ export default function ReaderPage() {
               error: undefined,
             });
             if (!savedChapter) throw new Error('บันทึกเนื้อหาบทไม่สำเร็จ');
-            const savedArticle = { ...articleData, chapterId: savedChapter.id };
+            if (!isCurrentRequest()) return;
+            // A translation can finish while the source-save callback is still running.
+            // Merge only the real UUID into the latest cache/UI object; never replace a
+            // newer translated draft with the stale articleData captured before the save.
+            const latestCachedArticle = chapterCacheRef.current.get(cacheKey) ?? articleData;
+            const savedArticle = { ...latestCachedArticle, chapterId: savedChapter.id };
             chapterCacheRef.current.set(cacheKey, savedArticle);
-            if (activeChapterUrlRef.current === targetUrl) {
+            if (activeChapterUrlRef.current === targetUrl && activeProjectIdRef.current === activeProjectId) {
               setCurrentChapterId(savedChapter.id);
-              setArticle((current) => current && activeChapterUrlRef.current === targetUrl ? savedArticle : current);
+              setArticle((current) => current && current.sourceUrl === targetUrl
+                && (current.projectId ?? null) === (activeProjectId ?? null)
+                ? { ...current, chapterId: savedChapter.id }
+                : current);
             }
             setReaderProject((current) => current?.id === activeProjectId ? {
               ...current,
@@ -461,7 +517,9 @@ export default function ReaderPage() {
             if ((project!.glossaryDetection?.characters || project!.glossaryDetection?.terms) && hasAiKey() && data.textContent) {
               try {
                 const pairs = await detectNamedTerms(data.textContent, undefined, project!.glossaryDetection);
+                if (!isCurrentRequest()) return;
                 const latest = await getStore().getProject(activeProjectId);
+                if (!isCurrentRequest()) return;
                 if (latest) {
                   const glossary = { ...latest.glossary };
                   const glossaryTypes = { ...latest.glossaryTypes };
@@ -477,16 +535,17 @@ export default function ReaderPage() {
                   if (added.length) {
                     const updatedProject = await getStore().updateProject(activeProjectId, { glossary, glossaryTypes, glossaryMetadata });
                     if (!updatedProject) throw new Error('บันทึกคลังศัพท์ไม่สำเร็จ');
-                    setReaderProject(updatedProject);
+                    if (!isCurrentRequest()) return;
+                    setReaderProject((current) => current?.id === activeProjectId ? updatedProject : current);
                     const names = added.map((pair) => pair.zh + ' → ' + pair.th).join(', ');
                     setGlossaryNotice(`จับศัพท์อัตโนมัติและบันทึกแล้ว ${added.length} รายการจากบท “${savedChapter.title}”: ${names}`);
-                    setDetectedGlossary({ items: added.map((pair) => ({ zh: pair.zh, th: pair.th, type: pair.type, gender: pair.gender ?? 'unknown', category: pair.category ?? 'other', notes: '' })), sourceLabel: savedChapter.title });
-                  } else {
+                    setDetectedGlossary({ items: added.map((pair) => ({ zh: pair.zh, th: pair.th, type: pair.type, gender: pair.gender ?? 'unknown', category: pair.category ?? 'other', notes: '' })), sourceLabel: savedChapter.title, projectId: activeProjectId, chapterId: savedChapter.id });
+                  } else if (isCurrentRequest()) {
                     setGlossaryNotice(pairs.length ? 'จับศัพท์อัตโนมัติแล้ว แต่ไม่มีรายการใหม่ (คำเดิมไม่ถูกเพิ่มซ้ำ)' : 'จับศัพท์อัตโนมัติแล้ว — ไม่พบคำใหม่ในบทนี้');
                   }
                 }
               } catch (detectError) {
-                setGlossaryNotice(`จับศัพท์อัตโนมัติไม่สำเร็จ: ${detectError instanceof Error ? detectError.message : String(detectError)}`);
+                if (isCurrentRequest()) setGlossaryNotice(`จับศัพท์อัตโนมัติไม่สำเร็จ: ${detectError instanceof Error ? detectError.message : String(detectError)}`);
               }
             }
           } catch (saveError) {
@@ -494,9 +553,21 @@ export default function ReaderPage() {
           }
         })();
       }
-      saveToHistory(targetUrl, articleData.title);
+      saveToHistory(targetUrl, articleData.title, activeProjectId);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (err: any) { setError(err.message); } finally { setLoading(false); }
+    } catch (err: any) {
+      if (isCurrentRequest()) {
+        setError(err.message);
+        setLoading(false);
+        if (article?.sourceUrl) {
+          setUrl(article.sourceUrl);
+          activeChapterUrlRef.current = article.sourceUrl;
+          activeProjectIdRef.current = article.projectId !== undefined ? article.projectId : projectId;
+        }
+      }
+    } finally {
+      if (isCurrentRequest()) setLoading(false);
+    }
   };
 
   // Quietly fetch one chapter ahead. This path never opens WebView or blocks the reader.
@@ -659,6 +730,8 @@ export default function ReaderPage() {
       const chapterIndex = project?.chapters.findIndex((item) => item.url === targetUrl) ?? -1;
       const prefetchedArticle: ArticleData = {
         ...data,
+        sourceUrl: targetUrl,
+        projectId: activeProjectId,
         chapterId: chapter && !chapter.id.startsWith('catalog:') ? chapter.id : undefined,
         title: chapter?.title || data.title,
         prevUrl: chapterIndex > 0 ? project!.chapters[chapterIndex - 1].url : data.prevUrl ?? null,
@@ -698,36 +771,62 @@ export default function ReaderPage() {
 
   // Start fetching the next chapter as soon as the current chapter is available.
   useEffect(() => {
-    if (!article?.nextUrl) return;
-    void prefetchNextChapter(article.nextUrl, projectId, readerProject, url);
-  }, [article?.nextUrl, projectId, readerProject, url]);
+    if (loading || !article?.nextUrl || !article.sourceUrl) return;
+    // The article owns its project identity. Do not combine its nextUrl with
+    // projectId/url state from a different navigation render.
+    if (!isArticleTargetCurrent(article, projectId, url)) return;
+    const articleProjectId = article.projectId ?? null;
+    const matchingProject = readerProject?.id === articleProjectId ? readerProject : null;
+    void prefetchNextChapter(article.nextUrl, articleProjectId, matchingProject, article.sourceUrl);
+  }, [loading, article?.nextUrl, article?.sourceUrl, article?.projectId, projectId, readerProject, url]);
 
   const handleTranslate = async () => {
-    if (!article || translationBusy || editorBusy) return;
+    if (!article || loading || translationBusy || editorBusy || !isArticleTargetCurrent(article, projectId, url)) return;
     const settings = loadAiSettings();
     if (!hasAiKey(settings)) {
       setTranslationError('ยังไม่ได้ตั้งค่า API สำหรับการแปล กรุณากรอก Base URL, Model และ API Key ก่อน');
       return;
     }
+    const translationRequestId = readerRequestRef.current;
+    const targetProjectId = projectId;
+    let targetChapterId = article.chapterId ?? currentChapterId;
+    const targetUrl = url;
+    let targetArticle = article;
+    const isActiveTranslation = () => isReaderTargetCurrent(
+      { requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current },
+      { requestId: translationRequestId, url: targetUrl, projectId: targetProjectId },
+    );
     setTranslationBusy(true);
     setTranslationError('');
     try {
-      const latestProject = projectId ? await getStore().getProject(projectId) : null;
+      const latestProject = targetProjectId ? await getStore().getProject(targetProjectId) : null;
+      if (!isActiveTranslation()) return;
+      if (targetProjectId && !targetChapterId) {
+        const catalogChapter = latestProject?.chapters.find((item) => item.url === targetUrl);
+        const nextOrder = catalogChapter?.order ?? Math.max(-1, ...(latestProject?.chapters ?? []).map((item) => item.order)) + 1;
+        const ensured = await getStore().ensureChapter(targetProjectId, { url: targetUrl, title: targetArticle.title, order: nextOrder });
+        if (!ensured) throw new Error('ไม่สามารถเตรียมรหัสบทก่อนบันทึกคำแปลได้');
+        if (!isActiveTranslation()) return;
+        targetChapterId = ensured.id; targetArticle = { ...targetArticle, chapterId: ensured.id };
+        setCurrentChapterId(ensured.id);
+        setArticle((current) => current && activeChapterUrlRef.current === targetUrl ? { ...current, chapterId: ensured.id } : current);
+        chapterCacheRef.current.set(`${targetProjectId}:${targetUrl}`, targetArticle);
+      }
       const glossary = latestProject?.glossary ?? readerProject?.glossary ?? {};
       const replacements = latestProject?.wordReplacements ?? readerProject?.wordReplacements ?? [];
-      const sourceText = applyWordReplacements(article.textContent, replacements);
+      const sourceText = applyWordReplacements(targetArticle.textContent, replacements);
       const dictionaryTerms = await findRelevantGlobalDictionaryTerms(sourceText, glossary).catch((dictionaryError) => {
         console.warn('Global dictionary matching skipped:', dictionaryError);
         return [];
       });
-      const graphMemoryContext = projectId
-        ? await loadNovelMemoryContext(projectId, sourceText).catch((memoryError) => {
+      const graphMemoryContext = targetProjectId
+        ? await loadNovelMemoryContext(targetProjectId, sourceText).catch((memoryError) => {
             console.warn('Novel memory retrieval skipped:', memoryError);
             return '';
           })
         : '';
-      const conversationState = projectId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
-        ? await loadTranslationInteractionState(projectId, settings.model).catch((stateError) => {
+      const conversationState = targetProjectId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
+        ? await loadTranslationInteractionState(targetProjectId, settings.model).catch((stateError) => {
             console.warn('Could not load Gemini conversation summary:', stateError);
             return { interactionId: undefined, count: 0, summary: '' };
           })
@@ -736,8 +835,8 @@ export default function ReaderPage() {
         conversationState.summary ? '[สรุปบริบทการแปลก่อนหน้า]\n' + conversationState.summary : '',
         graphMemoryContext,
       ].filter(Boolean).join('\n\n');
-      const previousInteractionId = projectId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
-        ? (conversationState.interactionId ?? await loadTranslationInteractionId(projectId, settings.model).catch((stateError) => {
+      const previousInteractionId = targetProjectId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')
+        ? (conversationState.interactionId ?? await loadTranslationInteractionId(targetProjectId, settings.model).catch((stateError) => {
             console.warn('Could not load Gemini interaction state:', stateError);
             return undefined;
           }))
@@ -747,12 +846,12 @@ export default function ReaderPage() {
         previousInteractionId,
         memoryContext,
         translationProfile: latestProject?.translationProfile ?? 'general',
-        storeInteraction: Boolean(projectId),
+        storeInteraction: Boolean(targetProjectId),
         onInteractionId: (id) => { nextInteractionId = id; },
       }), replacements);
-      if (projectId && nextInteractionId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')) {
-        const chapterOrder = latestProject?.chapters.find((item) => item.id === currentChapterId)?.order;
-        await saveTranslationInteractionId(projectId, settings.model, nextInteractionId, chapterOrder)
+      if (targetProjectId && nextInteractionId && settings.baseUrl.toLowerCase().includes('generativelanguage.googleapis.com')) {
+        const chapterOrder = latestProject?.chapters.find((item) => item.id === targetChapterId)?.order;
+        await saveTranslationInteractionId(targetProjectId, settings.model, nextInteractionId, chapterOrder)
           .catch((stateError) => console.warn('Could not save Gemini interaction state:', stateError));
       }
 
@@ -777,23 +876,22 @@ export default function ReaderPage() {
         }
       }
 
-      const updatedArticle = { ...article, translatedText: translated, preProofreadText: preProofreadText || undefined };
-      setArticle(updatedArticle);
-      chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
-      setShowTranslation(true);
+      const updatedArticle = { ...targetArticle, translatedText: translated, preProofreadText: preProofreadText || undefined };
+      chapterCacheRef.current.set(`${targetProjectId ?? 'standalone'}:${targetUrl}`, updatedArticle);
+      if (isActiveTranslation()) { setArticle(updatedArticle); setShowTranslation(true); }
 
-      if (projectId && currentChapterId) {
+      if (targetProjectId && targetChapterId) {
         try {
-          const saved = await getStore().updateChapter(projectId, currentChapterId, {
+          const saved = await getStore().updateChapter(targetProjectId, targetChapterId, {
             translatedText: translated,
             preProofreadText,
             status: 'translated',
             error: undefined,
           });
           if (saved) {
-            setReaderProject((current) => current?.id === projectId ? {
+            setReaderProject((current) => current?.id === targetProjectId && isActiveTranslation() ? {
               ...current,
-              chapters: current.chapters.map((item) => item.id === currentChapterId
+              chapters: current.chapters.map((item) => item.id === targetChapterId
                 ? { ...item, status: 'translated', preProofreadText }
                 : item),
             } : current);
@@ -805,32 +903,32 @@ export default function ReaderPage() {
                 : settings.baseUrl.toLowerCase().includes('maas.aliyuncs.com') || settings.baseUrl.toLowerCase().includes('dashscope')
                   ? 'qwen'
                   : 'custom';
-              const memoryProject = await getStore().getProject(projectId);
-              const checkpoint = await loadMemoryExtractionCheckpoint(projectId, provider, settings.model);
+              const memoryProject = await getStore().getProject(targetProjectId);
+              const checkpoint = await loadMemoryExtractionCheckpoint(targetProjectId, provider, settings.model);
               const pendingChapters = (memoryProject?.chapters ?? [])
                 .filter((item) => item.status === 'translated' && item.order <= saved.order && (checkpoint === null || item.order > checkpoint))
                 .sort((a, b) => a.order - b.order)
                 .slice(0, 5);
               if (pendingChapters.length === 5) {
                 const memorySources = await Promise.all(pendingChapters.map(async (item) => {
-                  const content = await getStore().getChapterContent(projectId, item.id, {
+                  const content = await getStore().getChapterContent(targetProjectId, item.id, {
                     includeOriginalText: true,
                     includeTranslatedText: false,
                   });
                   return { order: item.order, title: item.title, sourceText: content?.originalText ?? '' };
                 }));
                 if (memorySources.every((item) => item.sourceText.trim())) {
-                  const existingMemory = await loadNovelMemoryForExtraction(projectId);
+                  const existingMemory = await loadNovelMemoryForExtraction(targetProjectId);
                   const extracted = await extractNovelMemory(memorySources, existingMemory, settings);
-                  await saveNovelMemoryGraph(projectId, provider, settings.model, pendingChapters[4].order, extracted);
+                  await saveNovelMemoryGraph(targetProjectId, provider, settings.model, pendingChapters[4].order, extracted);
                   if (provider === 'gemini') {
-                    const state = await loadTranslationInteractionState(projectId, settings.model);
+                    const state = await loadTranslationInteractionState(targetProjectId, settings.model);
                     if (state.count >= 10 && state.interactionId) {
                       // สร้าง summary ต่อจาก chain เก่าก่อน แล้วค่อยบันทึก ID ใหม่และ reset counter
                       const compacted = await summarizeGeminiTranslationHistory(
-                        state.interactionId, state.summary, await loadNovelMemoryForExtraction(projectId), settings,
+                        state.interactionId, state.summary, await loadNovelMemoryForExtraction(targetProjectId), settings,
                       );
-                      await saveTranslationCompaction(projectId, settings.model, compacted.summary, compacted.interactionId);
+                      await saveTranslationCompaction(targetProjectId, settings.model, compacted.summary, compacted.interactionId);
                     }
                   }
                 }
@@ -838,97 +936,80 @@ export default function ReaderPage() {
             } catch (memoryUpdateError) {
               console.warn('Batched novel memory update skipped:', memoryUpdateError);
             }
-          } else {
+          } else if (isActiveTranslation()) {
             setTranslationError('แปลสำเร็จแล้ว แต่ยังบันทึกคำแปลลงคลังไม่ได้ คำแปลนี้ยังแสดงอยู่ใน Reader');
           }
         } catch (saveError) {
           console.warn('Could not save translated chapter:', saveError);
-          setTranslationError('แปลสำเร็จแล้ว แต่บันทึกคำแปลไม่สำเร็จ คำแปลนี้ยังแสดงอยู่ใน Reader');
+          if (isActiveTranslation()) setTranslationError('แปลสำเร็จแล้ว แต่บันทึกคำแปลไม่สำเร็จ คำแปลนี้ยังแสดงอยู่ใน Reader');
         }
       }
-      if (proofreadWarning) setTranslationError(proofreadWarning);
+      if (proofreadWarning && isActiveTranslation()) setTranslationError(proofreadWarning);
     } catch (err) {
-      setTranslationError(err instanceof Error ? err.message : 'แปลไม่สำเร็จ');
-    } finally {
-      setTranslationBusy(false);
-    }
+      if (isActiveTranslation()) setTranslationError(err instanceof Error ? err.message : 'แปลไม่สำเร็จ');
+    } finally { if (isActiveTranslation()) setTranslationBusy(false); }
   };
   const handleRestorePreProofread = async () => {
-    if (!article?.preProofreadText) return;
-    const restored = article.preProofreadText;
+    if (!article?.preProofreadText || loading || !isArticleTargetCurrent(article, projectId, url)) return;
+    const targetArticle = article, targetProjectId = projectId, targetUrl = url, requestId = readerRequestRef.current;
+    const isActive = () => isReaderTargetCurrent({ requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current }, { requestId, url: targetUrl, projectId: targetProjectId });
+    const restored = targetArticle.preProofreadText;
     try {
-      if (projectId && currentChapterId) {
-        await getStore().updateChapter(projectId, currentChapterId, {
-          translatedText: restored,
-          preProofreadText: '',
-          status: 'translated',
-          error: undefined,
-        });
+      let chapterId = targetArticle.chapterId ?? currentChapterId;
+      if (targetProjectId && !chapterId) {
+        const project = await getStore().getProject(targetProjectId); const chapter = project?.chapters.find((item) => item.url === targetUrl);
+        const ensured = await getStore().ensureChapter(targetProjectId, { url: targetUrl, title: targetArticle.title, order: chapter?.order ?? Math.max(-1, ...(project?.chapters ?? []).map((item) => item.order)) + 1 });
+        if (!ensured) throw new Error('ไม่สามารถเตรียมรหัสบทเพื่อคืนฉบับก่อนตรวจได้'); chapterId = ensured.id;
       }
-      const updatedArticle = { ...article, translatedText: restored, preProofreadText: undefined };
-      setArticle(updatedArticle);
-      chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
-      setShowTranslation(true);
-      if (projectId && currentChapterId) {
-        setReaderProject((current) => current?.id === projectId ? {
-          ...current,
-          chapters: current.chapters.map((item) => item.id === currentChapterId
-            ? { ...item, translatedText: restored, preProofreadText: undefined }
-            : item),
-        } : current);
+      if (targetProjectId && chapterId) {
+        const saved = await getStore().updateChapter(targetProjectId, chapterId, { translatedText: restored, preProofreadText: '', status: 'translated', error: undefined });
+        if (!saved) throw new Error('บันทึกฉบับก่อนตรวจไม่สำเร็จ');
       }
-    } catch (restoreError) {
-      setTranslationError('คืนฉบับก่อนตรวจไม่สำเร็จ: ' + (restoreError instanceof Error ? restoreError.message : String(restoreError)));
-    }
+      const updatedArticle = { ...targetArticle, chapterId: chapterId ?? undefined, translatedText: restored, preProofreadText: undefined };
+      chapterCacheRef.current.set(`${targetProjectId ?? 'standalone'}:${targetUrl}`, updatedArticle);
+      if (isActive()) { setCurrentChapterId(chapterId ?? null); setArticle(updatedArticle); setShowTranslation(true); }
+      if (targetProjectId && chapterId) setReaderProject((current) => current?.id === targetProjectId && isActive() ? { ...current, chapters: current.chapters.map((item) => item.id === chapterId ? { ...item, status: 'translated', translatedText: restored, preProofreadText: undefined } : item) } : current);
+    } catch (restoreError) { if (isActive()) setTranslationError('คืนฉบับก่อนตรวจไม่สำเร็จ: ' + (restoreError instanceof Error ? restoreError.message : String(restoreError))); }
   };
 
   const handleEditTranslation = async () => {
-    if (!article?.translatedText || editorBusy || translationBusy) return;
+    if (!article?.translatedText || loading || editorBusy || translationBusy || !isArticleTargetCurrent(article, projectId, url)) return;
     const settings = loadAiSettings();
     if (!hasAiKey(settings)) {
       setTranslationError('ยังไม่ได้ตั้งค่า API สำหรับ AI บ.ก. กรุณาตั้งค่า API ก่อน');
       return;
     }
-    setEditorBusy(true);
-    setTranslationError('');
+    const targetArticle = article, targetProjectId = projectId, targetUrl = url, requestId = readerRequestRef.current;
+    const isActive = () => isReaderTargetCurrent({ requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current }, { requestId, url: targetUrl, projectId: targetProjectId });
+    setEditorBusy(true); setTranslationError('');
     try {
-      // AI บ.ก. ได้รับเฉพาะคำแปลไทย ไม่ส่งต้นฉบับจีนหรือข้อมูลคลังศัพท์
-      const originalDraft = article.translatedText;
+      const originalDraft = targetArticle.translatedText ?? '';
+      if (!originalDraft) return;
       const edited = await proofreadThaiFormatting(originalDraft, settings);
-      const updatedArticle = {
-        ...article,
-        translatedText: edited,
-        preProofreadText: article.preProofreadText ?? originalDraft,
-      };
-      setArticle(updatedArticle);
-      chapterCacheRef.current.set(`${projectId ?? 'standalone'}:${url}`, updatedArticle);
-      setShowTranslation(true);
-
-      if (projectId && currentChapterId) {
-        try {
-          const saved = await getStore().updateChapter(projectId, currentChapterId, {
-            translatedText: edited,
-            preProofreadText: updatedArticle.preProofreadText,
-            status: 'translated',
-            error: undefined,
-          });
-          if (!saved) setTranslationError('AI บ.ก. ตรวจรูปแบบแล้ว แต่บันทึกฉบับแก้ไขลงคลังไม่ได้');
-        } catch (saveError) {
-          console.warn('Could not save AI-formatted chapter:', saveError);
-          setTranslationError('AI บ.ก. ตรวจรูปแบบแล้ว แต่บันทึกฉบับแก้ไขลงคลังไม่สำเร็จ');
-        }
+      let targetChapterId = targetArticle.chapterId ?? currentChapterId;
+      if (targetProjectId && !targetChapterId) {
+        const project = await getStore().getProject(targetProjectId); const chapter = project?.chapters.find((item) => item.url === targetUrl);
+        const ensured = await getStore().ensureChapter(targetProjectId, { url: targetUrl, title: targetArticle.title, order: chapter?.order ?? Math.max(-1, ...(project?.chapters ?? []).map((item) => item.order)) + 1 });
+        if (!ensured) throw new Error('ไม่สามารถเตรียมรหัสบทก่อนบันทึกผล AI บ.ก. ได้'); targetChapterId = ensured.id;
       }
-    } catch (err) {
-      setTranslationError(err instanceof Error ? err.message : 'AI บ.ก. ตรวจรูปแบบไม่สำเร็จ');
-    } finally {
-      setEditorBusy(false);
-    }
+      const updatedArticle = { ...targetArticle, chapterId: targetChapterId ?? undefined, translatedText: edited, preProofreadText: targetArticle.preProofreadText ?? originalDraft };
+      chapterCacheRef.current.set(`${targetProjectId ?? 'standalone'}:${targetUrl}`, updatedArticle);
+      if (targetProjectId && targetChapterId) {
+        const saved = await getStore().updateChapter(targetProjectId, targetChapterId, { translatedText: edited, preProofreadText: updatedArticle.preProofreadText, status: 'translated', error: undefined });
+        if (!saved) throw new Error('AI บ.ก. ตรวจรูปแบบแล้ว แต่บันทึกฉบับแก้ไขลงคลังไม่ได้');
+      }
+      if (isActive()) { setCurrentChapterId(targetChapterId ?? null); setArticle(updatedArticle); setShowTranslation(true); }
+      if (targetProjectId && targetChapterId) setReaderProject((current) => current?.id === targetProjectId && isActive() ? { ...current, chapters: current.chapters.map((item) => item.id === targetChapterId ? { ...item, status: 'translated', preProofreadText: updatedArticle.preProofreadText } : item) } : current);
+    } catch (err) { if (isActive()) setTranslationError(err instanceof Error ? err.message : 'AI บ.ก. ตรวจรูปแบบไม่สำเร็จ'); }
+    finally { if (isActive()) setEditorBusy(false); }
   };
 
   const updateReaderGlossaryTerm = async (source: string, translated: string, type?: 'character' | 'term') => {
-    if (!projectId) return;
+    const targetProjectId = projectId, targetUrl = url, requestId = readerRequestRef.current;
+    const isActive = () => isReaderTargetCurrent({ requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current }, { requestId, url: targetUrl, projectId: targetProjectId });
+    if (!targetProjectId || loading) return;
     try {
-      const latest = await getStore().getProject(projectId);
+      const latest = await getStore().getProject(targetProjectId);
       if (!latest) throw new Error('ไม่พบโปรเจกต์');
       const glossary = { ...latest.glossary };
       const glossaryTypes = { ...latest.glossaryTypes };
@@ -939,18 +1020,21 @@ export default function ReaderPage() {
         glossary[source] = translated.trim();
         if (type) glossaryTypes[source] = type;
       }
-      const updated = await getStore().updateProject(projectId, { glossary, glossaryTypes });
+      const updated = await getStore().updateProject(targetProjectId, { glossary, glossaryTypes });
       if (!updated) throw new Error('บันทึกคลังศัพท์ไม่สำเร็จ');
-      setReaderProject(updated);
-      setGlossaryNotice(`บันทึกแล้ว: ${source}${translated.trim() ? ' → ' + translated.trim() : ' (ลบออกแล้ว)'}`);
+      setReaderProject((current) => current?.id === targetProjectId ? updated : current);
+      if (isActive()) setGlossaryNotice(`บันทึกแล้ว: ${source}${translated.trim() ? ' → ' + translated.trim() : ' (ลบออกแล้ว)'}`);
     } catch (err) {
-      setGlossaryNotice(`บันทึกไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
+      if (isActive()) setGlossaryNotice(`บันทึกไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
   const saveDetectedGlossaryEdits = async (items: DetectedGlossaryItem[]) => {
-    if (!projectId) return;
-    const latest = await getStore().getProject(projectId);
+    const targetProjectId = detectedGlossary?.projectId ?? projectId;
+    const targetModalChapterId = detectedGlossary?.chapterId;
+    const targetModalSourceLabel = detectedGlossary?.sourceLabel;
+    if (!targetProjectId) return;
+    const latest = await getStore().getProject(targetProjectId);
     if (!latest) throw new Error('ไม่พบโปรเจกต์');
     const glossary = { ...latest.glossary };
     const glossaryTypes = { ...latest.glossaryTypes };
@@ -970,31 +1054,31 @@ export default function ReaderPage() {
       glossaryTypes[zh] = item.type;
       glossaryMetadata[zh] = item.type === 'character' ? { gender: item.gender ?? 'unknown', notes: item.notes ?? '' } : { category: item.category ?? 'other', notes: item.notes ?? '' };
     }
-    const updated = await getStore().updateProject(projectId, { glossary, glossaryTypes, glossaryMetadata });
+    const updated = await getStore().updateProject(targetProjectId, { glossary, glossaryTypes, glossaryMetadata });
     if (!updated) throw new Error('บันทึกการแก้ไขคลังศัพท์ไม่สำเร็จ');
-    setReaderProject(updated);
-    setGlossaryNotice(`บันทึกการแก้ไขศัพท์แล้ว ${items.filter((item) => item.zh.trim() && item.th.trim()).length} รายการ`);
-    setDetectedGlossary(null);
+    setReaderProject((current) => current?.id === targetProjectId ? updated : current);
+    if (activeProjectIdRef.current === targetProjectId) setGlossaryNotice(`บันทึกการแก้ไขศัพท์แล้ว ${items.filter((item) => item.zh.trim() && item.th.trim()).length} รายการ`);
+    setDetectedGlossary((current) => current?.projectId === targetProjectId && current?.chapterId === targetModalChapterId && current?.sourceLabel === targetModalSourceLabel ? null : current);
   };
 
   const addReaderGlossaryTerm = async () => {
     const source = readerGlossaryZh.trim();
     const translated = readerGlossaryTh.trim();
-    if (!projectId || !source || !translated) return;
+    const targetProjectId = projectId, targetUrl = url, requestId = readerRequestRef.current;
+    const isActive = () => isReaderTargetCurrent({ requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current }, { requestId, url: targetUrl, projectId: targetProjectId });
+    if (!targetProjectId || !source || !translated || loading) return;
     try {
-      const latest = await getStore().getProject(projectId);
+      const latest = await getStore().getProject(targetProjectId);
       if (!latest) throw new Error('ไม่พบโปรเจกต์');
-      const updated = await getStore().updateProject(projectId, {
+      const updated = await getStore().updateProject(targetProjectId, {
         glossary: { ...latest.glossary, [source]: translated },
         glossaryTypes: { ...latest.glossaryTypes, [source]: readerGlossaryType },
       });
       if (!updated) throw new Error('บันทึกคลังศัพท์ไม่สำเร็จ');
-      setReaderProject(updated);
-      setReaderGlossaryZh('');
-      setReaderGlossaryTh('');
-      setGlossaryNotice(`เพิ่มและบันทึกแล้ว: ${source} → ${translated}`);
+      setReaderProject((current) => current?.id === targetProjectId ? updated : current);
+      if (isActive()) { setReaderGlossaryZh(''); setReaderGlossaryTh(''); setGlossaryNotice(`เพิ่มและบันทึกแล้ว: ${source} → ${translated}`); }
     } catch (err) {
-      setGlossaryNotice(`เพิ่มศัพท์ไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
+      if (isActive()) setGlossaryNotice(`เพิ่มศัพท์ไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -1248,7 +1332,7 @@ export default function ReaderPage() {
                     <button
                       onClick={() => {
                         setShowHistory(false);
-                        fetchArticle(item.url);
+                        fetchArticle(item.url, false, item.projectId ?? null);
                       }}
                       className="px-2.5 h-7 bg-accent text-accent-fg rounded-md text-xs font-medium shrink-0 cursor-pointer"
                     >

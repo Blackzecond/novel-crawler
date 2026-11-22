@@ -5,6 +5,7 @@ export interface ReadingHistoryItem {
   url: string;
   title: string;
   readAt: number;
+  projectId?: string | null;
 }
 
 export interface CloudAiSettings {

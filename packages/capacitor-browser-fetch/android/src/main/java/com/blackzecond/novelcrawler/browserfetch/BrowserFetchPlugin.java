@@ -104,7 +104,7 @@ public class BrowserFetchPlugin extends Plugin {
             @Override
             public void run() {
                 if (finished[0]) return;
-                String probeScript = "(()=>{const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const l=b.toLowerCase();const challenge=l.includes('just a moment')||l.includes('verify you are human')||l.includes('performing security verification')||l.includes('checking your browser')||l.includes('checking if the site connection is secure')||t.toLowerCase().includes('just a moment')||b.includes('正在验证浏览器')||b.includes('网站使用安全服务')||b.includes('检查您是否为机器人')||b.includes('เว็บไซต์นี้ใช้บริการรักษาความปลอดภัย')||b.includes('ตรวจสอบว่าคุณไม่ใช่บอต')||u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-160);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig})})()";
+                String probeScript = "(()=>{const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const hl=h.toLowerCase();const challenge=u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||hl.includes('__cf_chl_')||hl.includes('cf-browser-verification')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge,[data-cf-challenge]')||b.includes('正在验证浏览器')||b.includes('检查您是否为机器人')||b.includes('检查您不是机器人')||b.includes('ตรวจสอบว่าคุณไม่ใช่บอต')||b.includes('กำลังตรวจสอบว่าคุณไม่ใช่บอต');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-160);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig})})()";
                 webView.evaluateJavascript(probeScript, value -> {
                     if (finished[0]) return;
                     try {
@@ -330,7 +330,7 @@ public class BrowserFetchPlugin extends Plugin {
             public void run() {
                 if (finished[0] || captureInProgress[0] || !dialog.isShowing()) return;
                 final int currentNavigation = navigationId[0];
-                String probeScript = "(()=>{const expandToc="+expandToc+";let moreLoading=false;if(expandToc){const nodes=[...document.querySelectorAll('button,a,[role=button],.more,.show-all,.all-chapters')];for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!txt||el.dataset.ncExpandedOnce==='1')continue;if(/全部章节|查看全部章节|展开全部|显示全部|全部展开|展开目录|查看目录/.test(txt)){el.dataset.ncExpandedOnce='1';el.click();break;}}for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!/加载更多|显示更多|展开更多|更多章节/.test(txt))continue;const rect=el.getBoundingClientRect();if(rect.width>0&&rect.height>0&&getComputedStyle(el).display!=='none'){const count=Number(el.dataset.ncLoadMoreCount||'0');if(count<30){moreLoading=true;el.dataset.ncLoadMoreCount=String(count+1);el.click();}break;}}}const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const l=b.toLowerCase();const challenge=l.includes('just a moment')||l.includes('verify you are human')||l.includes('performing security verification')||l.includes('checking your browser')||l.includes('checking if the site connection is secure')||t.toLowerCase().includes('just a moment')||b.includes('正在验证浏览器')||b.includes('网站使用安全服务')||b.includes('检查您是否为机器人')||b.includes('เว็บไซต์นี้ใช้บริการรักษาความปลอดภัย')||b.includes('ตรวจสอบว่าคุณไม่ใช่บอต')||u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-180);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig,moreLoading:moreLoading})})()";
+                String probeScript = "(()=>{const expandToc="+expandToc+";let moreLoading=false;if(expandToc){const nodes=[...document.querySelectorAll('button,a,[role=button],.more,.show-all,.all-chapters')];for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!txt||el.dataset.ncExpandedOnce==='1')continue;if(/全部章节|查看全部章节|展开全部|显示全部|全部展开|展开目录|查看目录/.test(txt)){el.dataset.ncExpandedOnce='1';el.click();break;}}for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!/加载更多|显示更多|展开更多|更多章节/.test(txt))continue;const rect=el.getBoundingClientRect();if(rect.width>0&&rect.height>0&&getComputedStyle(el).display!=='none'){const count=Number(el.dataset.ncLoadMoreCount||'0');if(count<30){moreLoading=true;el.dataset.ncLoadMoreCount=String(count+1);el.click();}break;}}}const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const hl=h.toLowerCase();const challenge=u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||hl.includes('__cf_chl_')||hl.includes('cf-browser-verification')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge,[data-cf-challenge]')||b.includes('正在验证浏览器')||b.includes('检查您是否为机器人')||b.includes('检查您不是机器人')||b.includes('ตรวจสอบว่าคุณไม่ใช่บอต')||b.includes('กำลังตรวจสอบว่าคุณไม่ใช่บอต');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-180);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig,moreLoading:moreLoading})})()";
                 webView.evaluateJavascript(probeScript, value -> {
                     if (finished[0] || captureInProgress[0] || currentNavigation != navigationId[0]) return;
                     try {
@@ -468,21 +468,22 @@ public class BrowserFetchPlugin extends Plugin {
                 String lowerTitle = title.toLowerCase(Locale.ROOT);
                 String lowerUrl = pageUrl.toLowerCase(Locale.ROOT);
 
-                boolean challenge = lowerText.contains("just a moment")
+                // Keep native capture aligned with the server classifier. Natural-language
+                // phrases and an embedded Turnstile widget are not proof that the whole
+                // page is a challenge; only challenge-page markers or explicit challenge text are.
+                boolean challenge = lowerUrl.contains("/cdn-cgi/challenge-platform/")
+                    || lowerHtml.contains("__cf_chl_")
+                    || lowerHtml.contains("cf-browser-verification")
+                    || lowerHtml.contains("id=\"challenge-form\"")
+                    || lowerHtml.contains("id='challenge-form'")
+                    || lowerHtml.contains("id=\"challenge-running\"")
+                    || lowerHtml.contains("class=\"cf-challenge")
+                    || lowerHtml.contains("data-cf-challenge")
                     || bodyText.contains("正在验证浏览器")
-                    || bodyText.contains("网站使用安全服务")
                     || bodyText.contains("检查您是否为机器人")
-                    || bodyText.contains("เว็บไซต์นี้ใช้บริการรักษาความปลอดภัย")
+                    || bodyText.contains("检查您不是机器人")
                     || bodyText.contains("ตรวจสอบว่าคุณไม่ใช่บอต")
-                    || lowerText.contains("verify you are human")
-                    || lowerText.contains("performing security verification")
-                    || lowerText.contains("checking your browser")
-                    || lowerText.contains("checking if the site connection is secure")
-                    || lowerTitle.contains("just a moment")
-                    || lowerHtml.contains("cf-challenge")
-                    || lowerHtml.contains("cf-chl-")
-                    || lowerHtml.contains("challenge-platform")
-                    || lowerUrl.contains("/cdn-cgi/challenge-platform/");
+                    || bodyText.contains("กำลังตรวจสอบว่าคุณไม่ใช่บอต");
 
                 if (challenge) {
                     captureInProgress[0] = false;

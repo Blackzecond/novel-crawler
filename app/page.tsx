@@ -11,6 +11,7 @@ import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { applySavedTheme, loadReaderSettings, saveReaderSettings } from '@/lib/readerPrefs';
 import { loadCloudReaderSettings, saveCloudReaderSettings } from '@/lib/cloudPreferences';
 import { fetchWithNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
+import { exportNovelMemoryBundle } from '@/lib/novelMemory';
 
 // เว็บต้นฉบับจีนยอดนิยม — กดเพื่อใส่โดเมนต้นทางในช่อง URL
 // (วางเฉพาะลิงก์หน้าสารบัญ/目录 เช่น https://www.uukanshu.cc/b/123/ จึงจะจับรายการบทได้)
@@ -303,9 +304,17 @@ export default function ProjectsHomePage() {
       const completeProjects = await Promise.all(projects.map(async (project) => {
         const chapters = await Promise.all(project.chapters.map(async (chapter) => {
           const content = chapter.status === 'pending' ? null : await getStore().getChapterContent(project.id, chapter.id);
-          return content ? { ...chapter, originalText: content.originalText, translatedText: content.translatedText } : chapter;
+          if (chapter.status !== 'pending' && !content) throw new Error(`อ่านข้อมูลสำรองของบท “${chapter.title}” ในเรื่อง “${project.title}” ไม่สำเร็จ`);
+          return content ? {
+            ...chapter,
+            originalText: content.originalText,
+            translatedText: content.translatedText,
+            preProofreadText: content.preProofreadText,
+            readerContent: content.readerContent,
+          } : chapter;
         }));
-        return { ...project, chapters };
+        const aiMemory = await exportNovelMemoryBundle(project.id);
+        return { ...project, chapters, ...(aiMemory ? { aiMemory } : {}) };
       }));
       const blob = new Blob([JSON.stringify(completeProjects, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');

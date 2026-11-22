@@ -2,6 +2,7 @@
 // Static extraction บน linkedom — ใช้ฝั่ง server เท่านั้น
 
 import { parseHTML } from 'linkedom';
+import { isChapterTitle, isLikelyChapterGroup } from '@/lib/readerIntegrity.mjs';
 
 export interface ChapterLink {
   url: string;
@@ -15,11 +16,8 @@ export interface TocResult {
 }
 
 // ชื่อบทแบบจีน: 第...章 / 第...回 / 序章 / 楔子 / 番外 / Chapter N
-const CHAPTER_TITLE_RE =
-  /第\s*[0-9０-９零一二三四五六七八九十百千千万亿两]+\s*[章节回卷]|序章|楔子|番外|尾声|终章|^chapter\s*\d+/i;
-
 const NAV_NOISE_RE =
-  /^(首页|书架|加入书架|上一[页章]|下一[页章]|下部|上部|目录|全文阅读|开始阅读|投推荐票|新[书篇]|排行|榜|关于|联系|广告|登录|注册|手机阅读|电脑版|wap|附录|公告|打赏|订阅|评价|冲榜)/;
+  /^(首页|书架|加入书架|上一[页章]|下一[页章]|下部|上部|目录|全文阅读|开始阅读|投推荐票|新[书篇]|排行|榜|关于|联系|广告|登录|注册|手机阅读|电脑版|wap|附录|公告|打赏|订阅|评价|冲榜|previous|prev(?:ious)?|next|first|last|contact|about|home|index|back|forward|บทก่อน|บทถัดไป|ก่อนหน้า|ถัดไป)/i;
 
 function sameSite(abs: URL, base: URL): boolean {
   if (abs.protocol !== 'http:' && abs.protocol !== 'https:') return false;
@@ -28,7 +26,7 @@ function sameSite(abs: URL, base: URL): boolean {
   return a === b || a.endsWith('.' + b) || b.endsWith('.' + a);
 }
 
-export function extractChapterList(html: string, baseUrl: string, minGroupSize = 6): TocResult {
+export function extractChapterList(html: string, baseUrl: string, minGroupSize = 1): TocResult {
   const empty: TocResult = { novelTitle: null, chapters: [] };
   let base: URL;
   try {
@@ -45,7 +43,8 @@ export function extractChapterList(html: string, baseUrl: string, minGroupSize =
   const links: { url: string; title: string }[] = [];
   for (const a of Array.from(document.querySelectorAll('a')) as any[]) {
     const href = a.getAttribute('href');
-    if (!href || href.startsWith('#') || href.startsWith('javascript:')) continue;
+    const rel = (a.getAttribute('rel') || '').toLowerCase().split(/\s+/);
+    if (!href || href.startsWith('#') || href.startsWith('javascript:') || rel.includes('prev') || rel.includes('next')) continue;
     const abs = new URL(href, base);
     if (!sameSite(abs, base)) continue;
     const title = (a.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 140);
@@ -77,9 +76,10 @@ export function extractChapterList(html: string, baseUrl: string, minGroupSize =
   let best: { items: { url: string; title: string }[]; score: number } | null = null;
   for (const [, items] of groups) {
     if (items.length < minGroupSize) continue;
+    if (!isLikelyChapterGroup(items)) continue;
     const uniqueUrls = new Set(items.map((i) => i.url)).size;
     if (uniqueUrls < Math.max(minGroupSize, Math.floor(items.length * 0.7))) continue;
-    const ratio = items.filter((i) => CHAPTER_TITLE_RE.test(i.title)).length / items.length;
+    const ratio = items.filter((i) => isChapterTitle(i.title)).length / items.length;
     const score = items.length * (0.5 + ratio);
     if (!best || score > best.score) best = { items, score };
   }

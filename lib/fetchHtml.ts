@@ -15,36 +15,16 @@ export class FetchTransportError extends Error {
   }
 }
 
+import { isCloudflareChallengeMarkup } from '@/lib/readerIntegrity.mjs';
+
 export function isChallengePage(html: string): boolean {
-  const value = html.toLowerCase();
-  return (
-    value.includes('正在验证浏览器') ||
-    value.includes('安全验证') ||
-    value.includes('网站使用安全服务') ||
-    value.includes('网站使用安全服务来防止恶意机器人') ||
-    value.includes('检查您是否为机器人') ||
-    value.includes('检查您不是机器人') ||
-    value.includes('เว็บไซต์นี้ใช้บริการรักษาความปลอดภัย') ||
-    value.includes('ตรวจสอบว่าคุณไม่ใช่บอต') ||
-    value.includes('กำลังตรวจสอบว่าคุณไม่ใช่บอต') ||
-    value.includes('just a moment') ||
-    value.includes('verify you are human') ||
-    value.includes('performing security verification') ||
-    value.includes('checking your browser') ||
-    value.includes('checking if the site connection is secure') ||
-    value.includes('cf-challenge') ||
-    value.includes('cf-chl-') ||
-    value.includes('challenge-platform') ||
-    value.includes('/cdn-cgi/challenge-platform/')
-  );
+  return isCloudflareChallengeMarkup({ html });
 }
 
 function isChallengeResponse(response: Response, html: string): boolean {
-  const statusLooksBlocked = [403, 429, 503].includes(response.status);
-  const hasCloudflareRay = Boolean(response.headers.get('cf-ray'));
+  // HTTP deny/rate-limit/server errors are transport failures, not proof of a CAPTCHA.
   return response.headers.get('cf-mitigated')?.toLowerCase() === 'challenge'
-    || isChallengePage(html)
-    || (statusLooksBlocked && hasCloudflareRay);
+    || isChallengePage(html);
 }
 
 /**
