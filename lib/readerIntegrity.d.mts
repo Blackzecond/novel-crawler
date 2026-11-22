@@ -3,6 +3,7 @@ export function isReaderTargetCurrent(active: ReaderTarget, target: ReaderTarget
 export interface ReadingHistoryEntry { url: string; title: string; readAt: number; projectId?: string | null; }
 export function mergeReadingHistory(...collections: ReadingHistoryEntry[][]): ReadingHistoryEntry[];
 export function escapeReaderText(value: string): string;
+export function isArticleTargetCurrent(article: { sourceUrl?: string; projectId?: string | null } | null | undefined, projectId: string | null | undefined, url: string): boolean;
 export function isCloudflareChallengeMarkup(input?: { url?: string; html?: string; body?: string }): boolean;
 export function isChapterTitle(title: string): boolean;
 export function isLikelyChapterGroup(items: Array<{ title: string }>): boolean;
