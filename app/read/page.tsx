@@ -264,7 +264,6 @@ export default function ReaderPage() {
         if (inMemoryArticle && (!activeProjectId || readerProject?.id === activeProjectId)) {
           setArticle(inMemoryArticle);
           setTranslationError('');
-          
           const memoryChapter = readerProject?.chapters.find((item) => item.url === targetUrl);
           const cachedChapterId = inMemoryArticle.chapterId
             ?? (memoryChapter && !memoryChapter.id.startsWith('catalog:') ? memoryChapter.id : null);
@@ -1180,7 +1179,7 @@ export default function ReaderPage() {
               <Library className="w-4 h-4" />
             </a>
             <a
-              href="/settings/ai"
+              href={`/settings/ai?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`}
               title="ตั้งค่า AI สำหรับการแปล"
               aria-label="ตั้งค่า AI สำหรับการแปล"
               className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-card hover:text-fg"
