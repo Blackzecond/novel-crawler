@@ -21,7 +21,7 @@ import {
 } from '@/lib/cloudPreferences';
 import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
 import { fetchWithNativeBrowser, prefetchWithNativeBrowser, prefersNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
-import { escapeReaderText, isReaderTargetCurrent, mergeReadingHistory } from '@/lib/readerIntegrity.mjs';
+import { escapeReaderText, isReaderTargetCurrent, isArticleTargetCurrent, mergeReadingHistory } from '@/lib/readerIntegrity.mjs';
 
 interface ArticleData {
   title: string;

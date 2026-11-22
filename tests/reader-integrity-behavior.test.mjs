@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isReaderTargetCurrent, mergeReadingHistory, escapeReaderText, isCloudflareChallengeMarkup, isChapterTitle, isLikelyChapterGroup } from '../lib/readerIntegrity.mjs';
+import { isReaderTargetCurrent, mergeReadingHistory, escapeReaderText, isCloudflareChallengeMarkup, isChapterTitle, isLikelyChapterGroup, isArticleTargetCurrent } from '../lib/readerIntegrity.mjs';
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 test('late request from another project is rejected', async () => {
   let active = { requestId: 1, projectId: 'P', url: '/P/A' }; const target = { ...active }; const gate = deferred();

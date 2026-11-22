@@ -468,21 +468,24 @@ public class BrowserFetchPlugin extends Plugin {
                 String lowerTitle = title.toLowerCase(Locale.ROOT);
                 String lowerUrl = pageUrl.toLowerCase(Locale.ROOT);
 
-                boolean challenge = lowerText.contains("just a moment")
-                    || bodyText.contains("正在验证浏览器")
-                    || bodyText.contains("网站使用安全服务")
-                    || bodyText.contains("检查您是否为机器人")
-                    || bodyText.contains("เว็บไซต์นี้ใช้บริการรักษาความปลอดภัย")
-                    || bodyText.contains("ตรวจสอบว่าคุณไม่ใช่บอต")
-                    || lowerText.contains("verify you are human")
-                    || lowerText.contains("performing security verification")
-                    || lowerText.contains("checking your browser")
-                    || lowerText.contains("checking if the site connection is secure")
-                    || lowerTitle.contains("just a moment")
-                    || lowerHtml.contains("cf-challenge")
+                // Keep native capture aligned with the server classifier. Natural-language
+                // phrases and an embedded Turnstile widget are not proof that the whole
+                // page is a challenge; only challenge-page markers or explicit challenge text are.
+                boolean challenge = lowerUrl.contains("/cdn-cgi/challenge-platform/")
                     || lowerHtml.contains("cf-chl-")
                     || lowerHtml.contains("challenge-platform")
-                    || lowerUrl.contains("/cdn-cgi/challenge-platform/");
+                    || lowerHtml.contains("__cf_chl_")
+                    || lowerHtml.contains("cf-browser-verification")
+                    || lowerHtml.contains("id=\\"challenge-form\\"")
+                    || lowerHtml.contains("id='challenge-form'")
+                    || lowerHtml.contains("id=\\"challenge-running\\"")
+                    || lowerHtml.contains("class=\\"cf-challenge")
+                    || lowerHtml.contains("data-cf-challenge")
+                    || bodyText.contains("正在验证浏览器")
+                    || bodyText.contains("检查您是否为机器人")
+                    || bodyText.contains("检查您不是机器人")
+                    || bodyText.contains("ตรวจสอบว่าคุณไม่ใช่บอต")
+                    || bodyText.contains("กำลังตรวจสอบว่าคุณไม่ใช่บอต");
 
                 if (challenge) {
                     captureInProgress[0] = false;
