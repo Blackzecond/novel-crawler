@@ -84,6 +84,7 @@ export default function ReaderPage() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [autoScroll, setAutoScroll] = useState(false);
   const [scrollSpeed, setScrollSpeed] = useState(1);
   const scrollIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -1123,7 +1124,7 @@ export default function ReaderPage() {
     <div className={`min-h-screen bg-bg text-fg transition-colors duration-200 ${fontClasses[fontFamily]}`}>
       {/* Header Bar — บางเบา คุมสูงตายตัว */}
       <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-md">
-        <div className="max-w-3xl mx-auto flex items-center gap-2 h-14 px-3 sm:px-6">
+        <div className="max-w-[44rem] mx-auto flex items-center gap-2 h-14 px-3 sm:px-5">
           <a
             href={projectId ? `/project/${projectId}` : "/"}
             className="inline-flex items-center gap-1.5 h-8 pl-1 pr-2 rounded-lg text-sm text-muted hover:text-accent-soft-fg shrink-0 cursor-pointer transition-colors"
@@ -1205,7 +1206,7 @@ export default function ReaderPage() {
       {glossaryNotice && <div role="status" className="mx-auto max-w-3xl px-4 pt-3 text-xs leading-relaxed text-accent-soft-fg sm:px-6"><div className="rounded-lg border border-accent-line bg-accent-soft px-3 py-2"><BookMarked className="mr-1.5 inline h-3.5 w-3.5" />{glossaryNotice}</div></div>}
 
       {projectId && (
-        <div className="max-w-3xl mx-auto px-3 sm:px-6 pt-2">
+        <div className="max-w-[44rem] mx-auto px-5 pt-2">
           <button type="button" onClick={async () => {
             const next = !showToc; setShowToc(next);
             if (next && !readerProject) { try { setReaderProject(await getStore().getProject(projectId)); } catch (err) { setError(err instanceof Error ? err.message : String(err)); } }
@@ -1310,7 +1311,7 @@ export default function ReaderPage() {
       {/* History Drawer */}
       {showHistory && (
         <div className="border-b border-line bg-surface">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
+          <div className="max-w-[44rem] mx-auto px-5 py-3">
             <div className="flex justify-between items-center mb-2.5">
               <h3 className="font-bold flex items-center gap-2 text-sm">
                 <History className="w-4 h-4" /> ประวัติการอ่านล่าสุด ({history.length})
@@ -1347,7 +1348,7 @@ export default function ReaderPage() {
       )}
 
       {/* Main Reader View */}
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <main className="max-w-[44rem] mx-auto px-5 py-6 sm:py-8">
         {error && (
           <div role="alert" className="p-4 bg-danger-bg border border-danger-line text-danger-fg rounded-xl mb-6 space-y-3">
             <p className="text-sm font-semibold">{error}</p>
@@ -1365,67 +1366,55 @@ export default function ReaderPage() {
             <div className="space-y-4 border-b border-line pb-5">
               <h1 className="text-2xl sm:text-3xl font-bold leading-tight">{article.title}</h1>
 
-              {/* Action Toolbar */}
-              <div className="flex flex-nowrap items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <button type="button" onClick={() => fetchArticle(url, true)} disabled={loading} aria-label={loading ? "กำลังดึงเนื้อหาใหม่" : "ดึงเนื้อหาใหม่"} title="ดึงเนื้อหาใหม่จากเว็บไซต์ต้นทาง" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-fg transition-colors hover:border-accent-line hover:bg-card disabled:opacity-50">
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-                  </button>
-                  <button type="button" onClick={handleCopy} aria-label={copied ? "คัดลอกแล้ว" : "คัดลอกเนื้อหา"} title={copied ? "คัดลอกแล้ว" : "คัดลอกเนื้อหา"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-fg transition-colors hover:border-accent-line hover:bg-card">
+              {/* Reader controls: edition switching never invokes translation. */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  {article.translatedText ? (
+                    <div role="group" aria-label="ฉบับเนื้อหา" className="inline-flex rounded-xl border border-line bg-surface p-1">
+                      <button type="button" onClick={() => setShowTranslation(false)} aria-pressed={!showTranslation} className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${!showTranslation ? 'bg-card text-fg shadow-sm' : 'text-muted hover:text-fg'}`}>ต้นฉบับ</button>
+                      <button type="button" onClick={() => setShowTranslation(true)} aria-pressed={showTranslation} className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${showTranslation ? 'bg-card text-fg shadow-sm' : 'text-muted hover:text-fg'}`}>คำแปลไทย</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={handleTranslate} disabled={translationBusy} className="inline-flex h-10 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-fg hover:brightness-110 disabled:opacity-50">
+                      {translationBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      {translationBusy ? 'กำลังแปล…' : 'แปลเป็นไทย'}
+                    </button>
+                  )}
+                  <button type="button" onClick={handleCopy} aria-label={copied ? "คัดลอกแล้ว" : "คัดลอกเนื้อหา"} title="คัดลอกเนื้อหา" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-surface text-fg hover:bg-card">
                     {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
                   </button>
-                  <button type="button" onClick={handleTranslate} disabled={translationBusy} aria-label={translationBusy ? "กำลังแปล" : article.translatedText ? "แปลใหม่" : "แปลเป็นไทย"} title={translationBusy ? "กำลังแปล" : article.translatedText ? "แปลใหม่" : "แปลเป็นไทย"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg transition-colors hover:brightness-110 disabled:opacity-50">
-                    {translationBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  </button>
-                  {article.translatedText && (
-                    <>
-                      <button type="button" onClick={() => setShowTranslation((value) => !value)} aria-label={showTranslation ? "ดูต้นฉบับ" : "ดูคำแปล"} title={showTranslation ? "ดูต้นฉบับ" : "ดูคำแปล"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-fg transition-colors hover:border-accent-line hover:bg-card">
-                        <BookOpen className="h-4 w-4" />
-                      </button>
-                      {article.preProofreadText && (
-                        <button
-                          type="button"
-                          onClick={handleRestorePreProofread}
-                          title="คืนคำแปลฉบับก่อน AI บ.ก. ตรวจ"
-                          aria-label="คืนคำแปลฉบับก่อนตรวจ"
-                          className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-2 text-xs text-fg hover:bg-card"
-                        >
-                          <RotateCcw className="h-4 w-4" />
-                          <span>คืนฉบับเดิม</span>
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={handleEditTranslation}
-                        disabled={editorBusy || translationBusy}
-                        aria-label={editorBusy ? "AI บ.ก. กำลังตรวจแก้" : "AI บ.ก. ตรวจแก้คำแปล"}
-                        title={editorBusy ? "AI บ.ก. กำลังตรวจแก้ทั้งตอน" : "AI บ.ก. ตรวจแก้คำแปลทั้งตอน (เรียกใช้เอง)"}
-                        className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-accent-line bg-accent-soft px-2.5 text-xs font-medium text-accent-soft-fg transition-colors hover:brightness-105 disabled:opacity-50"
-                      >
-                        {editorBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
-                        <span>AI บ.ก.</span>
-                      </button>
-                    </>
-                  )}
-                  <button type="button" onClick={() => setAutoScroll(!autoScroll)} aria-label={autoScroll ? "หยุดเลื่อนอัตโนมัติ" : "เลื่อนอัตโนมัติ"} title={autoScroll ? "หยุดเลื่อนอัตโนมัติ" : "เลื่อนอัตโนมัติ"} className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors ${autoScroll ? "border-transparent bg-green-600 text-white" : "border-line bg-surface text-fg hover:border-accent-line hover:bg-card"}`}>
+                  <button type="button" onClick={() => setAutoScroll(!autoScroll)} aria-label={autoScroll ? "หยุดเลื่อนอัตโนมัติ" : "เลื่อนอัตโนมัติ"} title={autoScroll ? "หยุดเลื่อนอัตโนมัติ" : "เลื่อนอัตโนมัติ"} className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${autoScroll ? "border-transparent bg-green-600 text-white" : "border-line bg-surface text-fg hover:bg-card"}`}>
                     {autoScroll ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                   </button>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
-                  <button type="button" onClick={() => article.prevUrl && fetchArticle(article.prevUrl)} disabled={!article.prevUrl || loading} aria-label="ตอนก่อนหน้า" title="ตอนก่อนหน้า" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-accent-line bg-accent-soft text-accent-soft-fg transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-40">
-                    <ChevronLeft className="h-4 w-4" />
+                  <button type="button" onClick={() => setShowMoreMenu((value) => !value)} aria-expanded={showMoreMenu} aria-label="การทำงานเพิ่มเติม" className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border ${showMoreMenu ? 'border-accent-line bg-accent-soft text-accent-soft-fg' : 'border-line bg-surface text-muted hover:bg-card'}`}>
+                    <Plus className="h-4 w-4" />
                   </button>
-                  <button type="button" onClick={() => article.nextUrl && fetchArticle(article.nextUrl)} disabled={!article.nextUrl || loading} aria-label="ตอนถัดไป" title="ตอนถัดไป" className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-accent-fg transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+                  <button type="button" onClick={() => article.prevUrl && fetchArticle(article.prevUrl)} disabled={!article.prevUrl || loading} aria-label="ตอนก่อนหน้า" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-surface text-fg disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => article.nextUrl && fetchArticle(article.nextUrl)} disabled={!article.nextUrl || loading} aria-label="ตอนถัดไป" className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-accent-fg disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button>
                 </div>
               </div>
+              {showMoreMenu && (
+                <div className="rounded-xl border border-line bg-card p-2 shadow-sm" role="menu" aria-label="การทำงานเพิ่มเติม">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); void fetchArticle(url, true); }} disabled={loading} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface disabled:opacity-50"><RotateCcw className="mb-1 h-4 w-4" />ดึงต้นฉบับใหม่</button>
+                    {article.translatedText && <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); void handleTranslate(); }} disabled={translationBusy} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface disabled:opacity-50"><Sparkles className="mb-1 h-4 w-4" />แปลใหม่และแทนที่คำแปลเดิม</button>}
+                    {article.translatedText && <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); void handleEditTranslation(); }} disabled={editorBusy || translationBusy} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface disabled:opacity-50"><Pencil className="mb-1 h-4 w-4" />AI บ.ก. ตรวจคำแปล</button>}
+                    {article.preProofreadText && <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); void handleRestorePreProofread(); }} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><RotateCcw className="mb-1 h-4 w-4" />คืนฉบับก่อนตรวจ</button>}
+                    <a role="menuitem" href={`/settings/ai?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><Sparkles className="mb-1 h-4 w-4" />ตั้งค่า AI</a>
+                    <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); setShowHistory(true); }} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><History className="mb-1 h-4 w-4" />ประวัติการอ่าน</button>
+                    {projectId && <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); void toggleReaderGlossary(); }} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><BookMarked className="mb-1 h-4 w-4" />ศัพท์ของเรื่องนี้</button>}
+                    <a role="menuitem" href="/dictionary" className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><Library className="mb-1 h-4 w-4" />พจนานุกรมพื้นฐาน</a>
+                  </div>
+                </div>
+              )}
             </div>
 
             {translationError && (
               <div role="alert" className="rounded-lg border border-danger-line bg-danger-bg p-3 text-sm text-danger-fg">
                 <p>{translationError}</p>
-                <a href="/settings/ai" className="mt-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:opacity-80">
+                <a href={`/settings/ai?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`} className="mt-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:opacity-80">
                   เปิดหน้าตั้งค่า AI
                 </a>
               </div>
@@ -1433,14 +1422,14 @@ export default function ReaderPage() {
 
             {/* Article Content Render */}
             {showTranslation && article.translatedText ? (
-              <div className="space-y-6 leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
+              <div className="space-y-4 leading-[1.75]" style={{ fontSize: `${fontSize}px` }}>
                 {article.translatedText.split(/\n\s*\n/).map((paragraph, index) => (
-                  <p key={index} className="mb-6 whitespace-pre-wrap">{paragraph}</p>
+                  <p key={index} className="mb-4 whitespace-pre-wrap">{paragraph}</p>
                 ))}
               </div>
             ) : (
               <div
-                className="space-y-6 [&>p]:mb-6 [&>p]:block leading-relaxed"
+                className="space-y-4 [&>p]:mb-4 [&>p]:block leading-[1.75]"
                 style={{ fontSize: `${fontSize}px` }}
                 dangerouslySetInnerHTML={{ __html: applyWordReplacementsToHtml(article.content, readerProject?.wordReplacements ?? []) }}
               />
