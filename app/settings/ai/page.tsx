@@ -103,13 +103,15 @@ export default function AiSettingsPage() {
     saveAiSettings(normalized);
     setSettings(normalized);
     setSaved(true);
+    let syncFailed = false;
     try {
       await saveCloudAiSettings(normalized);
       setNotice('บันทึกการตั้งค่าแล้ว คีย์ API อยู่ในเบราว์เซอร์นี้เท่านั้น');
     } catch {
-      setNotice('บันทึกในเบราว์เซอร์แล้ว แต่ซิงก์ Base URL และชื่อโมเดลขึ้น Cloud ไม่สำเร็จ');
+      syncFailed = true;
+      setNotice('บันทึกในเบราว์เซอร์แล้ว แต่ซิงก์ Base URL และชื่อโมเดลขึ้น Cloud ไม่สำเร็จ สามารถกดบันทึกอีกครั้งเพื่อลองใหม่');
     }
-    return normalized;
+    return { settings: normalized, syncFailed };
   };
 
   const handleSave = async () => {
@@ -134,13 +136,13 @@ export default function AiSettingsPage() {
     setNotice('');
     let settingsWereSaved = false;
     try {
-      const cfg = await persist();
+      const persisted = await persist();
       settingsWereSaved = true;
-      const answer = await testAiConnection(cfg);
+      const answer = await testAiConnection(persisted.settings);
       if (!answer.trim()) {
         throw new Error('เชื่อมต่อได้ แต่ API ไม่ส่งข้อความกลับมา');
       }
-      setNotice('บันทึกการตั้งค่าและทดสอบการเชื่อมต่อสำเร็จ โมเดลตอบกลับแล้ว');
+      setNotice(persisted.syncFailed ? 'ทดสอบการเชื่อมต่อสำเร็จ โมเดลตอบกลับแล้ว แต่ซิงก์ Base URL และชื่อโมเดลขึ้น Cloud ไม่สำเร็จ กดบันทึกการตั้งค่าอีกครั้งเพื่อลองซิงก์' : 'บันทึกการตั้งค่าและทดสอบการเชื่อมต่อสำเร็จ โมเดลตอบกลับแล้ว');
       setSaved(true);
     } catch (err) {
       if (settingsWereSaved) setNotice('บันทึกการตั้งค่าในเบราว์เซอร์แล้ว แต่การทดสอบการเชื่อมต่อไม่ผ่าน');
