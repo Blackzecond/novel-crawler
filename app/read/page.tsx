@@ -243,6 +243,7 @@ export default function ReaderPage() {
   const fetchArticle = async (targetUrl: string, forceRender = false, projectIdOverride?: string | null) => {
     if (!targetUrl) return;
     const activeProjectId = projectIdOverride === undefined ? projectId : projectIdOverride;
+    if (typeof window !== 'undefined') setShowTranslation(window.localStorage.getItem(`novel_reader_edition:${activeProjectId ?? 'standalone'}`) === 'translation');
     const requestId = ++readerRequestRef.current;
     const isCurrentRequest = () => isReaderTargetCurrent(
       { requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current },
@@ -263,7 +264,7 @@ export default function ReaderPage() {
         if (inMemoryArticle && (!activeProjectId || readerProject?.id === activeProjectId)) {
           setArticle(inMemoryArticle);
           setTranslationError('');
-          setShowTranslation(false);
+          
           const memoryChapter = readerProject?.chapters.find((item) => item.url === targetUrl);
           const cachedChapterId = inMemoryArticle.chapterId
             ?? (memoryChapter && !memoryChapter.id.startsWith('catalog:') ? memoryChapter.id : null);
@@ -879,7 +880,7 @@ export default function ReaderPage() {
 
       const updatedArticle = { ...targetArticle, translatedText: translated, preProofreadText: preProofreadText || undefined };
       chapterCacheRef.current.set(`${targetProjectId ?? 'standalone'}:${targetUrl}`, updatedArticle);
-      if (isActiveTranslation()) { setArticle(updatedArticle); setShowTranslation(true); }
+      if (isActiveTranslation()) { setArticle(updatedArticle); selectReaderEdition(true); }
 
       if (targetProjectId && targetChapterId) {
         try {
@@ -1085,6 +1086,14 @@ export default function ReaderPage() {
 
   const toggleReaderGlossary = () => {
     if (projectId) window.location.href = `/project/${encodeURIComponent(projectId)}/glossary`;
+  };
+
+  const selectReaderEdition = (translated: boolean) => {
+    setShowTranslation(translated);
+    if (typeof window !== 'undefined') {
+      const key = `novel_reader_edition:${activeProjectIdRef.current ?? projectId ?? 'standalone'}`;
+      window.localStorage.setItem(key, translated ? 'translation' : 'original');
+    }
   };
 
   const handleFormSubmit = (e: React.FormEvent) => {
@@ -1371,8 +1380,8 @@ export default function ReaderPage() {
                 <div className="flex min-w-0 flex-1 items-center gap-2">
                   {article.translatedText ? (
                     <div role="group" aria-label="ฉบับเนื้อหา" className="inline-flex rounded-xl border border-line bg-surface p-1">
-                      <button type="button" onClick={() => setShowTranslation(false)} aria-pressed={!showTranslation} className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${!showTranslation ? 'bg-card text-fg shadow-sm' : 'text-muted hover:text-fg'}`}>ต้นฉบับ</button>
-                      <button type="button" onClick={() => setShowTranslation(true)} aria-pressed={showTranslation} className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${showTranslation ? 'bg-card text-fg shadow-sm' : 'text-muted hover:text-fg'}`}>คำแปลไทย</button>
+                      <button type="button" onClick={() => selectReaderEdition(false)} aria-pressed={!showTranslation} className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${!showTranslation ? 'bg-card text-fg shadow-sm' : 'text-muted hover:text-fg'}`}>ต้นฉบับ</button>
+                      <button type="button" onClick={() => selectReaderEdition(true)} aria-pressed={showTranslation} className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${showTranslation ? 'bg-card text-fg shadow-sm' : 'text-muted hover:text-fg'}`}>คำแปลไทย</button>
                     </div>
                   ) : (
                     <button type="button" onClick={handleTranslate} disabled={translationBusy} className="inline-flex h-10 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-fg hover:brightness-110 disabled:opacity-50">
