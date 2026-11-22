@@ -251,9 +251,6 @@ export default function ReaderPage() {
     activeProjectIdRef.current = activeProjectId;
     if (projectId !== activeProjectId) {
       setDetectedGlossary(null); setGlossaryNotice('');
-      // Prevent the previous project's snapshot from feeding a cache hit or prefetch
-      // while a History/deep-link navigation to another project is in flight.
-      setReaderProject(null);
     }
     setTranslationBusy(false); setEditorBusy(false);
     setLoading(true); setError(''); setUrl(targetUrl); setAutoScroll(false);
