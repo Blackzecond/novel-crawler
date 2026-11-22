@@ -51,6 +51,8 @@ export default function ReaderPage() {
   const [translationBusy, setTranslationBusy] = useState(false);
   const [editorBusy, setEditorBusy] = useState(false);
   const [translationError, setTranslationError] = useState('');
+  const [translationErrorAction, setTranslationErrorAction] = useState<'settings' | 'save' | null>(null);
+  const [pendingTranslationSave, setPendingTranslationSave] = useState<{ projectId: string; chapterId: string; translatedText: string; preProofreadText: string } | null>(null);
   const [showTranslation, setShowTranslation] = useState(false);
   const [readerProject, setReaderProject] = useState<NovelProject | null>(null);
   const chapterCacheRef = useRef<Map<string, ArticleData>>(new Map());
@@ -796,6 +798,7 @@ export default function ReaderPage() {
     const settings = loadAiSettings();
     if (!hasAiKey(settings)) {
       setTranslationError('ยังไม่ได้ตั้งค่า API สำหรับการแปล กรุณากรอก Base URL, Model และ API Key ก่อน');
+      setTranslationErrorAction('settings');
       return;
     }
     const translationRequestId = readerRequestRef.current;
@@ -809,6 +812,8 @@ export default function ReaderPage() {
     );
     setTranslationBusy(true);
     setTranslationError('');
+    setTranslationErrorAction(null);
+    setPendingTranslationSave(null);
     try {
       const latestProject = targetProjectId ? await getStore().getProject(targetProjectId) : null;
       if (!isActiveTranslation()) return;
@@ -948,18 +953,60 @@ export default function ReaderPage() {
               console.warn('Batched novel memory update skipped:', memoryUpdateError);
             }
           } else if (isActiveTranslation()) {
-            setTranslationError('แปลสำเร็จแล้ว แต่ยังบันทึกคำแปลลงคลังไม่ได้ คำแปลนี้ยังแสดงอยู่ใน Reader');
+            setTranslationError('แปลสำเร็จแล้ว แต่ยังบันทึกคำแปลลงคลังไม่ได้');
+            setTranslationErrorAction('save');
+            setPendingTranslationSave({ projectId: targetProjectId, chapterId: targetChapterId, translatedText: translated, preProofreadText });
           }
         } catch (saveError) {
           console.warn('Could not save translated chapter:', saveError);
-          if (isActiveTranslation()) setTranslationError('แปลสำเร็จแล้ว แต่บันทึกคำแปลไม่สำเร็จ คำแปลนี้ยังแสดงอยู่ใน Reader');
+          if (isActiveTranslation()) {
+            setTranslationError('แปลสำเร็จแล้ว แต่บันทึกคำแปลไม่สำเร็จ');
+            setTranslationErrorAction('save');
+            if (targetChapterId) setPendingTranslationSave({ projectId: targetProjectId, chapterId: targetChapterId, translatedText: translated, preProofreadText });
+          }
         }
       }
-      if (proofreadWarning && isActiveTranslation()) setTranslationError(proofreadWarning);
+      if (proofreadWarning && isActiveTranslation()) { setTranslationError(proofreadWarning); setTranslationErrorAction(null); }
     } catch (err) {
-      if (isActiveTranslation()) setTranslationError(err instanceof Error ? err.message : 'แปลไม่สำเร็จ');
+      if (isActiveTranslation()) { setTranslationError(err instanceof Error ? err.message : 'แปลไม่สำเร็จ'); setTranslationErrorAction(null); }
     } finally { if (isActiveTranslation()) setTranslationBusy(false); }
   };
+  const retrySaveTranslation = async () => {
+    const pending = pendingTranslationSave;
+    if (!pending || !article || !isArticleTargetCurrent(article, projectId, url)
+      || pending.projectId !== projectId || pending.chapterId !== (article.chapterId ?? currentChapterId)) return;
+    const requestId = readerRequestRef.current;
+    const targetUrl = url;
+    const isCurrent = () => isReaderTargetCurrent(
+      { requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current },
+      { requestId, url: targetUrl, projectId: pending.projectId },
+    );
+    setEditorBusy(true);
+    try {
+      const saved = await getStore().updateChapter(pending.projectId, pending.chapterId, {
+        translatedText: pending.translatedText,
+        preProofreadText: pending.preProofreadText,
+        status: 'translated',
+        error: undefined,
+      });
+      if (!saved) throw new Error('บันทึกคำแปลไม่สำเร็จ');
+      if (!isCurrent()) return;
+      setReaderProject((current) => current?.id === pending.projectId ? {
+        ...current,
+        chapters: current.chapters.map((chapter) => chapter.id === pending.chapterId
+          ? { ...chapter, status: 'translated', translatedText: pending.translatedText, preProofreadText: pending.preProofreadText }
+          : chapter),
+      } : current);
+      setPendingTranslationSave(null);
+      setTranslationErrorAction(null);
+      setTranslationError('');
+    } catch (saveError) {
+      if (isCurrent()) setTranslationError(saveError instanceof Error ? saveError.message : 'บันทึกคำแปลไม่สำเร็จ');
+    } finally {
+      if (isCurrent()) setEditorBusy(false);
+    }
+  };
+
   const handleRestorePreProofread = async () => {
     if (!article?.preProofreadText || loading || !isArticleTargetCurrent(article, projectId, url)) return;
     const targetArticle = article, targetProjectId = projectId, targetUrl = url, requestId = readerRequestRef.current;
@@ -988,11 +1035,12 @@ export default function ReaderPage() {
     const settings = loadAiSettings();
     if (!hasAiKey(settings)) {
       setTranslationError('ยังไม่ได้ตั้งค่า API สำหรับ AI บ.ก. กรุณาตั้งค่า API ก่อน');
+      setTranslationErrorAction('settings');
       return;
     }
     const targetArticle = article, targetProjectId = projectId, targetUrl = url, requestId = readerRequestRef.current;
     const isActive = () => isReaderTargetCurrent({ requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current }, { requestId, url: targetUrl, projectId: targetProjectId });
-    setEditorBusy(true); setTranslationError('');
+    setEditorBusy(true); setTranslationError(''); setTranslationErrorAction(null);
     try {
       const originalDraft = targetArticle.translatedText ?? '';
       if (!originalDraft) return;
@@ -1011,7 +1059,7 @@ export default function ReaderPage() {
       }
       if (isActive()) { setCurrentChapterId(targetChapterId ?? null); setArticle(updatedArticle); setShowTranslation(true); }
       if (targetProjectId && targetChapterId) setReaderProject((current) => current?.id === targetProjectId && isActive() ? { ...current, chapters: current.chapters.map((item) => item.id === targetChapterId ? { ...item, status: 'translated', preProofreadText: updatedArticle.preProofreadText } : item) } : current);
-    } catch (err) { if (isActive()) setTranslationError(err instanceof Error ? err.message : 'AI บ.ก. ตรวจรูปแบบไม่สำเร็จ'); }
+    } catch (err) { if (isActive()) { setTranslationError(err instanceof Error ? err.message : 'AI บ.ก. ตรวจรูปแบบไม่สำเร็จ'); setTranslationErrorAction(null); } }
     finally { if (isActive()) setEditorBusy(false); }
   };
 
@@ -1384,9 +1432,8 @@ export default function ReaderPage() {
             {translationError && (
               <div role="alert" className="rounded-lg border border-danger-line bg-danger-bg p-3 text-sm text-danger-fg">
                 <p>{translationError}</p>
-                <a href={`/settings/ai?returnTo=${encodeURIComponent(readerReturnTo)}`} className="mt-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:opacity-80">
-                  เปิดหน้าตั้งค่า AI
-                </a>
+              {translationErrorAction === 'settings' && <a href={`/settings/ai?returnTo=${encodeURIComponent(readerReturnTo)}`} className="mt-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:opacity-80">เปิดหน้าตั้งค่า AI</a>}
+              {translationErrorAction === 'save' && pendingTranslationSave && <button type="button" onClick={() => void retrySaveTranslation()} disabled={editorBusy} className="mt-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:opacity-80 disabled:opacity-50">{editorBusy ? 'กำลังบันทึก…' : 'บันทึกคำแปลอีกครั้ง'}</button>}
               </div>
             )}
 
