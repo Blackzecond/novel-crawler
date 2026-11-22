@@ -194,6 +194,15 @@ export default function ReaderPage() {
     };
   }, [showSettings]);
 
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowMoreMenu(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showMoreMenu]);
+
   // ระบบ Auto-Scroll
   useEffect(() => {
     if (autoScroll) {
@@ -249,6 +258,7 @@ export default function ReaderPage() {
       { requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current },
       { requestId, url: targetUrl, projectId: activeProjectId },
     );
+    setShowMoreMenu(false);
     activeChapterUrlRef.current = targetUrl;
     activeProjectIdRef.current = activeProjectId;
     if (projectId !== activeProjectId) {
