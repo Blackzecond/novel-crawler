@@ -227,12 +227,12 @@ export default function GlobalDictionaryPage() {
   return (
     <main className="min-h-screen bg-bg text-fg">
       <header className="mx-auto max-w-4xl px-4 pt-7 pb-5">
-        <a href="/read" className="inline-flex items-center gap-2 text-sm text-muted hover:text-fg">
-          <ArrowLeft className="h-4 w-4" /> กลับไปยัง Reader
+        <a href="/" className="inline-flex items-center gap-2 text-sm text-muted hover:text-fg">
+          <ArrowLeft className="h-4 w-4" /> กลับชั้นหนังสือ
         </a>
         <div className="mt-7 flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold">คลังคำศัพท์พื้นฐาน</h1>
+            <h1 className="font-serif text-2xl font-bold">พจนานุกรมพื้นฐาน</h1>
             <p className="mt-1 text-sm text-muted">ใช้ร่วมกันทุกนิยาย และส่งให้ AI เฉพาะคำที่พบในบทที่กำลังแปล</p>
           </div>
           <button onClick={() => openEdit()} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-accent px-4 text-sm font-medium text-accent-fg">
@@ -240,7 +240,16 @@ export default function GlobalDictionaryPage() {
           </button>
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-2 sm:flex">
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-line bg-card px-3">
+          <Search className="h-4 w-4 text-muted" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาคำจีน คำแปล หรือ Alias..." className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none" />
+          <button onClick={() => void refresh()} disabled={loading || busy} aria-label="โหลดใหม่" className="rounded-lg p-2 text-muted hover:bg-surface disabled:opacity-50">
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+        <details className="group mt-3 rounded-xl border border-line bg-card">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-3 text-sm font-medium">จัดการไฟล์ <span className="text-xs text-muted">แม่แบบ · นำเข้า · ส่งออก</span></summary>
+          <div className="grid grid-cols-2 gap-2 border-t border-line p-3 sm:flex">
           <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy || loading} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-line bg-card px-3 text-sm hover:bg-surface disabled:opacity-50">
             <Upload className="h-4 w-4" /> นำเข้า CSV
           </button>
@@ -251,15 +260,8 @@ export default function GlobalDictionaryPage() {
             ดาวน์โหลดแม่แบบ CSV
           </button>
           <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => void inspectImportFile(event.target.files?.[0])} />
-        </div>
-
-        <div className="mt-4 flex items-center gap-2 rounded-xl border border-line bg-card px-3">
-          <Search className="h-4 w-4 text-muted" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาคำจีน คำแปล หรือ Alias..." className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none" />
-          <button onClick={() => void refresh()} disabled={loading || busy} aria-label="โหลดใหม่" className="rounded-lg p-2 text-muted hover:bg-surface disabled:opacity-50">
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
+          </div>
+        </details>
         <div className="mt-3 flex items-center justify-between text-xs text-muted">
           <span>{visibleEntries.length} / {entries.length} รายการ</span>
           <span>คำที่ปิดใช้งานจะไม่ถูกส่งให้ AI</span>
@@ -322,8 +324,8 @@ export default function GlobalDictionaryPage() {
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                <button type="button" onClick={() => void toggleActive(entry)} disabled={busy} title={entry.isActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน'} className="rounded-lg p-2 text-muted hover:bg-surface disabled:opacity-40">
-                  {entry.isActive ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                <button type="button" onClick={() => void toggleActive(entry)} disabled={busy} title={entry.isActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน'} className="inline-flex min-h-10 items-center gap-1 rounded-lg px-2 text-[11px] text-muted hover:bg-surface disabled:opacity-40">
+                  {entry.isActive ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}{entry.isActive ? 'ปิดใช้' : 'เปิดใช้'}
                 </button>
                 <button type="button" onClick={() => openEdit(entry)} disabled={busy} aria-label="แก้ไข" className="rounded-lg p-2 text-muted hover:bg-surface disabled:opacity-40"><Pencil className="h-4 w-4" /></button>
                 <button type="button" onClick={() => void remove(entry)} disabled={busy} aria-label="ลบ" className="rounded-lg p-2 text-muted hover:bg-surface disabled:opacity-40"><Trash2 className="h-4 w-4" /></button>
