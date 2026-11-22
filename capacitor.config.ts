@@ -22,7 +22,7 @@ const config: CapacitorConfig = {
   webDir: 'www',
   server: parsedServerUrl
     ? {
-        url: parsedServerUrl.origin + parsedServerUrl.pathname.replace(/\\/$/, ''),
+        url: parsedServerUrl.origin + parsedServerUrl.pathname,
         cleartext: false,
         allowNavigation: [parsedServerUrl.hostname],
       }
