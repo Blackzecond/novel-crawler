@@ -1409,7 +1409,7 @@ export default function ReaderPage() {
                       <button type="button" onClick={() => selectReaderEdition(true)} aria-pressed={showTranslation} className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${showTranslation ? 'bg-card text-fg shadow-sm' : 'text-muted hover:text-fg'}`}>คำแปลไทย</button>
                     </div>
                   ) : (
-                    <button type="button" onClick={handleTranslate} disabled={translationBusy} className="inline-flex h-10 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-fg hover:brightness-110 disabled:opacity-50">
+                    <button type="button" onClick={handleTranslate} disabled={translationBusy} className="inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl bg-accent px-3 text-sm font-semibold text-accent-fg hover:brightness-110 disabled:opacity-50">
                       {translationBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                       {translationBusy ? 'กำลังแปล…' : 'แปลเป็นไทย'}
                     </button>
