@@ -1156,27 +1156,7 @@ export default function ReaderPage() {
             <span className="hidden sm:inline">{projectId ? 'กลับหน้าสารบัญ' : 'โปรเจกต์แปล'}</span>
           </a>
 
-          {!article && (
-          <form onSubmit={handleFormSubmit} className="flex gap-2 flex-1 min-w-0">
-            <input
-              type="url"
-              aria-label="URL นิยายที่ต้องการอ่าน"
-              placeholder="วาง URL นิยายที่ต้องการอ่าน..."
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              className="flex-1 min-w-0 px-3 h-9 bg-card border border-line rounded-lg text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60 focus:border-accent-line text-sm"
-              required
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="h-9 px-3 sm:px-4 bg-accent text-accent-fg text-sm font-medium rounded-lg hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-1.5 shrink-0 cursor-pointer transition-all"
-            >
-              {loading ? <Loader2 className="animate-spin w-4 h-4" /> : <BookOpen className="w-4 h-4" />}
-              <span className="hidden sm:inline">ดึงเนื้อหา</span>
-            </button>
-          </form>
-          )}
+
 
             <div className="shrink-0">
               <button
@@ -1445,12 +1425,19 @@ export default function ReaderPage() {
           </article>
         )}
 
-        {!article && !loading && !error && (
-          <div className="text-center py-20 px-6">
-            <BookOpen className="w-10 h-10 mx-auto mb-3 text-line" />
-            <p className="text-sm text-muted font-medium">ยังไม่ได้เปิดหน้าให้อ่าน</p>
-            <p className="text-xs text-muted mt-1">วาง URL ด้านบนเพื่อเริ่มอ่าน หรือกดไอคอนประวัติการอ่าน</p>
-          </div>
+        {!article && !loading && (
+          <section className="mx-auto max-w-xl rounded-2xl border border-line bg-card p-5 text-center shadow-sm sm:p-8">
+            <span className="mx-auto mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-soft text-accent-soft-fg"><BookOpen className="h-6 w-6" /></span>
+            <h2 className="text-lg font-bold">เริ่มอ่านนิยาย</h2>
+            <p className="mt-1 text-sm text-muted">วางลิงก์หน้าบทนิยายที่ต้องการอ่านได้เลย</p>
+            <form onSubmit={handleFormSubmit} className="mt-5 flex flex-col gap-2 sm:flex-row">
+              <label htmlFor="quick-read-url" className="sr-only">URL นิยายที่ต้องการอ่าน</label>
+              <input id="quick-read-url" type="url" required value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://..." className="h-11 min-w-0 flex-1 rounded-xl border border-line bg-bg px-3 text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/50" />
+              <button type="submit" disabled={loading} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-fg disabled:opacity-50"><BookOpen className="h-4 w-4" />เปิดอ่าน</button>
+            </form>
+            <p className="mt-3 text-xs text-muted">หรือเลือกเรื่องจากประวัติการอ่าน</p>
+            <button type="button" onClick={() => setShowHistory(true)} className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-xs text-muted hover:bg-surface"><History className="h-4 w-4" />ประวัติการอ่าน</button>
+          </section>
         )}
       </main>
       {detectedGlossary && <DetectedGlossaryModal items={detectedGlossary.items} sourceLabel={detectedGlossary.sourceLabel} onClose={() => setDetectedGlossary(null)} onSave={saveDetectedGlossaryEdits} />}
