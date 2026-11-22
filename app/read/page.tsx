@@ -323,7 +323,7 @@ export default function ReaderPage() {
           setReaderProject(project);
           setCurrentChapterId(chapter.id);
           setTranslationError('');
-          setShowTranslation(false);
+
           setArticle(cachedArticle);
           syncReaderUrl(targetUrl, activeProjectId);
           saveToHistory(targetUrl, cachedArticle.title, activeProjectId);
@@ -446,7 +446,7 @@ export default function ReaderPage() {
       setReaderProject(project);
       setCurrentChapterId(chapter?.id && !chapter.id.startsWith('catalog:') ? chapter.id : null);
       setTranslationError('');
-      setShowTranslation(false);
+
       setArticle(articleData);
       syncReaderUrl(targetUrl, activeProjectId);
 
