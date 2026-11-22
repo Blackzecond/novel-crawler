@@ -44,6 +44,22 @@ interface HistoryItem {
   projectId?: string | null;
 }
 
+function readerErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  if (error && typeof error === 'object') {
+    const value = error as Record<string, unknown>;
+    for (const key of ['message', 'error_description', 'details', 'hint']) {
+      if (typeof value[key] === 'string' && value[key].trim()) return value[key] as string;
+    }
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized && serialized !== '{}') return serialized;
+    } catch { /* use the readable fallback below */ }
+  }
+  return fallback;
+}
+
 export default function ReaderPage() {
   const [url, setUrl] = useState('');
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -570,7 +586,7 @@ export default function ReaderPage() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       if (isCurrentRequest()) {
-        setError(err.message);
+        setError(readerErrorMessage(err, 'อ่านบทไม่สำเร็จ กรุณาลองอีกครั้ง'));
         setLoading(false);
         if (article?.sourceUrl) {
           setUrl(article.sourceUrl);
@@ -1472,7 +1488,7 @@ export default function ReaderPage() {
           </article>
         )}
 
-        {!article && !loading && (
+        {!article && !loading && !error && (
           <section className="mx-auto max-w-xl rounded-2xl border border-line bg-card p-5 text-center shadow-sm sm:p-8">
             <span className="mx-auto mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-soft text-accent-soft-fg"><BookOpen className="h-6 w-6" /></span>
             <h2 className="text-lg font-bold">เริ่มอ่านนิยาย</h2>
