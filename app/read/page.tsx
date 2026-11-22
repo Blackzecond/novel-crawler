@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   Sun, Moon, BookOpen, Loader2, Copy, Check, Pencil, MoreHorizontal,
   ChevronLeft, ChevronRight, Play, Pause,
-  History, RotateCcw, Trash2, Library, Settings, X, List, Sparkles, BookMarked, Plus,
+  History, RotateCcw, Trash2, Library, Settings, X, List, Sparkles, BookMarked,
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 import { applyWordReplacements, applyWordReplacementsToHtml } from '@/lib/wordReplacements';
