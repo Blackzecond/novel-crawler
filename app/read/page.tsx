@@ -1128,6 +1128,10 @@ export default function ReaderPage() {
     { id: 'mono' as const, label: 'Mono' },
   ] as const;
 
+  const readerReturnTo = projectId && url
+    ? `/read?projectId=${encodeURIComponent(projectId)}&url=${encodeURIComponent(url)}`
+    : url ? `/read?url=${encodeURIComponent(url)}` : '/read';
+
   return (
     <div className={`min-h-screen bg-bg text-fg transition-colors duration-200`}>
       {/* Header Bar — บางเบา คุมสูงตายตัว */}
@@ -1179,7 +1183,7 @@ export default function ReaderPage() {
               <Library className="w-4 h-4" />
             </a>
             <a
-              href={`/settings/ai?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`}
+              href={`/settings/ai?returnTo=${encodeURIComponent(readerReturnTo)}`}
               title="ตั้งค่า AI สำหรับการแปล"
               aria-label="ตั้งค่า AI สำหรับการแปล"
               className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-card hover:text-fg"
