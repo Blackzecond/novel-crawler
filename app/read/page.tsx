@@ -249,7 +249,12 @@ export default function ReaderPage() {
     );
     activeChapterUrlRef.current = targetUrl;
     activeProjectIdRef.current = activeProjectId;
-    if (projectId !== activeProjectId) { setDetectedGlossary(null); setGlossaryNotice(''); }
+    if (projectId !== activeProjectId) {
+      setDetectedGlossary(null); setGlossaryNotice('');
+      // Prevent the previous project's snapshot from feeding a cache hit or prefetch
+      // while a History/deep-link navigation to another project is in flight.
+      setReaderProject(null);
+    }
     setTranslationBusy(false); setEditorBusy(false);
     setLoading(true); setError(''); setUrl(targetUrl); setAutoScroll(false);
     const cacheKey = `${activeProjectId ?? 'standalone'}:${targetUrl}`;
@@ -271,6 +276,7 @@ export default function ReaderPage() {
           } else {
             setCurrentChapterId(cachedChapterId);
           }
+          if (!activeProjectId) setReaderProject(null);
           if (activeProjectId && memoryChapter && !memoryChapter.id.startsWith('catalog:')) {
             void getStore().updateProject(activeProjectId, { lastReadChapterId: cachedChapterId ?? memoryChapter.id })
               .catch((progressError) => console.warn('Could not update last-read progress:', progressError));
@@ -487,11 +493,18 @@ export default function ReaderPage() {
             });
             if (!savedChapter) throw new Error('บันทึกเนื้อหาบทไม่สำเร็จ');
             if (!isCurrentRequest()) return;
-            const savedArticle = { ...articleData, chapterId: savedChapter.id };
+            // A translation can finish while the source-save callback is still running.
+            // Merge only the real UUID into the latest cache/UI object; never replace a
+            // newer translated draft with the stale articleData captured before the save.
+            const latestCachedArticle = chapterCacheRef.current.get(cacheKey) ?? articleData;
+            const savedArticle = { ...latestCachedArticle, chapterId: savedChapter.id };
             chapterCacheRef.current.set(cacheKey, savedArticle);
-            if (activeChapterUrlRef.current === targetUrl) {
+            if (activeChapterUrlRef.current === targetUrl && activeProjectIdRef.current === activeProjectId) {
               setCurrentChapterId(savedChapter.id);
-              setArticle((current) => current && activeChapterUrlRef.current === targetUrl ? savedArticle : current);
+              setArticle((current) => current && current.sourceUrl === targetUrl
+                && (current.projectId ?? null) === (activeProjectId ?? null)
+                ? { ...current, chapterId: savedChapter.id }
+                : current);
             }
             setReaderProject((current) => current?.id === activeProjectId ? {
               ...current,
@@ -761,12 +774,17 @@ export default function ReaderPage() {
 
   // Start fetching the next chapter as soon as the current chapter is available.
   useEffect(() => {
-    if (loading || !article?.nextUrl) return;
-    void prefetchNextChapter(article.nextUrl, projectId, readerProject, url);
-  }, [loading, article?.nextUrl, projectId, readerProject, url]);
+    if (loading || !article?.nextUrl || !article.sourceUrl) return;
+    // The article owns its project identity. Do not combine its nextUrl with
+    // projectId/url state from a different navigation render.
+    if (!isArticleTargetCurrent(article, projectId, url)) return;
+    const articleProjectId = article.projectId ?? null;
+    const matchingProject = readerProject?.id === articleProjectId ? readerProject : null;
+    void prefetchNextChapter(article.nextUrl, articleProjectId, matchingProject, article.sourceUrl);
+  }, [loading, article?.nextUrl, article?.sourceUrl, article?.projectId, projectId, readerProject, url]);
 
   const handleTranslate = async () => {
-    if (!article || loading || translationBusy || editorBusy) return;
+    if (!article || loading || translationBusy || editorBusy || !isArticleTargetCurrent(article, projectId, url)) return;
     const settings = loadAiSettings();
     if (!hasAiKey(settings)) {
       setTranslationError('ยังไม่ได้ตั้งค่า API สำหรับการแปล กรุณากรอก Base URL, Model และ API Key ก่อน');
@@ -935,7 +953,7 @@ export default function ReaderPage() {
     } finally { if (isActiveTranslation()) setTranslationBusy(false); }
   };
   const handleRestorePreProofread = async () => {
-    if (!article?.preProofreadText || loading) return;
+    if (!article?.preProofreadText || loading || !isArticleTargetCurrent(article, projectId, url)) return;
     const targetArticle = article, targetProjectId = projectId, targetUrl = url, requestId = readerRequestRef.current;
     const isActive = () => isReaderTargetCurrent({ requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current }, { requestId, url: targetUrl, projectId: targetProjectId });
     const restored = targetArticle.preProofreadText;
@@ -958,7 +976,7 @@ export default function ReaderPage() {
   };
 
   const handleEditTranslation = async () => {
-    if (!article?.translatedText || loading || editorBusy || translationBusy) return;
+    if (!article?.translatedText || loading || editorBusy || translationBusy || !isArticleTargetCurrent(article, projectId, url)) return;
     const settings = loadAiSettings();
     if (!hasAiKey(settings)) {
       setTranslationError('ยังไม่ได้ตั้งค่า API สำหรับ AI บ.ก. กรุณาตั้งค่า API ก่อน');
