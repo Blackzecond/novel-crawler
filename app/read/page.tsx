@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { 
-  Sun, Moon, BookOpen, Loader2, Copy, Check, Pencil,
+  Sun, Moon, BookOpen, Loader2, Copy, Check, Pencil, MoreHorizontal,
   ChevronLeft, ChevronRight, Play, Pause,
   History, RotateCcw, Trash2, Library, Settings, X, List, Sparkles, BookMarked, Plus,
 } from 'lucide-react';
@@ -1338,7 +1338,7 @@ export default function ReaderPage() {
       )}
 
       {/* Main Reader View */}
-      <main className="max-w-[44rem] mx-auto px-5 py-6 sm:py-8">
+      <main className="max-w-[40rem] mx-auto px-5 py-6 sm:py-8">
         {error && (
           <div role="alert" className="p-4 bg-danger-bg border border-danger-line text-danger-fg rounded-xl mb-6 space-y-3">
             <p className="text-sm font-semibold">{error}</p>
@@ -1379,7 +1379,7 @@ export default function ReaderPage() {
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <button type="button" onClick={() => setShowMoreMenu((value) => !value)} aria-expanded={showMoreMenu} aria-label="การทำงานเพิ่มเติม" className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border ${showMoreMenu ? 'border-accent-line bg-accent-soft text-accent-soft-fg' : 'border-line bg-surface text-muted hover:bg-card'}`}>
-                    <Plus className="h-4 w-4" />
+                    <MoreHorizontal className="h-4 w-4" />
                   </button>
                   <button type="button" onClick={() => article.prevUrl && fetchArticle(article.prevUrl)} disabled={!article.prevUrl || loading} aria-label="ตอนก่อนหน้า" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-surface text-fg disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
                   <button type="button" onClick={() => article.nextUrl && fetchArticle(article.nextUrl)} disabled={!article.nextUrl || loading} aria-label="ตอนถัดไป" className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-accent-fg disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button>
