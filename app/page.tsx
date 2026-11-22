@@ -327,7 +327,7 @@ export default function ProjectsHomePage() {
     <div className="min-h-screen bg-bg text-fg transition-colors duration-200">
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-line/80 bg-card/85 backdrop-blur-xl">
-        <div className="max-w-5xl mx-auto flex items-center justify-between gap-2 px-3 py-2 sm:gap-3 sm:px-6">
+        <div className="max-w-5xl mx-auto flex flex-col items-stretch gap-2 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6">
           <a href="/" className="flex shrink-0 items-center gap-3 min-w-0" aria-label="Novel Translator หน้าหลัก">
             <span className="h-10 w-10 inline-flex items-center justify-center rounded-2xl bg-accent text-accent-fg shadow-sm shadow-accent/20 shrink-0">
               <Library className="w-5 h-5" />
@@ -337,15 +337,15 @@ export default function ProjectsHomePage() {
               <span className="block text-[11px] text-muted mt-0.5 truncate">พื้นที่จัดการนิยายและงานแปล</span>
             </span>
           </a>
-          <nav aria-label="เมนูหลัก" className="flex min-w-0 flex-1 items-center justify-start gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-none sm:justify-end sm:gap-2">
-            <a href="/read" className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap h-10 px-2.5 rounded-xl text-xs font-medium text-muted hover:text-fg hover:bg-surface transition-colors"><BookOpen className="w-4 h-4" />อ่านด่วน</a>
-            <a href="/dictionary" className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap h-10 px-2.5 rounded-xl text-xs font-medium text-muted hover:text-fg hover:bg-surface transition-colors"><BookOpen className="w-4 h-4" />พจนานุกรม</a>
-            <a href="/glossary-sets" className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap h-10 px-2.5 rounded-xl text-xs font-medium text-muted hover:text-fg hover:bg-surface transition-colors"><Library className="w-4 h-4" />ชุดศัพท์</a>
-            <a href="/settings/ai" className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap h-10 px-2.5 rounded-xl text-xs font-medium text-muted hover:text-fg hover:bg-surface transition-colors" title="ตั้งค่า API สำหรับการแปลและจับศัพท์"><Sparkles className="w-4 h-4" />ตั้งค่า AI</a>
+          <nav aria-label="เมนูหลัก" className="grid w-full grid-cols-3 gap-1 sm:flex sm:w-auto sm:min-w-0 sm:flex-1 sm:items-center sm:justify-end sm:gap-2">
+            <a href="/read" className="inline-flex w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap h-10 px-1 rounded-xl text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:w-auto sm:shrink-0 sm:gap-1.5 sm:px-2.5 sm:text-xs"><BookOpen className="w-4 h-4" />อ่านด่วน</a>
+            <a href="/dictionary" className="inline-flex w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap h-10 px-1 rounded-xl text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:w-auto sm:shrink-0 sm:gap-1.5 sm:px-2.5 sm:text-xs"><BookOpen className="w-4 h-4" />พจนานุกรม</a>
+            <a href="/glossary-sets" className="inline-flex w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap h-10 px-1 rounded-xl text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:w-auto sm:shrink-0 sm:gap-1.5 sm:px-2.5 sm:text-xs"><Library className="w-4 h-4" />ชุดศัพท์</a>
+            <a href="/settings/ai" className="inline-flex w-full min-w-0 items-center justify-center gap-1 whitespace-nowrap h-10 px-1 rounded-xl text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:w-auto sm:shrink-0 sm:gap-1.5 sm:px-2.5 sm:text-xs" title="ตั้งค่า API สำหรับการแปลและจับศัพท์"><Sparkles className="w-4 h-4" />ตั้งค่า AI</a>
             {isSupabaseConfigured() && (
               <button onClick={() => void signOut()} title="ออกจากระบบ" aria-label="ออกจากระบบ"
-                className="h-9 w-9 inline-flex items-center justify-center rounded-xl text-muted hover:text-danger-fg hover:bg-danger-bg transition-colors">
-                <LogOut className="w-4 h-4" />
+                className="h-10 w-full inline-flex items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-medium text-muted hover:text-danger-fg hover:bg-danger-bg transition-colors sm:h-9 sm:w-auto sm:shrink-0 sm:gap-1.5 sm:px-2.5 sm:text-xs">
+                <LogOut className="w-4 h-4 shrink-0" />ออกจากระบบ
               </button>
             )}
           </nav>
