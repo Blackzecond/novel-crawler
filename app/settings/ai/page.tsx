@@ -27,6 +27,7 @@ export default function AiSettingsPage() {
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
   const [returnTo, setReturnTo] = useState('/');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useEffect(() => {
     const requestedPath = new URLSearchParams(window.location.search).get('returnTo');
@@ -49,12 +50,16 @@ export default function AiSettingsPage() {
           model: cloud?.model || local.model,
         };
         setSettings(merged);
-        setProvider(inferAiProvider(merged.baseUrl));
+        const detectedProvider = inferAiProvider(merged.baseUrl);
+        setProvider(detectedProvider);
+        setAdvancedOpen(detectedProvider === 'custom');
         setSaved(hasAiKey(merged));
       } catch (err) {
         if (!active) return;
         setSettings(local);
-        setProvider(inferAiProvider(local.baseUrl));
+        const detectedProvider = inferAiProvider(local.baseUrl);
+        setProvider(detectedProvider);
+        setAdvancedOpen(detectedProvider === 'custom');
         setSaved(hasAiKey(local));
         setNotice('โหลดค่าจาก Cloud ไม่สำเร็จ ใช้ค่าที่บันทึกในเบราว์เซอร์นี้แทน');
       } finally {
@@ -98,13 +103,15 @@ export default function AiSettingsPage() {
     saveAiSettings(normalized);
     setSettings(normalized);
     setSaved(true);
+    let syncFailed = false;
     try {
       await saveCloudAiSettings(normalized);
       setNotice('บันทึกการตั้งค่าแล้ว คีย์ API อยู่ในเบราว์เซอร์นี้เท่านั้น');
     } catch {
-      setNotice('บันทึกในเบราว์เซอร์แล้ว แต่ซิงก์ Base URL และชื่อโมเดลขึ้น Cloud ไม่สำเร็จ');
+      syncFailed = true;
+      setNotice('บันทึกในเบราว์เซอร์แล้ว แต่ซิงก์ Base URL และชื่อโมเดลขึ้น Cloud ไม่สำเร็จ สามารถกดบันทึกอีกครั้งเพื่อลองใหม่');
     }
-    return normalized;
+    return { settings: normalized, syncFailed };
   };
 
   const handleSave = async () => {
@@ -114,7 +121,9 @@ export default function AiSettingsPage() {
     try {
       await persist();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'บันทึกการตั้งค่าไม่สำเร็จ');
+      const message = err instanceof Error ? err.message : 'บันทึกการตั้งค่าไม่สำเร็จ';
+      if (message.includes('Base URL') || message.includes('ชื่อโมเดล')) setAdvancedOpen(true);
+      setError(message);
       setSaved(false);
     } finally {
       setSaving(false);
@@ -125,27 +134,32 @@ export default function AiSettingsPage() {
     setTesting(true);
     setError('');
     setNotice('');
+    let settingsWereSaved = false;
     try {
-      const cfg = await persist();
-      const answer = await testAiConnection(cfg);
+      const persisted = await persist();
+      settingsWereSaved = true;
+      const answer = await testAiConnection(persisted.settings);
       if (!answer.trim()) {
         throw new Error('เชื่อมต่อได้ แต่ API ไม่ส่งข้อความกลับมา');
       }
-      setNotice('เชื่อมต่อสำเร็จ โมเดลตอบกลับแล้ว พร้อมใช้งานทั้ง Reader และระบบจับศัพท์');
+      setNotice(persisted.syncFailed ? 'ทดสอบการเชื่อมต่อสำเร็จ โมเดลตอบกลับแล้ว แต่ซิงก์ Base URL และชื่อโมเดลขึ้น Cloud ไม่สำเร็จ กดบันทึกการตั้งค่าอีกครั้งเพื่อลองซิงก์' : 'บันทึกการตั้งค่าและทดสอบการเชื่อมต่อสำเร็จ โมเดลตอบกลับแล้ว');
       setSaved(true);
     } catch (err) {
+      if (settingsWereSaved) setNotice('บันทึกการตั้งค่าในเบราว์เซอร์แล้ว แต่การทดสอบการเชื่อมต่อไม่ผ่าน');
       setError(err instanceof Error ? err.message : 'ทดสอบการเชื่อมต่อไม่สำเร็จ');
     } finally {
       setTesting(false);
     }
   };
 
+  const returnLabel = returnTo.startsWith('/read') ? 'กลับไปอ่านตอนเดิม' : returnTo.startsWith('/project/') ? 'กลับสารบัญ' : 'กลับชั้นหนังสือ';
+
   return (
     <main className="min-h-screen bg-bg text-fg">
       <header className="border-b border-line bg-card">
         <div className="mx-auto flex h-14 max-w-3xl items-center px-4 sm:px-6">
           <Link href={returnTo} className="inline-flex items-center gap-2 text-sm text-muted hover:text-fg">
-            <ArrowLeft className="h-4 w-4" /> กลับหน้าโปรเจกต์
+            <ArrowLeft className="h-4 w-4" /> {returnLabel}
           </Link>
         </div>
       </header>
@@ -175,6 +189,7 @@ export default function AiSettingsPage() {
                   onChange={(event) => {
                     const next = event.target.value as AiProvider;
                     setProvider(next);
+                    setAdvancedOpen(next === 'custom');
                     if (next !== 'custom') {
                       const preset = AI_PROVIDER_PRESETS[next];
                       update({ baseUrl: preset.baseUrl, model: preset.model, apiKey: '' });
@@ -193,6 +208,25 @@ export default function AiSettingsPage() {
                 </span>
               </label>
 
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium">API Key</span>
+                <input
+                  type="password"
+                  value={settings.apiKey}
+                  onChange={(event) => update({ apiKey: event.target.value })}
+                  placeholder="วาง API Key ที่นี่"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:ring-2 focus:ring-accent/50"
+                />
+                <span className="block text-xs text-muted">เก็บไว้ใน localStorage ของเบราว์เซอร์นี้เท่านั้น ไม่ส่งไปเก็บใน Supabase</span>
+              </label>
+
+              <details open={advancedOpen || provider === 'custom'} className="rounded-xl border border-line bg-surface p-3">
+                <summary onClick={(event) => { if (provider === 'custom') event.preventDefault(); else setAdvancedOpen(!advancedOpen); }} className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium">
+                  การตั้งค่าขั้นสูง <span className="text-xs font-normal text-muted">{provider === 'custom' ? 'จำเป็นสำหรับ Custom' : 'Base URL และชื่อโมเดล'}</span>
+                </summary>
+                <div className="mt-3 space-y-4">
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium">API Base URL</span>
                 <input
@@ -220,19 +254,9 @@ export default function AiSettingsPage() {
                 />
               </label>
 
-              <label className="block space-y-1.5">
-                <span className="text-sm font-medium">API Key</span>
-                <input
-                  type="password"
-                  value={settings.apiKey}
-                  onChange={(event) => update({ apiKey: event.target.value })}
-                  placeholder="วาง API Key ที่นี่"
-                  autoComplete="off"
-                  spellCheck={false}
-                  className="h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm outline-none focus:ring-2 focus:ring-accent/50"
-                />
-                <span className="block text-xs text-muted">เก็บไว้ใน localStorage ของเบราว์เซอร์นี้เท่านั้น ไม่ส่งไปเก็บใน Supabase</span>
-              </label>
+                </div>
+              </details>
+
 
               <div className="rounded-xl border border-line bg-surface p-3 text-xs leading-relaxed text-muted">
                 <p className="font-semibold text-fg">การจัดเก็บและความเป็นส่วนตัว</p>
@@ -271,7 +295,7 @@ export default function AiSettingsPage() {
                   {saving ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า'}
                 </button>
               </div>
-              {saved && <p className="text-right text-xs text-muted">มีการตั้งค่า API Key แล้ว</p>}
+              {saved && <p className="text-right text-xs text-muted">มี API Key บันทึกในเบราว์เซอร์นี้แล้ว</p>}
             </>
           )}
         </section>

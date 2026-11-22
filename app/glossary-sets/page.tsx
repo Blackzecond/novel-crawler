@@ -24,6 +24,7 @@ export default function GlossarySetsPage() {
   const [entries, setEntries] = useState<GlossaryEntry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedSet, setSelectedSet] = useState('');
+  const [mobileShowSet, setMobileShowSet] = useState(false);
   const [selectedTerms, setSelectedTerms] = useState<string[]>([]);
   const [targetProject, setTargetProject] = useState('');
   const [setName, setSetName] = useState('');
@@ -98,6 +99,7 @@ export default function GlossarySetsPage() {
       if (insertError) throw insertError;
       setSetName(''); setSetDescription('');
       setNotice('สร้างชุดคลังศัพท์แล้ว');
+      setMobileShowSet(true);
       await load(data.id);
     } catch (err) { setError(err instanceof Error ? err.message : 'สร้างชุดศัพท์ไม่สำเร็จ'); }
     finally { setBusy(false); }
@@ -161,7 +163,8 @@ export default function GlossarySetsPage() {
       }));
       const { error: importError } = await supabase.from('glossary_entries').upsert(rows, { onConflict: 'project_id,source_term' });
       if (importError) throw importError;
-      setNotice(`นำเข้า ${terms.length} คำไปยังโปรเจกต์แล้ว (คำที่มีชื่อจีนซ้ำจะถูกอัปเดต)`);
+      const destinationName = projects.find((project) => project.id === targetProject)?.title ?? 'นิยายปลายทาง';
+      setNotice(`นำเข้า ${terms.length} คำไปยัง “${destinationName}” แล้ว (คำที่มีชื่อจีนซ้ำจะถูกอัปเดต)`);
       setSelectedTerms([]);
     } catch (err) { setError(err instanceof Error ? err.message : 'นำเข้าคลังศัพท์ไม่สำเร็จ'); }
     finally { setBusy(false); }
@@ -186,7 +189,7 @@ export default function GlossarySetsPage() {
         {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 flex flex-wrap items-center justify-between gap-2"><span>{error}</span><button type="button" onClick={() => { setLoading(true); void load().catch((err) => setError(err instanceof Error ? err.message : 'โหลดข้อมูลไม่สำเร็จ')).finally(() => setLoading(false)); }} className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium hover:bg-red-100">ลองโหลดอีกครั้ง</button></div>}
         {notice && <div role="status" className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-800">{notice}</div>}
         <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="space-y-4">
+          <aside className={mobileShowSet ? "hidden space-y-4 lg:block" : "space-y-4"}>
             <section className="rounded-2xl border border-line bg-card p-4">
               <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold"><FolderOpen className="h-4 w-4 text-accent" />สร้างชุดใหม่</h2>
               <form onSubmit={createSet} className="space-y-3">
@@ -199,14 +202,17 @@ export default function GlossarySetsPage() {
               <h2 className="mb-2 px-1 text-xs font-semibold text-muted">ชุดที่มีอยู่ ({sets.length})</h2>
               {loading ? <div className="flex justify-center p-5"><Loader2 className="h-5 w-5 animate-spin" /></div> :
                 sets.length === 0 ? <p className="px-1 py-4 text-xs text-muted">ยังไม่มีชุดคลังศัพท์ สร้างชุดแรกได้จากด้านบน</p> :
-                <div className="space-y-1">{sets.map((s) => <button key={s.id} onClick={() => { setSelectedSet(s.id); setEntries([]); setSearch(''); setSelectedTerms([]); setNotice(''); void load(s.id).catch((err) => setError(err instanceof Error ? err.message : 'โหลดคำศัพท์ไม่สำเร็จ')); }} className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-sm ${selectedSet === s.id ? 'bg-accent-soft text-accent-soft-fg' : 'hover:bg-surface'}`}><span className="min-w-0 truncate">{s.name}</span>{selectedSet === s.id && <Check className="h-4 w-4 shrink-0" />}</button>)}</div>}
+                <div className="space-y-1">{sets.map((s) => <button key={s.id} onClick={() => { setSelectedSet(s.id); setMobileShowSet(true); setEntries([]); setSearch(''); setSelectedTerms([]); setNotice(''); void load(s.id).catch((err) => setError(err instanceof Error ? err.message : 'โหลดคำศัพท์ไม่สำเร็จ')); }} className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-sm ${selectedSet === s.id ? 'bg-accent-soft text-accent-soft-fg' : 'hover:bg-surface'}`}><span className="min-w-0 truncate">{s.name}</span>{selectedSet === s.id && <Check className="h-4 w-4 shrink-0" />}</button>)}</div>}
             </section>
           </aside>
-          <div className="min-w-0 space-y-4">
+          <div className={mobileShowSet ? "min-w-0 space-y-4" : "hidden min-w-0 space-y-4 lg:block"}>
+            <button type="button" onClick={() => setMobileShowSet(false)} className="mb-2 inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3 text-xs text-muted lg:hidden"><ArrowLeft className="h-4 w-4"/> กลับไปรายการชุด</button>
             {selected ? <>
               <section className="rounded-2xl border border-line bg-card p-4 sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0"><h2 className="text-lg font-bold">{selected.name}</h2><p className="mt-1 text-xs text-muted">{selected.description || 'ไม่มีคำอธิบาย'} · {entries.length} คำ</p></div>
+                  <div className="min-w-0"><h2 className="text-lg font-bold">{selected.name}</h2><p className="mt-1 text-xs text-muted">{selected.description || 'ไม่มีคำอธิบาย'} · {entries.length} คำ</p>
+                    {entries.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{entries.slice(0,3).map(entry => <span key={entry.id} className="inline-flex max-w-full items-center gap-1 rounded-lg bg-surface px-2.5 py-1.5 text-[11px]"><span className="truncate font-medium">{entry.source_term}</span><span className="text-muted">→</span><span className="truncate text-accent-soft-fg">{entry.translated_term}</span></span>)}</div>}
+                  </div>
                   <button onClick={() => void deleteSet()} disabled={busy} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-2.5 text-xs text-muted hover:border-red-300 hover:text-red-600 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />ลบชุดนี้</button>
                 </div>
                 <form onSubmit={addEntry} className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -234,17 +240,23 @@ export default function GlossarySetsPage() {
                   <button onClick={() => setSelectedTerms(visibleEntries.length && visibleEntries.every((e) => selectedTerms.includes(e.id)) ? selectedTerms.filter((id) => !visibleEntries.some((e) => e.id === id)) : Array.from(new Set([...selectedTerms, ...visibleEntries.map((e) => e.id)])))} className="rounded-lg border border-line px-3 py-2 text-xs hover:bg-surface">{visibleEntries.length && visibleEntries.every((e) => selectedTerms.includes(e.id)) ? 'ยกเลิกเลือกที่แสดง' : 'เลือกคำที่แสดง'}</button>
                   <span className="text-xs text-muted">เลือกแล้ว {selectedTerms.length} คำ</span>
                   <div className="flex-1" />
-                  <button onClick={() => void importEntries(false)} disabled={busy || !targetProject || !selectedTerms.length} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-semibold hover:bg-surface disabled:opacity-40"><FilePlus2 className="h-3.5 w-3.5" />นำเข้าคำที่เลือก</button>
+
                 </div>
                 {visibleEntries.length === 0 ? <p className="p-8 text-center text-sm text-muted">{entries.length ? 'ไม่พบคำที่ตรงกับการค้นหา' : 'ชุดนี้ยังไม่มีคำศัพท์ เพิ่มคำแรกจากแบบฟอร์มด้านบน'}</p> :
                   <div className="divide-y divide-line">{visibleEntries.map((entry) => <div key={entry.id} className="flex items-start gap-3 p-3 sm:px-4"><input type="checkbox" aria-label={"เลือก " + entry.source_term} checked={selectedTerms.includes(entry.id)} onChange={(e) => setSelectedTerms((old) => e.target.checked ? [...old, entry.id] : old.filter((id) => id !== entry.id))} className="mt-1 h-4 w-4 accent-current" /><div className="min-w-0 flex-1"><div className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><span className="font-medium text-sm">{entry.source_term}</span><span className="text-muted">→</span><span className="text-sm text-accent-soft-fg">{entry.translated_term}</span></div><div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted"><span>{TERM_TYPES.find((t) => t.value === entry.term_type)?.label ?? entry.term_type}</span>{entry.notes && <span>· {entry.notes}</span>}</div></div><button onClick={() => void deleteEntry(entry)} title="ลบคำศัพท์" aria-label={`ลบ ${entry.source_term}`} disabled={busy} className="rounded-lg p-2 text-muted hover:text-red-600 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button></div>)}</div>}
-                <div className="flex flex-col gap-3 border-t border-line p-4 sm:flex-row sm:items-center">
-                  <label className="flex-1 text-xs text-muted">นำเข้าคลังศัพท์ไปยังนิยาย
-                    <select value={targetProject} onChange={(e) => setTargetProject(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm text-fg">
+                <div className="space-y-3 border-t border-line p-4">
+                  <label className="block text-xs font-medium text-muted">นิยายปลายทาง
+                    <select value={targetProject} onChange={(e) => setTargetProject(e.target.value)} className="mt-1 h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm text-fg">
                       <option value="">เลือกโปรเจกต์ปลายทาง…</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
                     </select>
                   </label>
-                  <button onClick={() => void importEntries(true)} disabled={busy || !targetProject || !entries.length} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-accent-fg disabled:opacity-40"><Upload className="h-4 w-4" />นำเข้าทั้งชุด ({entries.length})</button>
+                  {!targetProject && <p className="text-xs text-muted">ต้องเลือกนิยายปลายทางก่อนนำเข้าคำศัพท์</p>}
+                  {projects.length === 0 && <p className="text-xs text-muted">ยังไม่มีโปรเจกต์นิยายในบัญชีนี้</p>}
+                  <p className="text-xs text-muted">คำจีนที่ซ้ำจะอัปเดตคำแปลในนิยายปลายทางที่เลือกเท่านั้น</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <button onClick={() => void importEntries(false)} disabled={busy || !targetProject || !selectedTerms.length} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line px-3 text-xs font-semibold hover:bg-surface disabled:opacity-40"><FilePlus2 className="h-4 w-4" />นำเข้าที่เลือก ({selectedTerms.length})</button>
+                    <button onClick={() => void importEntries(true)} disabled={busy || !targetProject || !entries.length} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg disabled:opacity-40"><Upload className="h-4 w-4" />นำเข้าทั้งชุด ({entries.length})</button>
+                  </div>
                 </div>
               </section>
             </> : <section className="rounded-2xl border border-dashed border-line bg-card p-10 text-center"><CircleHelp className="mx-auto h-7 w-7 text-muted" /><p className="mt-3 text-sm font-medium">เลือกหรือสร้างชุดคลังศัพท์</p><p className="mt-1 text-xs text-muted">ชุดคลังศัพท์จะแยกจาก glossary ของแต่ละนิยาย จนกว่าจะเลือกนำเข้าเอง</p></section>}
