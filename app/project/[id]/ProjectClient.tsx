@@ -14,6 +14,7 @@ import {
 } from '@/lib/ai';
 import { loadCloudAiSettings, saveCloudAiSettings } from '@/lib/cloudPreferences';
 import DetectedGlossaryModal, { DetectedGlossaryItem } from '@/components/DetectedGlossaryModal';
+import NovelCover from '@/components/NovelCover';
 import { fetchWithNativeBrowser, prefersNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -29,23 +30,8 @@ function htmlToPlainText(html: string): string {
 }
 
 function StatusBadge({ status }: { status: NovelChapter['status'] }) {
-  if (status === 'translated')
-    return (
-      <span className="inline-flex items-center gap-1 px-1.5 h-5 rounded-full text-[10px] font-medium bg-green-600 text-white shrink-0">
-        <Sparkles className="w-3 h-3" /> แปลแล้ว
-      </span>
-    );
-  if (status === 'fetched')
-    return (
-      <span className="inline-flex items-center gap-1 px-1.5 h-5 rounded-full text-[10px] bg-accent-soft text-accent-soft-fg border border-accent-line shrink-0">
-        <CheckCircle2 className="w-3 h-3" /> ดึงแล้ว
-      </span>
-    );
-  return (
-    <span className="inline-flex items-center gap-1 px-1.5 h-5 rounded-full text-[10px] bg-surface text-muted border border-line shrink-0">
-      <Circle className="w-3 h-3" /> ยังไม่ดึง
-    </span>
-  );
+  const label = status === 'translated' ? 'แปลแล้ว' : status === 'fetched' ? 'ดึงแล้ว' : 'ยังไม่ดึง';
+  return <span className="shrink-0 whitespace-nowrap text-[11px] text-muted">{label}</span>;
 }
 
 export default function ProjectClient({ id }: { id: string }) {
@@ -521,175 +507,87 @@ export default function ProjectClient({ id }: { id: string }) {
   }
 
   const total = project.chapters.length;
-  const fetchedCount = project.chapters.filter((c) => c.status !== 'pending').length;
+  const fetchedCount = project.chapters.filter((chapter) => chapter.status !== 'pending').length;
   const pendingCount = total - fetchedCount;
-  const translatedCount = project.chapters.filter((c) => c.status === 'translated').length;
-  const orders = project.chapters.map((c) => c.order);
+  const translatedCount = project.chapters.filter((chapter) => chapter.status === 'translated').length;
   const chapters = project.chapters
-    .filter((c) => !filter || c.title.includes(filter.trim()))
+    .filter((chapter) => !filter || chapter.title.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()))
     .sort((a, b) => (sortDesc ? b.order - a.order : a.order - b.order));
-  const hasOriginalOrderAsc = orders.length > 1 && orders[0] <= orders[orders.length - 1];
   const progressPct = total ? ((queue.running ? queue.done : fetchedCount) / total) * 100 : 0;
-  const glossaryEntries = Object.entries(project.glossary);
-  const characterEntries = glossaryEntries.filter(([zh]) => project.glossaryTypes?.[zh] === 'character');
-  const termEntries = glossaryEntries.filter(([zh]) => project.glossaryTypes?.[zh] !== 'character');
   const lastRead = project.lastReadChapterId
-    ? project.chapters.find((c) => c.id === project.lastReadChapterId) ?? null
+    ? project.chapters.find((chapter) => chapter.id === project.lastReadChapterId) ?? null
     : null;
 
   return (
     <div className="min-h-screen bg-bg text-fg transition-colors duration-200">
-      {/* Header */}
       <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-md">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3 px-4 sm:px-6 h-14">
-          <div className="flex items-center gap-2 min-w-0">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-0.5 h-8 pl-1 pr-2 rounded-lg text-sm text-muted hover:text-accent-soft-fg shrink-0 cursor-pointer transition-colors"
-              title="กลับหน้าโปรเจกต์แปล"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              โปรเจกต์
-            </Link>
-            <div className="h-6 w-px bg-line shrink-0" />
-            {renaming ? (
-              <div className="flex items-center gap-1 min-w-0 flex-1 sm:flex-none sm:w-80">
-                <input
-                  autoFocus
-                  value={renameDraft}
-                  onChange={(e) => setRenameDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void saveRename();
-                    if (e.key === 'Escape') setRenaming(false);
-                  }}
-                  className="h-8 flex-1 min-w-0 px-2 text-sm bg-bg border border-line rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/60"
-                />
-                <button onClick={() => void saveRename()} className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-accent-soft-fg hover:bg-accent-soft cursor-pointer" aria-label="ยืนยันชื่อใหม่">
-                  <Check className="w-4 h-4" />
-                </button>
-                <button onClick={() => setRenaming(false)} className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted hover:bg-card cursor-pointer" aria-label="ยกเลิก">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 min-w-0">
-                <div className="min-w-0">
-                  <h1 className="text-sm sm:text-base font-bold leading-tight truncate">{project.title}</h1>
-                  <p className="text-[11px] text-muted leading-tight truncate hidden sm:flex items-center gap-1.5">
-                    <Globe className="w-3 h-3 shrink-0" /> {project.host} · {total} บท
-                  </p>
-                </div>
-                <button
-                  onClick={startRename}
-                  className="h-7 w-7 inline-flex items-center justify-center rounded-lg text-muted hover:text-accent-soft-fg hover:bg-card shrink-0 cursor-pointer"
-                  title="เปลี่ยนชื่อโปรเจกต์"
-                  aria-label="เปลี่ยนชื่อโปรเจกต์"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <a
-              href={project.sourceUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-line text-muted hover:text-accent-soft-fg hover:border-accent-line hover:bg-accent-soft transition-colors cursor-pointer"
-              title="เปิดหน้าสารบัญต้นฉบับ"
-            >
-              <ExternalLink className="w-4 h-4" />
-            </a>
-            <button
-              onClick={handleDelete}
-              className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-line text-muted hover:text-danger-fg hover:border-danger-line transition-colors cursor-pointer"
-              aria-label="ลบโปรเจกต์"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
+        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-3 px-4 sm:px-6">
+          <Link href="/" className="inline-flex min-h-10 shrink-0 items-center gap-1 rounded-lg pr-2 text-sm font-medium text-muted hover:text-fg">
+            <ChevronLeft className="h-4 w-4" /> ชั้นหนังสือ
+          </Link>
+          <a href={project.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-line px-3 text-xs text-muted hover:bg-card hover:text-fg">
+            <ExternalLink className="h-4 w-4" /> ต้นฉบับ
+          </a>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-4 sm:space-y-5">
-        {/* แถบสถิติ + ความคืบหน้า + อ่านต่อ */}
-        <section className="rounded-xl border border-line bg-card shadow-sm p-4 space-y-3">
-          {lastRead && (
-            <Link
-              href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(lastRead.url)}`}
-              className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 h-8 px-3 text-xs font-medium bg-accent-soft text-accent-soft-fg border border-accent-line rounded-lg hover:brightness-105 cursor-pointer"
-            >
-              <History className="w-3.5 h-3.5" />
-              อ่านต่อจากบทล่าสุด: {lastRead.title}
-              <ChevronRight className="w-3.5 h-3.5" />
+      <main className="mx-auto max-w-4xl space-y-4 px-4 py-5 sm:space-y-5 sm:px-6 sm:py-7">
+        <section className="flex min-w-0 items-start gap-4">
+          <NovelCover projectId={project.id} title={project.title} size="large" />
+          <div className="min-w-0 flex-1">
+            {renaming ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <input autoFocus value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === 'Enter') void saveRename(); if (event.key === 'Escape') setRenaming(false); }}
+                  className="h-10 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 text-sm" />
+                <button onClick={() => void saveRename()} className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-accent-fg" aria-label="บันทึกชื่อเรื่อง"><Check className="h-4 w-4" /></button>
+                <button onClick={() => setRenaming(false)} className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-line text-muted" aria-label="ยกเลิก"><X className="h-4 w-4" /></button>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2">
+                <h1 className="min-w-0 flex-1 break-words font-serif text-2xl font-bold leading-tight sm:text-3xl">{project.title}</h1>
+                <button onClick={startRename} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-card hover:text-fg" aria-label="เปลี่ยนชื่อเรื่อง"><Pencil className="h-4 w-4" /></button>
+              </div>
+            )}
+            <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted"><Globe className="h-3.5 w-3.5" />{project.host}<span>·</span>{total.toLocaleString('th-TH')} ตอน</p>
+            {lastRead ? (
+              <Link href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(lastRead.url)}`} className="mt-3 inline-flex min-h-10 max-w-full items-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-accent-fg">
+                <History className="h-4 w-4 shrink-0" /><span className="min-w-0 truncate">อ่านต่อ · {lastRead.title}</span><ChevronRight className="h-4 w-4 shrink-0" />
+              </Link>
+            ) : (
+              <p className="mt-3 text-xs text-muted">ยังไม่มีประวัติการอ่าน เลือกตอนจากสารบัญด้านล่างได้เลย</p>
+            )}
+            <Link href={`/project/${project.id}/glossary`} className="mt-2 inline-flex min-h-9 items-center gap-1.5 text-xs font-medium text-accent-soft-fg hover:underline">
+              <BookMarked className="h-4 w-4" /> ศัพท์ของเรื่องนี้
             </Link>
-          )}
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div>
-              <p className="text-lg sm:text-xl font-bold leading-none">{pendingCount}</p>
-              <p className="text-[11px] text-muted mt-1">ยังไม่ดึง</p>
-            </div>
-            <div className="border-x border-line">
-              <p className="text-lg sm:text-xl font-bold leading-none text-accent-soft-fg">{fetchedCount}</p>
-              <p className="text-[11px] text-muted mt-1">ดึงแล้ว</p>
-            </div>
-            <div>
-              <p className="text-lg sm:text-xl font-bold leading-none text-green-600">{translatedCount}</p>
-              <p className="text-[11px] text-muted mt-1">แปลแล้ว</p>
-            </div>
           </div>
-          <div className="h-1.5 rounded-full bg-surface overflow-hidden">
-            <div
-              className={`h-full transition-all ${queue.running ? 'bg-accent animate-pulse' : 'bg-accent'}`}
-              style={{ width: `${progressPct}%` }}
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button onClick={() => setSortDesc(!sortDesc)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-sm hover:bg-card" title={hasOriginalOrderAsc ? 'สารบัญต้นฉบับเรียงบทจากน้อยไปมาก' : 'สารบัญต้นฉบับเรียงบทแบบย้อนกลับ'}>
-              <ArrowUpDown className="h-3.5 w-3.5"/> {sortDesc ? 'ใหม่…เก่า' : 'เก่า…ใหม่'}
-            </button>
-            <div className="relative min-w-[10rem] flex-1 basis-full sm:basis-auto">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted"/>
-              <input aria-label="ค้นหาชื่อบท" value={filter} onChange={e=>setFilter(e.target.value)} placeholder="ค้นหาชื่อบท..." className="h-9 w-full rounded-lg border border-line bg-bg pl-9 pr-3 text-sm"/>
-            </div>
-            <button onClick={() => {setBulkDeleteMode(!bulkDeleteMode);setSelectedChapterIds([]);}} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-sm">{bulkDeleteMode ? 'ยกเลิกเลือกลบ' : 'ลบหลายตอน'}</button>
-            {bulkDeleteMode && <button disabled={!selectedChapterIds.length} onClick={async()=>{if(!window.confirm(`ลบ ${selectedChapterIds.length} ตอนพร้อมไฟล์ทั้งหมดถาวรหรือไม่?`))return;const updated=await getStore().deleteChapters(id,selectedChapterIds);if(updated)setProject(updated);setSelectedChapterIds([]);setBulkDeleteMode(false);}} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-danger-fg px-3 text-sm text-white disabled:opacity-40">ลบที่เลือก ({selectedChapterIds.length})</button>}
-          </div>
-          {queue.running && (
-            <p className="text-[11px] text-muted flex items-center gap-1.5">
-              <Loader2 className="animate-spin w-3 h-3" />
-              กำลังดึงแบบลำดับ — เว้นจังหวะ {FETCH_DELAY_MS / 1000} วิ/บท กัน rate-limit ปิดแท็บนี้ไม่ได้ระหว่างลงมือทำ
-            </p>
-          )}
         </section>
 
-        <section className="rounded-xl border border-line bg-card px-4 py-3 space-y-2">
-          <div><p className="text-sm font-semibold">โปรไฟล์การแปล</p><p className="mt-0.5 text-xs text-muted">กำหนดแนวภาษาให้ AI ใช้เฉพาะกับนิยายเรื่องนี้</p></div>
-          <select aria-label="โปรไฟล์การแปล" value={project.translationProfile ?? 'general'} disabled={profileSaving} onChange={(event) => void setTranslationProfile(event.target.value as TranslationProfile)} className="h-10 w-full rounded-lg border border-line bg-bg px-3 text-sm">
-            <option value="general">ทั่วไป — ไม่กำหนดยุคหรือแนวเรื่อง</option>
-            <option value="modern">นิยายปัจจุบัน</option>
-            <option value="xianxia">เทพเซียน</option>
-            <option value="wuxia">กำลังภายใน / ยุทธภพ</option>
-            <option value="fantasy">แฟนตาซี</option>
-            <option value="scifi">ไซไฟ</option>
-          </select>
-          {profileSaving && <p className="text-[11px] text-muted">กำลังบันทึก...</p>}
+        <section aria-label="ค้นหาสารบัญ" className="flex flex-col gap-2 sm:flex-row">
+          <label className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+            <input aria-label="ค้นหาชื่อตอน" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="ค้นหาตอนในเรื่องนี้…" type="search"
+              className="h-11 w-full rounded-xl border border-line bg-card pl-10 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent/40" />
+          </label>
+          <button onClick={() => setSortDesc((value) => !value)} className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-line bg-card px-4 text-sm hover:bg-surface" aria-label={sortDesc ? 'เรียงตอนเก่าไปใหม่' : 'เรียงตอนใหม่ไปเก่า'}>
+            <ArrowUpDown className="h-4 w-4" /> {sortDesc ? 'ใหม่ → เก่า' : 'เก่า → ใหม่'}
+          </button>
         </section>
 
-        <section className="flex items-center justify-between rounded-xl border border-line bg-card px-4 py-3">
-          <div><p className="text-sm font-semibold">ศัพท์ของเรื่องนี้</p><p className="mt-0.5 text-xs text-muted">จัดการตัวละครและศัพท์เฉพาะของเรื่องนี้</p></div>
-          <Link href={`/project/${project.id}/glossary`} className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-3 text-sm font-medium text-accent-fg"><BookMarked className="h-4 w-4"/> จัดการศัพท์</Link>
-        </section>
-
-        {/* รายการบท */}
-        <section className="rounded-xl border border-line bg-card shadow-sm divide-y divide-line">
-          {chapters.length === 0 && (
-            <div className="p-10 text-center">
-              <Search className="w-8 h-8 mx-auto mb-2 text-line" />
-              <p className="text-sm text-muted">ไม่พบบทที่ตรงกับคำค้น</p>
+        <section className="overflow-hidden rounded-2xl border border-line bg-card">
+          <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+            <h2 className="font-serif text-lg font-semibold">สารบัญ</h2>
+            <span className="text-xs tabular-nums text-muted">{chapters.length.toLocaleString('th-TH')} / {total.toLocaleString('th-TH')} ตอน</span>
+          </div>
+          {chapters.length === 0 ? (
+            <div className="px-5 py-10 text-center">
+              <Search className="mx-auto h-7 w-7 text-muted" />
+              <p className="mt-3 text-sm font-medium">{total === 0 ? 'เรื่องนี้ยังไม่มีรายการตอน' : 'ไม่พบตอนที่ตรงกับคำค้น'}</p>
+              <p className="mt-1 text-xs text-muted">{total === 0 ? 'ตรวจสอบหน้าสารบัญต้นฉบับหรือเพิ่มเรื่องใหม่' : 'ลองใช้คำค้นอื่น หรือล้างคำค้นเพื่อดูทุกตอน'}</p>
+              {filter && <button onClick={() => setFilter('')} className="mt-3 text-xs font-semibold text-accent-soft-fg hover:underline">ล้างคำค้น</button>}
             </div>
-          )}
+          ) : (
+            <div className="divide-y divide-line">
           {chapters.map((c) => {
             const isLastRead = c.id === project.lastReadChapterId;
             const selected = selectedChapterIds.includes(c.id);
@@ -720,12 +618,80 @@ export default function ProjectClient({ id }: { id: string }) {
               </div>
             );
           })}
+
+            </div>
+          )}
         </section>
 
-
-
-
+        <details className="group rounded-2xl border border-line bg-card">
+          <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-medium">
+            <span>จัดการเรื่อง</span><ChevronDown className="h-4 w-4 text-muted transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="space-y-5 border-t border-line p-4">
+            <section className="space-y-3">
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div><p className="text-xl font-semibold">{pendingCount}</p><p className="text-[11px] text-muted">ยังไม่ดึง</p></div>
+                <div className="border-x border-line"><p className="text-xl font-semibold">{fetchedCount}</p><p className="text-[11px] text-muted">ดึงแล้ว</p></div>
+                <div><p className="text-xl font-semibold">{translatedCount}</p><p className="text-[11px] text-muted">แปลแล้ว</p></div>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-surface"><div className="h-full bg-accent transition-all" style={{ width: `${progressPct}%` }} /></div>
+              {queue.running ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+                  <span><Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" />กำลังดึง {queue.done} / {queue.total} ตอน</span>
+                  <button onClick={() => { abortRef.current = true; }} className="min-h-9 rounded-lg border border-line px-3">หยุดคิว</button>
+                </div>
+              ) : (
+                <button onClick={() => void fetchAllPending()} disabled={pendingCount === 0} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 text-sm font-medium text-accent-fg disabled:opacity-40">
+                  <Download className="h-4 w-4" /> ดึงตอนที่เหลือ ({pendingCount})
+                </button>
+              )}
+            </section>
+            <section className="space-y-2 border-t border-line pt-4">
+              <div><p className="text-sm font-semibold">โปรไฟล์การแปล</p><p className="mt-0.5 text-xs text-muted">กำหนดแนวภาษาให้ AI ใช้เฉพาะกับนิยายเรื่องนี้</p></div>
+              <select aria-label="โปรไฟล์การแปล" value={project.translationProfile ?? 'general'} disabled={profileSaving} onChange={(event) => void setTranslationProfile(event.target.value as TranslationProfile)} className="h-11 w-full rounded-lg border border-line bg-bg px-3 text-sm">
+                <option value="general">ทั่วไป — ไม่กำหนดยุคหรือแนวเรื่อง</option><option value="modern">นิยายปัจจุบัน</option><option value="xianxia">เทพเซียน</option><option value="wuxia">กำลังภายใน / ยุทธภพ</option><option value="fantasy">แฟนตาซี</option><option value="scifi">ไซไฟ</option>
+              </select>
+              {profileSaving && <p className="text-[11px] text-muted">กำลังบันทึก…</p>}
+            </section>
+            <section className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+              <div><p className="text-sm font-semibold">ศัพท์ของเรื่องนี้</p><p className="mt-0.5 text-xs text-muted">ตัวละครและศัพท์เฉพาะที่ใช้กับเรื่องนี้เท่านั้น</p></div>
+              <Link href={`/project/${project.id}/glossary`} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line px-3 text-sm hover:bg-surface"><BookMarked className="h-4 w-4" /> เปิดคลังศัพท์</Link>
+            </section>
+            <section className="space-y-3 border-t border-line pt-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div><p className="text-sm font-semibold">จัดการตอน</p><p className="text-xs text-muted">เลือกหลายตอนเพื่อลบ หรือยกเลิกได้ก่อนยืนยัน</p></div>
+                <button onClick={() => { setBulkDeleteMode((value) => !value); setSelectedChapterIds([]); }} className="inline-flex min-h-10 items-center rounded-lg border border-line px-3 text-xs font-medium">
+                  {bulkDeleteMode ? 'ยกเลิกเลือกหลายตอน' : 'เลือกหลายตอน'}
+                </button>
+              </div>
+              {bulkDeleteMode && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface p-3">
+                  <span className="text-xs">เลือกแล้ว {selectedChapterIds.length} ตอน</span>
+                  <div className="flex gap-2">
+                    <button onClick={() => setSelectedChapterIds([])} className="min-h-9 rounded-lg border border-line px-3 text-xs">ล้างที่เลือก</button>
+                    <button disabled={!selectedChapterIds.length} onClick={async () => {
+                      if (!window.confirm(`ลบ ${selectedChapterIds.length} ตอนพร้อมไฟล์เนื้อหาถาวรหรือไม่?`)) return;
+                      const updated = await getStore().deleteChapters(id, selectedChapterIds);
+                      if (updated) setProject(updated);
+                      setSelectedChapterIds([]);
+                      setBulkDeleteMode(false);
+                    }} className="min-h-9 rounded-lg bg-danger-fg px-3 text-xs font-medium text-white disabled:opacity-40">ยืนยันลบ ({selectedChapterIds.length})</button>
+                  </div>
+                </div>
+              )}
+            </section>
+            <section className="border-t border-line pt-4">
+              <button onClick={handleDelete} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-danger-line px-3 text-sm text-danger-fg hover:bg-danger-bg">
+                <Trash2 className="h-4 w-4" /> ลบทั้งเรื่อง
+              </button>
+            </section>
+          </div>
+        </details>
       </main>
+      {detectedGlossary && <DetectedGlossaryModal items={detectedGlossary.items} sourceLabel={detectedGlossary.sourceLabel} onClose={() => setDetectedGlossary(null)} onSave={saveDetectedGlossaryEdits} />}
+    </div>
+  );
+}
       {detectedGlossary && <DetectedGlossaryModal items={detectedGlossary.items} sourceLabel={detectedGlossary.sourceLabel} onClose={() => setDetectedGlossary(null)} onSave={saveDetectedGlossaryEdits} />}
     </div>
   );

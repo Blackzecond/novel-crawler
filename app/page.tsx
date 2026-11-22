@@ -12,6 +12,7 @@ import { applySavedTheme, loadReaderSettings, saveReaderSettings } from '@/lib/r
 import { loadCloudReaderSettings, saveCloudReaderSettings } from '@/lib/cloudPreferences';
 import { fetchWithNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 import { exportNovelMemoryBundle } from '@/lib/novelMemory';
+import NovelCover from '@/components/NovelCover';
 
 // เว็บต้นฉบับจีนยอดนิยม — กดเพื่อใส่โดเมนต้นทางในช่อง URL
 // (วางเฉพาะลิงก์หน้าสารบัญ/目录 เช่น https://www.uukanshu.cc/b/123/ จึงจะจับรายการบทได้)
@@ -29,77 +30,44 @@ function ProjectCard({
   onDelete: (p: NovelProject) => void;
 }) {
   const total = project.chapters.length;
-  const fetched = project.chapters.filter((c) => c.status !== 'pending').length;
-  const translated = project.chapters.filter((c) => c.status === 'translated').length;
-  const pct = total ? Math.round((fetched / total) * 100) : 0;
-  const translatedPct = total ? Math.round((translated / total) * 100) : 0;
-  const lastRead = project.lastReadChapterId ? project.chapters.find((chapter) => chapter.id === project.lastReadChapterId) : null;
+  const fetched = project.chapters.filter((chapter) => chapter.status !== 'pending').length;
+  const translated = project.chapters.filter((chapter) => chapter.status === 'translated').length;
+  const lastRead = project.lastReadChapterId
+    ? project.chapters.find((chapter) => chapter.id === project.lastReadChapterId) ?? null
+    : null;
 
   return (
-    <article className="group min-w-0 overflow-hidden rounded-2xl border border-line bg-card shadow-sm hover:-translate-y-0.5 hover:shadow-lg hover:border-accent-line transition-all duration-200">
-      <div className="p-4 sm:p-5 space-y-4">
-        <div className="flex items-start gap-3">
-          <span className="h-10 w-10 rounded-xl bg-accent-soft text-accent-soft-fg inline-flex items-center justify-center shrink-0">
-            <BookOpen className="w-4.5 h-4.5" />
-          </span>
-          <a href={`/project/${project.id}`} className="flex-1 min-w-0 block cursor-pointer">
-            <span className="block min-w-0 font-semibold text-sm leading-snug line-clamp-2 break-words group-hover:text-accent-soft-fg transition-colors" title={project.title}>{project.title}</span>
-            <span className="text-xs text-muted mt-1 inline-flex items-center gap-1 max-w-full">
-              <Globe className="w-3 h-3 shrink-0" />
-              <span className="truncate">{project.host}</span>
+    <article className="group flex min-w-0 gap-3 rounded-2xl border border-line bg-card p-3 shadow-sm transition-colors hover:border-accent-line sm:gap-4 sm:p-4">
+      <a href={`/project/${project.id}`} className="shrink-0" aria-label={`เปิดสารบัญ ${project.title}`}>
+        <NovelCover projectId={project.id} title={project.title} />
+      </a>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex items-start gap-2">
+          <a href={`/project/${project.id}`} className="min-w-0 flex-1">
+            <span className="block line-clamp-2 break-words font-serif text-base font-semibold leading-snug text-fg group-hover:text-accent-soft-fg sm:text-lg">{project.title}</span>
+            <span className="mt-1 inline-flex max-w-full items-center gap-1 text-xs text-muted">
+              <Globe className="h-3 w-3 shrink-0" /><span className="truncate">{project.host}</span>
             </span>
           </a>
-          <button
-            onClick={() => onDelete(project)}
-            className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-muted hover:text-danger-fg hover:bg-danger-bg transition-colors cursor-pointer shrink-0"
-            aria-label={`ลบโปรเจกต์ ${project.title}`}
-            title="ลบโปรเจกต์"
-          >
-            <Trash2 className="w-4 h-4" />
+          <button onClick={() => onDelete(project)} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-bg hover:text-danger-fg" aria-label={`ลบโปรเจกต์ ${project.title}`} title="ลบเรื่องนี้">
+            <Trash2 className="h-4 w-4" />
           </button>
         </div>
-
-        <div className="grid grid-cols-3 gap-2 rounded-xl bg-surface/80 p-3">
-          <div>
-            <p className="text-[10px] text-muted">ทั้งหมด</p>
-            <p className="text-sm font-semibold mt-0.5">{total.toLocaleString('th-TH')} <span className="text-[10px] font-normal text-muted">บท</span></p>
-          </div>
-          <div>
-            <p className="text-[10px] text-muted">ดึงเนื้อหาแล้ว</p>
-            <p className="text-sm font-semibold mt-0.5">{fetched.toLocaleString('th-TH')}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-muted">แปลแล้ว</p>
-            <p className="text-sm font-semibold mt-0.5 inline-flex items-center gap-1"><Sparkles className="w-3 h-3 text-green-600" />{translated.toLocaleString('th-TH')}</p>
-          </div>
+        <p className="mt-2 text-[11px] text-muted">
+          แปลแล้ว {translated.toLocaleString('th-TH')} จาก {total.toLocaleString('th-TH')} ตอน
+          <span className="mx-1.5 text-line">·</span>{fetched.toLocaleString('th-TH')} ตอนดึงเนื้อหาแล้ว
+        </p>
+        <div className="mt-auto flex flex-wrap items-center gap-2 pt-3">
+          {lastRead ? (
+            <a href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(lastRead.url)}`} className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg hover:brightness-105">
+              <BookOpen className="h-4 w-4" /><span className="min-w-0 truncate">อ่านต่อ · {lastRead.title}</span>
+            </a>
+          ) : (
+            <a href={`/project/${project.id}`} className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium text-fg hover:bg-surface">
+              <BookOpen className="h-4 w-4" /> เปิดสารบัญ
+            </a>
+          )}
         </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-muted">ความคืบหน้าการดึงเนื้อหา</span>
-            <span className="font-semibold tabular-nums">{pct}%</span>
-          </div>
-          <div
-            className="h-1.5 rounded-full bg-surface overflow-hidden"
-            role="progressbar"
-            aria-label={`ดึงเนื้อหา ${project.title}`}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={pct}
-          >
-            <div className="h-full rounded-full bg-accent transition-all duration-300" style={{ width: `${pct}%` }} />
-          </div>
-          <div className="flex items-center justify-between text-[10px] text-muted">
-            <span>{fetched.toLocaleString('th-TH')} / {total.toLocaleString('th-TH')} บท</span>
-            <span>แปลแล้ว {translatedPct}%</span>
-          </div>
-        </div>
-        {lastRead && (
-          <a href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(lastRead.url)}`} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-accent-soft px-3 text-xs font-semibold text-accent-soft-fg transition-colors hover:brightness-105">
-            <BookOpen className="h-4 w-4" /> อ่านต่อ · {lastRead.title}
-            <ChevronRight className="h-4 w-4" />
-          </a>
-        )}
       </div>
     </article>
   );
@@ -113,6 +81,7 @@ export default function ProjectsHomePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [projectSort, setProjectSort] = useState<'updated' | 'title' | 'progress'>('updated');
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [retryingProjects, setRetryingProjects] = useState(false);
   const [url, setUrl] = useState('');
   const [creating, setCreating] = useState(false);
@@ -205,6 +174,12 @@ export default function ProjectsHomePage() {
       return b.updatedAt - a.updatedAt;
     });
   }, [projects, searchQuery, projectSort]);
+
+  // Use the per-project last-read pointer and its existing update timestamp;
+  // if the chapter was removed, fall back to the regular shelf entry.
+  const latestReadProject = useMemo(() => projects
+    .filter((project) => project.lastReadChapterId && project.chapters.some((chapter) => chapter.id === project.lastReadChapterId))
+    .sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null, [projects]);
 
   const migrateLocalProjects = async () => {
     if (migratingLocal || !cloudUserId) return;
@@ -363,15 +338,10 @@ export default function ProjectsHomePage() {
             </span>
           </a>
           <nav aria-label="เมนูหลัก" className="flex items-center gap-1 sm:gap-2 shrink-0">
-            <a href="/read" className="inline-flex items-center justify-center gap-2 h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-sm text-muted hover:text-fg hover:bg-surface transition-colors">
-              <BookOpen className="w-4 h-4" /><span className="hidden sm:inline">อ่านด่วน</span>
-            </a>
-            <a href="/glossary-sets" className="inline-flex items-center justify-center gap-2 h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-sm text-muted hover:text-fg hover:bg-surface transition-colors">
-              <Library className="w-4 h-4" /><span className="hidden sm:inline">ชุดคลังศัพท์</span>
-            </a>
-            <a href="/settings/ai" className="inline-flex items-center justify-center gap-2 h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-sm text-muted hover:text-fg hover:bg-surface transition-colors" title="ตั้งค่า API สำหรับการแปลและจับศัพท์">
-              <Sparkles className="w-4 h-4" /><span className="hidden sm:inline">ตั้งค่า AI</span>
-            </a>
+            <a href="/read" className="inline-flex items-center justify-center gap-1.5 h-10 px-2.5 rounded-xl text-xs font-medium text-muted hover:text-fg hover:bg-surface transition-colors"><BookOpen className="w-4 h-4" />อ่านด่วน</a>
+            <a href="/dictionary" className="inline-flex items-center justify-center gap-1.5 h-10 px-2.5 rounded-xl text-xs font-medium text-muted hover:text-fg hover:bg-surface transition-colors"><BookOpen className="w-4 h-4" />พจนานุกรม</a>
+            <a href="/glossary-sets" className="inline-flex items-center justify-center gap-1.5 h-10 px-2.5 rounded-xl text-xs font-medium text-muted hover:text-fg hover:bg-surface transition-colors"><Library className="w-4 h-4" />ชุดศัพท์</a>
+            <a href="/settings/ai" className="inline-flex items-center justify-center gap-1.5 h-10 px-2.5 rounded-xl text-xs font-medium text-muted hover:text-fg hover:bg-surface transition-colors" title="ตั้งค่า API สำหรับการแปลและจับศัพท์"><Sparkles className="w-4 h-4" />ตั้งค่า AI</a>
             {isSupabaseConfigured() && (
               <button onClick={() => void signOut()} title="ออกจากระบบ" aria-label="ออกจากระบบ"
                 className="h-9 w-9 inline-flex items-center justify-center rounded-xl text-muted hover:text-danger-fg hover:bg-danger-bg transition-colors">
@@ -398,7 +368,8 @@ export default function ProjectsHomePage() {
             </button>
           </section>
         )}
-        {/* สร้างโปรเจกต์ใหม่ — Hero */}
+        {/* ฟอร์มเพิ่มนิยายเปิดเมื่อผู้ใช้เรียก หรือเมื่อคลังว่างจริง */}
+        {(showCreateForm || (mounted && !projectsError && projects.length === 0)) && (
         <section id="new-project" className="relative isolate overflow-hidden rounded-3xl border border-accent-line/70 bg-card shadow-sm">
           <div aria-hidden="true" className="absolute inset-0 -z-10 bg-gradient-to-br from-accent-soft via-card to-card" />
           <div aria-hidden="true" className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-accent/10 blur-3xl" />
@@ -478,23 +449,31 @@ export default function ProjectsHomePage() {
           )}
                   </div>
         </section>
+        )}
 
         {/* รายการโปรเจกต์ */}
         <section className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
             <div>
               <p className="text-[11px] font-semibold tracking-[0.14em] text-accent-soft-fg uppercase mb-1">คลังงานของคุณ</p>
-              <h2 className="text-xl font-bold tracking-tight">
-                โปรเจกต์แปลของฉัน{' '}
+              <h2 className="font-serif text-2xl font-bold tracking-tight">
+                ชั้นหนังสือ{' '}
                 {mounted && <span className="text-muted font-medium text-base">({projects.length})</span>}
               </h2>
-              <p className="text-xs text-muted mt-1">จัดการนิยายที่กำลังอ่านและแปลอยู่ในที่เดียว</p>
+              <p className="text-xs text-muted mt-1">แตะปกเพื่อเปิดสารบัญ หรืออ่านต่อจากตอนที่ค้างไว้</p>
             </div>
             <div className="flex items-center gap-2">
+              <button type="button" onClick={() => setShowCreateForm((open) => !open)}
+                className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-accent px-3 text-xs font-semibold text-accent-fg hover:brightness-105">
+                <FolderOpen className="h-4 w-4" /> เพิ่มนิยาย
+              </button>
+              <details className="relative">
+                <summary className="flex h-10 cursor-pointer list-none items-center gap-1.5 rounded-xl border border-line bg-card px-3 text-xs font-medium hover:bg-surface">จัดการคลัง <ChevronDown className="h-3.5 w-3.5" /></summary>
+                <div className="absolute right-0 top-full z-30 mt-2 flex min-w-44 flex-col gap-1 rounded-xl border border-line bg-card p-2 shadow-xl">
               <button
                 onClick={() => importInputRef.current?.click()}
-                className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border border-line text-xs bg-card hover:bg-surface hover:border-accent-line transition-colors cursor-pointer"
-                title="นำเข้าโปรเจกต์จากไฟล์ JSON ที่ export ไว้ (id ซ้ำจะถูกแทนที่ด้วยข้อมูลไฟล์)"
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 text-left text-xs hover:bg-surface"
+                title="นำเข้า JSON: หาก ID โปรเจกต์ซ้ำ ข้อมูลในไฟล์จะถูกแทนที่"
               >
                 <Upload className="w-3.5 h-3.5" />
                 นำเข้า JSON
@@ -519,6 +498,8 @@ export default function ProjectsHomePage() {
                 <Download className="w-3.5 h-3.5" />
                 ส่งออก JSON
               </button>
+                </div>
+              </details>
             </div>
           </div>
 
@@ -553,6 +534,21 @@ export default function ProjectsHomePage() {
 
           {importNotice && (
             <p className={`text-xs rounded-lg px-3 py-2 border ${importNotice.startsWith('นำเข้าไม่สำเร็จ') ? 'bg-danger-bg border-danger-line text-danger-fg' : 'bg-accent-soft border-accent-line text-accent-soft-fg'}`}>{importNotice}</p>
+          )}
+
+          {latestReadProject && (
+            <section className="flex items-center gap-3 rounded-2xl border border-accent-line bg-accent-soft/50 p-3 sm:p-4">
+              <NovelCover projectId={latestReadProject.id} title={latestReadProject.title} />
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold tracking-wide text-accent-soft-fg">อ่านค้างไว้</p>
+                <p className="mt-0.5 truncate font-serif text-base font-semibold">{latestReadProject.title}</p>
+                <p className="truncate text-xs text-muted">{latestReadProject.chapters.find((chapter) => chapter.id === latestReadProject.lastReadChapterId)?.title}</p>
+              </div>
+              <a href={`/read?projectId=${encodeURIComponent(latestReadProject.id)}&url=${encodeURIComponent(latestReadProject.chapters.find((chapter) => chapter.id === latestReadProject.lastReadChapterId)!.url)}`}
+                className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg">
+                อ่านต่อ <ChevronRight className="h-4 w-4" />
+              </a>
+            </section>
           )}
 
           {!mounted ? (
