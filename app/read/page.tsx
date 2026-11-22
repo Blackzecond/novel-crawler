@@ -1392,7 +1392,7 @@ export default function ReaderPage() {
                     {article.translatedText && <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); void handleTranslate(); }} disabled={translationBusy} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface disabled:opacity-50"><Sparkles className="mb-1 h-4 w-4" />แปลใหม่และแทนที่คำแปลเดิม</button>}
                     {article.translatedText && <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); void handleEditTranslation(); }} disabled={editorBusy || translationBusy} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface disabled:opacity-50"><Pencil className="mb-1 h-4 w-4" />AI บ.ก. ตรวจคำแปล</button>}
                     {article.preProofreadText && <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); void handleRestorePreProofread(); }} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><RotateCcw className="mb-1 h-4 w-4" />คืนฉบับก่อนตรวจ</button>}
-                    <a role="menuitem" href={`/settings/ai?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><Sparkles className="mb-1 h-4 w-4" />ตั้งค่า AI</a>
+                    <a role="menuitem" href={`/settings/ai?returnTo=${encodeURIComponent(readerReturnTo)}`} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><Sparkles className="mb-1 h-4 w-4" />ตั้งค่า AI</a>
                     <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); setShowHistory(true); }} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><History className="mb-1 h-4 w-4" />ประวัติการอ่าน</button>
                     {projectId && <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); void toggleReaderGlossary(); }} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><BookMarked className="mb-1 h-4 w-4" />ศัพท์ของเรื่องนี้</button>}
                     <a role="menuitem" href="/dictionary" className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><Library className="mb-1 h-4 w-4" />พจนานุกรมพื้นฐาน</a>
@@ -1404,7 +1404,7 @@ export default function ReaderPage() {
             {translationError && (
               <div role="alert" className="rounded-lg border border-danger-line bg-danger-bg p-3 text-sm text-danger-fg">
                 <p>{translationError}</p>
-                <a href={`/settings/ai?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`} className="mt-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:opacity-80">
+                <a href={`/settings/ai?returnTo=${encodeURIComponent(readerReturnTo)}`} className="mt-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:opacity-80">
                   เปิดหน้าตั้งค่า AI
                 </a>
               </div>
