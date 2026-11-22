@@ -173,12 +173,20 @@ async function putText(path: string, value: string): Promise<void> {
   if (error) throw error;
 }
 
-async function readText(path: string | null): Promise<string | undefined> {
+async function readText(path: string | null, optional = false): Promise<string | undefined> {
   if (!path) return undefined;
   const { data, error } = await getSupabase().storage.from(BUCKET).download(path);
   if (error) {
-    // Older metadata may point to a file not yet migrated; preserve the chapter list.
-    if (error.message.toLowerCase().includes('not found') || error.message.toLowerCase().includes('object')) return undefined;
+    // Optional sidecars must never block the primary chapter cache. Storage may return
+    // inconsistent error shapes for absent objects (including HTTP 400), so tolerate
+    // every failure for this explicitly optional file only.
+    if (optional) {
+      console.info('Optional chapter sidecar unavailable; continuing without it.');
+      return undefined;
+    }
+    const storageError = error as { message?: unknown; status?: unknown; statusCode?: unknown };
+    const message = typeof storageError.message === 'string' ? storageError.message.toLowerCase() : '';
+    if (message.includes('not found') || message.includes('object')) return undefined;
     throw error;
   }
   return await data.text();
@@ -232,7 +240,7 @@ export const supabaseStore: NovelStore = {
         ? readText(row.translated_storage_path)
         : Promise.resolve(undefined),
       includeTranslatedText
-        ? readText(contentPath(userId, projectId, row.id, 'pre-proofread'))
+        ? readText(contentPath(userId, projectId, row.id, 'pre-proofread'), true)
         : Promise.resolve(undefined),
     ]);
     if (originalText !== undefined) chapter.originalText = originalText;

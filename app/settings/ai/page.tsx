@@ -31,7 +31,7 @@ export default function AiSettingsPage() {
   useEffect(() => {
     const requestedPath = new URLSearchParams(window.location.search).get('returnTo');
     // Only accept a local project path; never allow an external redirect.
-    if (requestedPath?.startsWith('/project/') && !requestedPath.startsWith('//') && !requestedPath.includes('\\')) {
+    if (requestedPath && (requestedPath.startsWith('/project/') || requestedPath.startsWith('/read')) && !requestedPath.startsWith('//') && !requestedPath.includes('\\')) {
       setReturnTo(requestedPath);
     }
   }, []);

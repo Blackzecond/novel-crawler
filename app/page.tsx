@@ -33,6 +33,7 @@ function ProjectCard({
   const translated = project.chapters.filter((c) => c.status === 'translated').length;
   const pct = total ? Math.round((fetched / total) * 100) : 0;
   const translatedPct = total ? Math.round((translated / total) * 100) : 0;
+  const lastRead = project.lastReadChapterId ? project.chapters.find((chapter) => chapter.id === project.lastReadChapterId) : null;
 
   return (
     <article className="group min-w-0 overflow-hidden rounded-2xl border border-line bg-card shadow-sm hover:-translate-y-0.5 hover:shadow-lg hover:border-accent-line transition-all duration-200">
@@ -93,7 +94,12 @@ function ProjectCard({
             <span>แปลแล้ว {translatedPct}%</span>
           </div>
         </div>
-
+        {lastRead && (
+          <a href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(lastRead.url)}`} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-accent-soft px-3 text-xs font-semibold text-accent-soft-fg transition-colors hover:brightness-105">
+            <BookOpen className="h-4 w-4" /> อ่านต่อ · {lastRead.title}
+            <ChevronRight className="h-4 w-4" />
+          </a>
+        )}
       </div>
     </article>
   );
@@ -361,7 +367,7 @@ export default function ProjectsHomePage() {
               <BookOpen className="w-4 h-4" /><span className="hidden sm:inline">อ่านด่วน</span>
             </a>
             <a href="/glossary-sets" className="inline-flex items-center justify-center gap-2 h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-sm text-muted hover:text-fg hover:bg-surface transition-colors">
-              <Library className="w-4 h-4" /><span className="hidden sm:inline">คลังศัพท์</span>
+              <Library className="w-4 h-4" /><span className="hidden sm:inline">ชุดคลังศัพท์</span>
             </a>
             <a href="/settings/ai" className="inline-flex items-center justify-center gap-2 h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-sm text-muted hover:text-fg hover:bg-surface transition-colors" title="ตั้งค่า API สำหรับการแปลและจับศัพท์">
               <Sparkles className="w-4 h-4" /><span className="hidden sm:inline">ตั้งค่า AI</span>

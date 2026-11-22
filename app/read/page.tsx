@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { 
-  Sun, Moon, BookOpen, Loader2, Copy, Check, Pencil,
+  Sun, Moon, BookOpen, Loader2, Copy, Check, Pencil, MoreHorizontal,
   ChevronLeft, ChevronRight, Play, Pause,
-  History, RotateCcw, Trash2, Library, Settings, X, List, Sparkles, BookMarked, Plus,
+  History, RotateCcw, Trash2, Library, Settings, X, List, Sparkles, BookMarked,
 } from 'lucide-react';
 import { getStore, NovelChapter, NovelProject } from '@/lib/storage';
 import { applyWordReplacements, applyWordReplacementsToHtml } from '@/lib/wordReplacements';
@@ -44,6 +44,22 @@ interface HistoryItem {
   projectId?: string | null;
 }
 
+function readerErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  if (error && typeof error === 'object') {
+    const value = error as Record<string, unknown>;
+    for (const key of ['message', 'error_description', 'details', 'hint']) {
+      if (typeof value[key] === 'string' && value[key].trim()) return value[key] as string;
+    }
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized && serialized !== '{}') return serialized;
+    } catch { /* use the readable fallback below */ }
+  }
+  return fallback;
+}
+
 export default function ReaderPage() {
   const [url, setUrl] = useState('');
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -51,6 +67,8 @@ export default function ReaderPage() {
   const [translationBusy, setTranslationBusy] = useState(false);
   const [editorBusy, setEditorBusy] = useState(false);
   const [translationError, setTranslationError] = useState('');
+  const [translationErrorAction, setTranslationErrorAction] = useState<'settings' | 'save' | null>(null);
+  const [pendingTranslationSave, setPendingTranslationSave] = useState<{ projectId: string; chapterId: string; translatedText: string; preProofreadText: string } | null>(null);
   const [showTranslation, setShowTranslation] = useState(false);
   const [readerProject, setReaderProject] = useState<NovelProject | null>(null);
   const chapterCacheRef = useRef<Map<string, ArticleData>>(new Map());
@@ -84,6 +102,7 @@ export default function ReaderPage() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [autoScroll, setAutoScroll] = useState(false);
   const [scrollSpeed, setScrollSpeed] = useState(1);
   const scrollIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -193,6 +212,15 @@ export default function ReaderPage() {
     };
   }, [showSettings]);
 
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowMoreMenu(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showMoreMenu]);
+
   // ระบบ Auto-Scroll
   useEffect(() => {
     if (autoScroll) {
@@ -242,11 +270,13 @@ export default function ReaderPage() {
   const fetchArticle = async (targetUrl: string, forceRender = false, projectIdOverride?: string | null) => {
     if (!targetUrl) return;
     const activeProjectId = projectIdOverride === undefined ? projectId : projectIdOverride;
+    if (typeof window !== 'undefined') setShowTranslation(window.localStorage.getItem(`novel_reader_edition:${activeProjectId ?? 'standalone'}`) === 'translation');
     const requestId = ++readerRequestRef.current;
     const isCurrentRequest = () => isReaderTargetCurrent(
       { requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current },
       { requestId, url: targetUrl, projectId: activeProjectId },
     );
+    setShowMoreMenu(false);
     activeChapterUrlRef.current = targetUrl;
     activeProjectIdRef.current = activeProjectId;
     if (projectId !== activeProjectId) {
@@ -262,7 +292,6 @@ export default function ReaderPage() {
         if (inMemoryArticle && (!activeProjectId || readerProject?.id === activeProjectId)) {
           setArticle(inMemoryArticle);
           setTranslationError('');
-          setShowTranslation(false);
           const memoryChapter = readerProject?.chapters.find((item) => item.url === targetUrl);
           const cachedChapterId = inMemoryArticle.chapterId
             ?? (memoryChapter && !memoryChapter.id.startsWith('catalog:') ? memoryChapter.id : null);
@@ -321,7 +350,7 @@ export default function ReaderPage() {
           setReaderProject(project);
           setCurrentChapterId(chapter.id);
           setTranslationError('');
-          setShowTranslation(false);
+
           setArticle(cachedArticle);
           syncReaderUrl(targetUrl, activeProjectId);
           saveToHistory(targetUrl, cachedArticle.title, activeProjectId);
@@ -444,7 +473,7 @@ export default function ReaderPage() {
       setReaderProject(project);
       setCurrentChapterId(chapter?.id && !chapter.id.startsWith('catalog:') ? chapter.id : null);
       setTranslationError('');
-      setShowTranslation(false);
+
       setArticle(articleData);
       syncReaderUrl(targetUrl, activeProjectId);
 
@@ -537,9 +566,9 @@ export default function ReaderPage() {
                     if (!updatedProject) throw new Error('บันทึกคลังศัพท์ไม่สำเร็จ');
                     if (!isCurrentRequest()) return;
                     setReaderProject((current) => current?.id === activeProjectId ? updatedProject : current);
-                    const names = added.map((pair) => pair.zh + ' → ' + pair.th).join(', ');
-                    setGlossaryNotice(`จับศัพท์อัตโนมัติและบันทึกแล้ว ${added.length} รายการจากบท “${savedChapter.title}”: ${names}`);
-                    setDetectedGlossary({ items: added.map((pair) => ({ zh: pair.zh, th: pair.th, type: pair.type, gender: pair.gender ?? 'unknown', category: pair.category ?? 'other', notes: '' })), sourceLabel: savedChapter.title, projectId: activeProjectId, chapterId: savedChapter.id });
+                    
+                    setGlossaryNotice(`เพิ่มศัพท์ ${added.length} คำจากบท “${savedChapter.title}”`);
+                    
                   } else if (isCurrentRequest()) {
                     setGlossaryNotice(pairs.length ? 'จับศัพท์อัตโนมัติแล้ว แต่ไม่มีรายการใหม่ (คำเดิมไม่ถูกเพิ่มซ้ำ)' : 'จับศัพท์อัตโนมัติแล้ว — ไม่พบคำใหม่ในบทนี้');
                   }
@@ -557,7 +586,7 @@ export default function ReaderPage() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       if (isCurrentRequest()) {
-        setError(err.message);
+        setError(readerErrorMessage(err, 'อ่านบทไม่สำเร็จ กรุณาลองอีกครั้ง'));
         setLoading(false);
         if (article?.sourceUrl) {
           setUrl(article.sourceUrl);
@@ -785,6 +814,7 @@ export default function ReaderPage() {
     const settings = loadAiSettings();
     if (!hasAiKey(settings)) {
       setTranslationError('ยังไม่ได้ตั้งค่า API สำหรับการแปล กรุณากรอก Base URL, Model และ API Key ก่อน');
+      setTranslationErrorAction('settings');
       return;
     }
     const translationRequestId = readerRequestRef.current;
@@ -798,6 +828,8 @@ export default function ReaderPage() {
     );
     setTranslationBusy(true);
     setTranslationError('');
+    setTranslationErrorAction(null);
+    setPendingTranslationSave(null);
     try {
       const latestProject = targetProjectId ? await getStore().getProject(targetProjectId) : null;
       if (!isActiveTranslation()) return;
@@ -878,7 +910,7 @@ export default function ReaderPage() {
 
       const updatedArticle = { ...targetArticle, translatedText: translated, preProofreadText: preProofreadText || undefined };
       chapterCacheRef.current.set(`${targetProjectId ?? 'standalone'}:${targetUrl}`, updatedArticle);
-      if (isActiveTranslation()) { setArticle(updatedArticle); setShowTranslation(true); }
+      if (isActiveTranslation()) { setArticle(updatedArticle); selectReaderEdition(true); }
 
       if (targetProjectId && targetChapterId) {
         try {
@@ -937,18 +969,60 @@ export default function ReaderPage() {
               console.warn('Batched novel memory update skipped:', memoryUpdateError);
             }
           } else if (isActiveTranslation()) {
-            setTranslationError('แปลสำเร็จแล้ว แต่ยังบันทึกคำแปลลงคลังไม่ได้ คำแปลนี้ยังแสดงอยู่ใน Reader');
+            setTranslationError('แปลสำเร็จแล้ว แต่ยังบันทึกคำแปลลงคลังไม่ได้');
+            setTranslationErrorAction('save');
+            setPendingTranslationSave({ projectId: targetProjectId, chapterId: targetChapterId, translatedText: translated, preProofreadText });
           }
         } catch (saveError) {
           console.warn('Could not save translated chapter:', saveError);
-          if (isActiveTranslation()) setTranslationError('แปลสำเร็จแล้ว แต่บันทึกคำแปลไม่สำเร็จ คำแปลนี้ยังแสดงอยู่ใน Reader');
+          if (isActiveTranslation()) {
+            setTranslationError('แปลสำเร็จแล้ว แต่บันทึกคำแปลไม่สำเร็จ');
+            setTranslationErrorAction('save');
+            if (targetChapterId) setPendingTranslationSave({ projectId: targetProjectId, chapterId: targetChapterId, translatedText: translated, preProofreadText });
+          }
         }
       }
-      if (proofreadWarning && isActiveTranslation()) setTranslationError(proofreadWarning);
+      if (proofreadWarning && isActiveTranslation()) { setTranslationError(proofreadWarning); setTranslationErrorAction(null); }
     } catch (err) {
-      if (isActiveTranslation()) setTranslationError(err instanceof Error ? err.message : 'แปลไม่สำเร็จ');
+      if (isActiveTranslation()) { setTranslationError(err instanceof Error ? err.message : 'แปลไม่สำเร็จ'); setTranslationErrorAction(null); }
     } finally { if (isActiveTranslation()) setTranslationBusy(false); }
   };
+  const retrySaveTranslation = async () => {
+    const pending = pendingTranslationSave;
+    if (!pending || !article || !isArticleTargetCurrent(article, projectId, url)
+      || pending.projectId !== projectId || pending.chapterId !== (article.chapterId ?? currentChapterId)) return;
+    const requestId = readerRequestRef.current;
+    const targetUrl = url;
+    const isCurrent = () => isReaderTargetCurrent(
+      { requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current },
+      { requestId, url: targetUrl, projectId: pending.projectId },
+    );
+    setEditorBusy(true);
+    try {
+      const saved = await getStore().updateChapter(pending.projectId, pending.chapterId, {
+        translatedText: pending.translatedText,
+        preProofreadText: pending.preProofreadText,
+        status: 'translated',
+        error: undefined,
+      });
+      if (!saved) throw new Error('บันทึกคำแปลไม่สำเร็จ');
+      if (!isCurrent()) return;
+      setReaderProject((current) => current?.id === pending.projectId ? {
+        ...current,
+        chapters: current.chapters.map((chapter) => chapter.id === pending.chapterId
+          ? { ...chapter, status: 'translated', translatedText: pending.translatedText, preProofreadText: pending.preProofreadText }
+          : chapter),
+      } : current);
+      setPendingTranslationSave(null);
+      setTranslationErrorAction(null);
+      setTranslationError('');
+    } catch (saveError) {
+      if (isCurrent()) setTranslationError(saveError instanceof Error ? saveError.message : 'บันทึกคำแปลไม่สำเร็จ');
+    } finally {
+      if (isCurrent()) setEditorBusy(false);
+    }
+  };
+
   const handleRestorePreProofread = async () => {
     if (!article?.preProofreadText || loading || !isArticleTargetCurrent(article, projectId, url)) return;
     const targetArticle = article, targetProjectId = projectId, targetUrl = url, requestId = readerRequestRef.current;
@@ -977,11 +1051,12 @@ export default function ReaderPage() {
     const settings = loadAiSettings();
     if (!hasAiKey(settings)) {
       setTranslationError('ยังไม่ได้ตั้งค่า API สำหรับ AI บ.ก. กรุณาตั้งค่า API ก่อน');
+      setTranslationErrorAction('settings');
       return;
     }
     const targetArticle = article, targetProjectId = projectId, targetUrl = url, requestId = readerRequestRef.current;
     const isActive = () => isReaderTargetCurrent({ requestId: readerRequestRef.current, url: activeChapterUrlRef.current, projectId: activeProjectIdRef.current }, { requestId, url: targetUrl, projectId: targetProjectId });
-    setEditorBusy(true); setTranslationError('');
+    setEditorBusy(true); setTranslationError(''); setTranslationErrorAction(null);
     try {
       const originalDraft = targetArticle.translatedText ?? '';
       if (!originalDraft) return;
@@ -1000,7 +1075,7 @@ export default function ReaderPage() {
       }
       if (isActive()) { setCurrentChapterId(targetChapterId ?? null); setArticle(updatedArticle); setShowTranslation(true); }
       if (targetProjectId && targetChapterId) setReaderProject((current) => current?.id === targetProjectId && isActive() ? { ...current, chapters: current.chapters.map((item) => item.id === targetChapterId ? { ...item, status: 'translated', preProofreadText: updatedArticle.preProofreadText } : item) } : current);
-    } catch (err) { if (isActive()) setTranslationError(err instanceof Error ? err.message : 'AI บ.ก. ตรวจรูปแบบไม่สำเร็จ'); }
+    } catch (err) { if (isActive()) { setTranslationError(err instanceof Error ? err.message : 'AI บ.ก. ตรวจรูปแบบไม่สำเร็จ'); setTranslationErrorAction(null); } }
     finally { if (isActive()) setEditorBusy(false); }
   };
 
@@ -1086,6 +1161,14 @@ export default function ReaderPage() {
     if (projectId) window.location.href = `/project/${encodeURIComponent(projectId)}/glossary`;
   };
 
+  const selectReaderEdition = (translated: boolean) => {
+    setShowTranslation(translated);
+    if (typeof window !== 'undefined') {
+      const key = `novel_reader_edition:${activeProjectIdRef.current ?? projectId ?? 'standalone'}`;
+      window.localStorage.setItem(key, translated ? 'translation' : 'original');
+    }
+  };
+
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     fetchArticle(url);
@@ -1119,11 +1202,15 @@ export default function ReaderPage() {
     { id: 'mono' as const, label: 'Mono' },
   ] as const;
 
+  const readerReturnTo = projectId && url
+    ? `/read?projectId=${encodeURIComponent(projectId)}&url=${encodeURIComponent(url)}`
+    : url ? `/read?url=${encodeURIComponent(url)}` : '/read';
+
   return (
-    <div className={`min-h-screen bg-bg text-fg transition-colors duration-200 ${fontClasses[fontFamily]}`}>
+    <div className={`min-h-screen bg-bg text-fg transition-colors duration-200`}>
       {/* Header Bar — บางเบา คุมสูงตายตัว */}
       <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-md">
-        <div className="max-w-3xl mx-auto flex items-center gap-2 h-14 px-3 sm:px-6">
+        <div className="max-w-[44rem] mx-auto flex items-center gap-2 h-14 px-3 sm:px-5">
           <a
             href={projectId ? `/project/${projectId}` : "/"}
             className="inline-flex items-center gap-1.5 h-8 pl-1 pr-2 rounded-lg text-sm text-muted hover:text-accent-soft-fg shrink-0 cursor-pointer transition-colors"
@@ -1133,59 +1220,8 @@ export default function ReaderPage() {
             <span className="hidden sm:inline">{projectId ? 'กลับหน้าสารบัญ' : 'โปรเจกต์แปล'}</span>
           </a>
 
-          <form onSubmit={handleFormSubmit} className="flex gap-2 flex-1 min-w-0">
-            <input
-              type="url"
-              aria-label="URL นิยายที่ต้องการอ่าน"
-              placeholder="วาง URL นิยายที่ต้องการอ่าน..."
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              className="flex-1 min-w-0 px-3 h-9 bg-card border border-line rounded-lg text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60 focus:border-accent-line text-sm"
-              required
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="h-9 px-3 sm:px-4 bg-accent text-accent-fg text-sm font-medium rounded-lg hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-1.5 shrink-0 cursor-pointer transition-all"
-            >
-              {loading ? <Loader2 className="animate-spin w-4 h-4" /> : <BookOpen className="w-4 h-4" />}
-              <span className="hidden sm:inline">ดึงเนื้อหา</span>
-            </button>
-          </form>
 
-          {/* History + Settings toggles */}
-          <div className="flex items-center gap-1 shrink-0">
-            {projectId && (
-              <button type="button" onClick={() => void toggleReaderGlossary()} title="เปิดคลังศัพท์ของเรื่องนี้" aria-label="เปิดคลังศัพท์"
-                className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors ${showGlossary ? 'border-accent-line bg-accent-soft text-accent-soft-fg' : 'border-line text-muted hover:bg-card hover:text-fg'}`}>
-                <BookMarked className="h-4 w-4" />
-              </button>
-            )}
-            <a
-              href="/dictionary"
-              title="คลังคำศัพท์พื้นฐาน"
-              aria-label="คลังคำศัพท์พื้นฐาน"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-card hover:text-fg"
-            >
-              <Library className="w-4 h-4" />
-            </a>
-            <a
-              href="/settings/ai"
-              title="ตั้งค่า AI สำหรับการแปล"
-              aria-label="ตั้งค่า AI สำหรับการแปล"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-card hover:text-fg"
-            >
-              <Sparkles className="w-4 h-4" />
-            </a>
-            <button
-              onClick={() => setShowHistory(!showHistory)}
-              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors cursor-pointer shrink-0 ${showHistory ? 'bg-accent-soft border-accent-line text-accent-soft-fg' : 'border-line text-muted hover:bg-card hover:text-fg'}`}
-              title="ประวัติการอ่าน"
-              aria-label="ประวัติการอ่าน"
-              aria-expanded={showHistory}
-            >
-              <History className="w-4 h-4" />
-            </button>
+
             <div className="shrink-0">
               <button
                 type="button"
@@ -1199,13 +1235,12 @@ export default function ReaderPage() {
                 <Settings className="w-4 h-4" />
               </button>
             </div>
-          </div>
         </div>
       </header>
-      {glossaryNotice && <div role="status" className="mx-auto max-w-3xl px-4 pt-3 text-xs leading-relaxed text-accent-soft-fg sm:px-6"><div className="rounded-lg border border-accent-line bg-accent-soft px-3 py-2"><BookMarked className="mr-1.5 inline h-3.5 w-3.5" />{glossaryNotice}</div></div>}
+      {glossaryNotice && <div role="status" className="mx-auto max-w-[44rem] px-5 pt-3 text-xs leading-relaxed text-accent-soft-fg"><div className="flex items-center justify-between gap-3 rounded-lg border border-accent-line bg-accent-soft px-3 py-2"><span><BookMarked className="mr-1.5 inline h-3.5 w-3.5" />{glossaryNotice}</span>{projectId && <a href={`/project/${encodeURIComponent(projectId)}/glossary`} className="shrink-0 font-semibold underline underline-offset-2">ตรวจดู</a>}</div></div>}
 
       {projectId && (
-        <div className="max-w-3xl mx-auto px-3 sm:px-6 pt-2">
+        <div className="max-w-[44rem] mx-auto px-5 pt-2">
           <button type="button" onClick={async () => {
             const next = !showToc; setShowToc(next);
             if (next && !readerProject) { try { setReaderProject(await getStore().getProject(projectId)); } catch (err) { setError(err instanceof Error ? err.message : String(err)); } }
@@ -1310,7 +1345,7 @@ export default function ReaderPage() {
       {/* History Drawer */}
       {showHistory && (
         <div className="border-b border-line bg-surface">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
+          <div className="max-w-[44rem] mx-auto px-5 py-3">
             <div className="flex justify-between items-center mb-2.5">
               <h3 className="font-bold flex items-center gap-2 text-sm">
                 <History className="w-4 h-4" /> ประวัติการอ่านล่าสุด ({history.length})
@@ -1347,7 +1382,7 @@ export default function ReaderPage() {
       )}
 
       {/* Main Reader View */}
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <main className="max-w-[40rem] mx-auto px-5 py-6 sm:py-8">
         {error && (
           <div role="alert" className="p-4 bg-danger-bg border border-danger-line text-danger-fg rounded-xl mb-6 space-y-3">
             <p className="text-sm font-semibold">{error}</p>
@@ -1363,84 +1398,71 @@ export default function ReaderPage() {
         {article && (
           <article className="space-y-5">
             <div className="space-y-4 border-b border-line pb-5">
-              <h1 className="text-2xl sm:text-3xl font-bold leading-tight">{article.title}</h1>
+              <h1 className={`text-2xl sm:text-3xl font-bold leading-tight ${fontClasses[fontFamily]}`}>{article.title}</h1>
 
-              {/* Action Toolbar */}
-              <div className="flex flex-nowrap items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <button type="button" onClick={() => fetchArticle(url, true)} disabled={loading} aria-label={loading ? "กำลังดึงเนื้อหาใหม่" : "ดึงเนื้อหาใหม่"} title="ดึงเนื้อหาใหม่จากเว็บไซต์ต้นทาง" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-fg transition-colors hover:border-accent-line hover:bg-card disabled:opacity-50">
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-                  </button>
-                  <button type="button" onClick={handleCopy} aria-label={copied ? "คัดลอกแล้ว" : "คัดลอกเนื้อหา"} title={copied ? "คัดลอกแล้ว" : "คัดลอกเนื้อหา"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-fg transition-colors hover:border-accent-line hover:bg-card">
+              {/* Reader controls: edition switching never invokes translation. */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  {article.translatedText ? (
+                    <div role="group" aria-label="ฉบับเนื้อหา" className="inline-flex rounded-xl border border-line bg-surface p-1">
+                      <button type="button" onClick={() => selectReaderEdition(false)} aria-pressed={!showTranslation} className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${!showTranslation ? 'bg-card text-fg shadow-sm' : 'text-muted hover:text-fg'}`}>ต้นฉบับ</button>
+                      <button type="button" onClick={() => selectReaderEdition(true)} aria-pressed={showTranslation} className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${showTranslation ? 'bg-card text-fg shadow-sm' : 'text-muted hover:text-fg'}`}>คำแปลไทย</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={handleTranslate} disabled={translationBusy} className="inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl bg-accent px-3 text-sm font-semibold text-accent-fg hover:brightness-110 disabled:opacity-50">
+                      {translationBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      {translationBusy ? 'กำลังแปล…' : 'แปลเป็นไทย'}
+                    </button>
+                  )}
+                  <button type="button" onClick={handleCopy} aria-label={copied ? "คัดลอกแล้ว" : "คัดลอกเนื้อหา"} title="คัดลอกเนื้อหา" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-surface text-fg hover:bg-card">
                     {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
                   </button>
-                  <button type="button" onClick={handleTranslate} disabled={translationBusy} aria-label={translationBusy ? "กำลังแปล" : article.translatedText ? "แปลใหม่" : "แปลเป็นไทย"} title={translationBusy ? "กำลังแปล" : article.translatedText ? "แปลใหม่" : "แปลเป็นไทย"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg transition-colors hover:brightness-110 disabled:opacity-50">
-                    {translationBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  </button>
-                  {article.translatedText && (
-                    <>
-                      <button type="button" onClick={() => setShowTranslation((value) => !value)} aria-label={showTranslation ? "ดูต้นฉบับ" : "ดูคำแปล"} title={showTranslation ? "ดูต้นฉบับ" : "ดูคำแปล"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-fg transition-colors hover:border-accent-line hover:bg-card">
-                        <BookOpen className="h-4 w-4" />
-                      </button>
-                      {article.preProofreadText && (
-                        <button
-                          type="button"
-                          onClick={handleRestorePreProofread}
-                          title="คืนคำแปลฉบับก่อน AI บ.ก. ตรวจ"
-                          aria-label="คืนคำแปลฉบับก่อนตรวจ"
-                          className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-2 text-xs text-fg hover:bg-card"
-                        >
-                          <RotateCcw className="h-4 w-4" />
-                          <span>คืนฉบับเดิม</span>
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={handleEditTranslation}
-                        disabled={editorBusy || translationBusy}
-                        aria-label={editorBusy ? "AI บ.ก. กำลังตรวจแก้" : "AI บ.ก. ตรวจแก้คำแปล"}
-                        title={editorBusy ? "AI บ.ก. กำลังตรวจแก้ทั้งตอน" : "AI บ.ก. ตรวจแก้คำแปลทั้งตอน (เรียกใช้เอง)"}
-                        className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-accent-line bg-accent-soft px-2.5 text-xs font-medium text-accent-soft-fg transition-colors hover:brightness-105 disabled:opacity-50"
-                      >
-                        {editorBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
-                        <span>AI บ.ก.</span>
-                      </button>
-                    </>
-                  )}
-                  <button type="button" onClick={() => setAutoScroll(!autoScroll)} aria-label={autoScroll ? "หยุดเลื่อนอัตโนมัติ" : "เลื่อนอัตโนมัติ"} title={autoScroll ? "หยุดเลื่อนอัตโนมัติ" : "เลื่อนอัตโนมัติ"} className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors ${autoScroll ? "border-transparent bg-green-600 text-white" : "border-line bg-surface text-fg hover:border-accent-line hover:bg-card"}`}>
+                  <button type="button" onClick={() => setAutoScroll(!autoScroll)} aria-label={autoScroll ? "หยุดเลื่อนอัตโนมัติ" : "เลื่อนอัตโนมัติ"} title={autoScroll ? "หยุดเลื่อนอัตโนมัติ" : "เลื่อนอัตโนมัติ"} className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${autoScroll ? "border-transparent bg-green-600 text-white" : "border-line bg-surface text-fg hover:bg-card"}`}>
                     {autoScroll ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                   </button>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
-                  <button type="button" onClick={() => article.prevUrl && fetchArticle(article.prevUrl)} disabled={!article.prevUrl || loading} aria-label="ตอนก่อนหน้า" title="ตอนก่อนหน้า" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-accent-line bg-accent-soft text-accent-soft-fg transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-40">
-                    <ChevronLeft className="h-4 w-4" />
+                  <button type="button" onClick={() => setShowMoreMenu((value) => !value)} aria-expanded={showMoreMenu} aria-label="การทำงานเพิ่มเติม" className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border ${showMoreMenu ? 'border-accent-line bg-accent-soft text-accent-soft-fg' : 'border-line bg-surface text-muted hover:bg-card'}`}>
+                    <MoreHorizontal className="h-4 w-4" />
                   </button>
-                  <button type="button" onClick={() => article.nextUrl && fetchArticle(article.nextUrl)} disabled={!article.nextUrl || loading} aria-label="ตอนถัดไป" title="ตอนถัดไป" className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-accent-fg transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+                  <button type="button" onClick={() => article.prevUrl && fetchArticle(article.prevUrl)} disabled={!article.prevUrl || loading} aria-label="ตอนก่อนหน้า" className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-surface text-fg disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => article.nextUrl && fetchArticle(article.nextUrl)} disabled={!article.nextUrl || loading} aria-label="ตอนถัดไป" className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-accent-fg disabled:opacity-40"><ChevronRight className="h-4 w-4" /></button>
                 </div>
               </div>
+              {showMoreMenu && (
+                <div className="rounded-xl border border-line bg-card p-2 shadow-sm" role="menu" aria-label="การทำงานเพิ่มเติม">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); void fetchArticle(url, true); }} disabled={loading} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface disabled:opacity-50"><RotateCcw className="mb-1 h-4 w-4" />ดึงต้นฉบับใหม่</button>
+                    {article.translatedText && <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); void handleTranslate(); }} disabled={translationBusy} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface disabled:opacity-50"><Sparkles className="mb-1 h-4 w-4" />แปลใหม่และแทนที่คำแปลเดิม</button>}
+                    {article.translatedText && <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); void handleEditTranslation(); }} disabled={editorBusy || translationBusy} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface disabled:opacity-50"><Pencil className="mb-1 h-4 w-4" />AI บ.ก. ตรวจคำแปล</button>}
+                    {article.preProofreadText && <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); void handleRestorePreProofread(); }} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><RotateCcw className="mb-1 h-4 w-4" />คืนฉบับก่อนตรวจ</button>}
+                    <a role="menuitem" href={`/settings/ai?returnTo=${encodeURIComponent(readerReturnTo)}`} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><Sparkles className="mb-1 h-4 w-4" />ตั้งค่า AI</a>
+                    <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); setShowHistory(true); }} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><History className="mb-1 h-4 w-4" />ประวัติการอ่าน</button>
+                    {projectId && <button type="button" role="menuitem" onClick={() => { setShowMoreMenu(false); void toggleReaderGlossary(); }} className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><BookMarked className="mb-1 h-4 w-4" />ศัพท์ของเรื่องนี้</button>}
+                    <a role="menuitem" href="/dictionary" className="rounded-lg border border-line px-3 py-2.5 text-left text-xs hover:bg-surface"><Library className="mb-1 h-4 w-4" />พจนานุกรมพื้นฐาน</a>
+                  </div>
+                </div>
+              )}
             </div>
 
             {translationError && (
               <div role="alert" className="rounded-lg border border-danger-line bg-danger-bg p-3 text-sm text-danger-fg">
                 <p>{translationError}</p>
-                <a href="/settings/ai" className="mt-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:opacity-80">
-                  เปิดหน้าตั้งค่า AI
-                </a>
+              {translationErrorAction === 'settings' && <a href={`/settings/ai?returnTo=${encodeURIComponent(readerReturnTo)}`} className="mt-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:opacity-80">เปิดหน้าตั้งค่า AI</a>}
+              {translationErrorAction === 'save' && pendingTranslationSave && <button type="button" onClick={() => void retrySaveTranslation()} disabled={editorBusy} className="mt-2 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:opacity-80 disabled:opacity-50">{editorBusy ? 'กำลังบันทึก…' : 'บันทึกคำแปลอีกครั้ง'}</button>}
               </div>
             )}
 
             {/* Article Content Render */}
             {showTranslation && article.translatedText ? (
-              <div className="space-y-6 leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
+              <div className={`space-y-4 leading-[1.75] ${fontClasses[fontFamily]}`} style={{ fontSize: `${fontSize}px` }}>
                 {article.translatedText.split(/\n\s*\n/).map((paragraph, index) => (
-                  <p key={index} className="mb-6 whitespace-pre-wrap">{paragraph}</p>
+                  <p key={index} className="mb-4 whitespace-pre-wrap">{paragraph}</p>
                 ))}
               </div>
             ) : (
               <div
-                className="space-y-6 [&>p]:mb-6 [&>p]:block leading-relaxed"
+                className={`space-y-4 [&>p]:mb-4 [&>p]:block leading-[1.75] ${fontClasses[fontFamily]}`}
                 style={{ fontSize: `${fontSize}px` }}
                 dangerouslySetInnerHTML={{ __html: applyWordReplacementsToHtml(article.content, readerProject?.wordReplacements ?? []) }}
               />
@@ -1467,11 +1489,18 @@ export default function ReaderPage() {
         )}
 
         {!article && !loading && !error && (
-          <div className="text-center py-20 px-6">
-            <BookOpen className="w-10 h-10 mx-auto mb-3 text-line" />
-            <p className="text-sm text-muted font-medium">ยังไม่ได้เปิดหน้าให้อ่าน</p>
-            <p className="text-xs text-muted mt-1">วาง URL ด้านบนเพื่อเริ่มอ่าน หรือกดไอคอนประวัติการอ่าน</p>
-          </div>
+          <section className="mx-auto max-w-xl rounded-2xl border border-line bg-card p-5 text-center shadow-sm sm:p-8">
+            <span className="mx-auto mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-soft text-accent-soft-fg"><BookOpen className="h-6 w-6" /></span>
+            <h2 className="text-lg font-bold">เริ่มอ่านนิยาย</h2>
+            <p className="mt-1 text-sm text-muted">วางลิงก์หน้าบทนิยายที่ต้องการอ่านได้เลย</p>
+            <form onSubmit={handleFormSubmit} className="mt-5 flex flex-col gap-2 sm:flex-row">
+              <label htmlFor="quick-read-url" className="sr-only">URL นิยายที่ต้องการอ่าน</label>
+              <input id="quick-read-url" type="url" required value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://..." className="h-11 min-w-0 flex-1 rounded-xl border border-line bg-bg px-3 text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/50" />
+              <button type="submit" disabled={loading} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-fg disabled:opacity-50"><BookOpen className="h-4 w-4" />เปิดอ่าน</button>
+            </form>
+            <p className="mt-3 text-xs text-muted">หรือเลือกเรื่องจากประวัติการอ่าน</p>
+            <button type="button" onClick={() => setShowHistory(true)} className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-xs text-muted hover:bg-surface"><History className="h-4 w-4" />ประวัติการอ่าน</button>
+          </section>
         )}
       </main>
       {detectedGlossary && <DetectedGlossaryModal items={detectedGlossary.items} sourceLabel={detectedGlossary.sourceLabel} onClose={() => setDetectedGlossary(null)} onSave={saveDetectedGlossaryEdits} />}
