@@ -678,8 +678,8 @@ export default function ProjectClient({ id }: { id: string }) {
         </section>
 
         <section className="flex items-center justify-between rounded-xl border border-line bg-card px-4 py-3">
-          <div><p className="text-sm font-semibold">Glossary</p><p className="mt-0.5 text-xs text-muted">จัดการตัวละครและศัพท์เฉพาะของเรื่องนี้</p></div>
-          <Link href={`/project/${project.id}/glossary`} className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-3 text-sm font-medium text-accent-fg"><BookMarked className="h-4 w-4"/> เปิดคลังศัพท์</Link>
+          <div><p className="text-sm font-semibold">ศัพท์ของเรื่องนี้</p><p className="mt-0.5 text-xs text-muted">จัดการตัวละครและศัพท์เฉพาะของเรื่องนี้</p></div>
+          <Link href={`/project/${project.id}/glossary`} className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-3 text-sm font-medium text-accent-fg"><BookMarked className="h-4 w-4"/> จัดการศัพท์</Link>
         </section>
 
         {/* รายการบท */}
