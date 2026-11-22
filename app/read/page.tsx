@@ -87,6 +87,8 @@ export default function ReaderPage() {
   const [readerGlossaryTh, setReaderGlossaryTh] = useState('');
   const [readerGlossaryType, setReaderGlossaryType] = useState<'character' | 'term'>('term');
   const [tocFilter, setTocFilter] = useState('');
+  const tocScrollRef = useRef<HTMLDivElement | null>(null);
+  const activeTocChapterRef = useRef<HTMLButtonElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [article, setArticle] = useState<ArticleData | null>(null);
   const [error, setError] = useState('');
@@ -220,6 +222,18 @@ export default function ReaderPage() {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showMoreMenu]);
+
+  // Keep the currently open chapter visible when the in-reader TOC is expanded.
+  useEffect(() => {
+    if (!showToc || !readerProject || !activeTocChapterRef.current || !tocScrollRef.current) return;
+    const container = tocScrollRef.current;
+    const activeChapter = activeTocChapterRef.current;
+    const top = activeChapter.offsetTop - container.offsetTop;
+    const bottom = top + activeChapter.offsetHeight;
+    if (top < container.scrollTop || bottom > container.scrollTop + container.clientHeight) {
+      container.scrollTo({ top: Math.max(0, top - container.clientHeight / 2 + activeChapter.offsetHeight / 2), behavior: 'auto' });
+    }
+  }, [showToc, readerProject, url, tocFilter]);
 
   // ระบบ Auto-Scroll
   useEffect(() => {
@@ -1252,9 +1266,9 @@ export default function ReaderPage() {
               <div className="p-2 border-b border-line bg-surface">
                 <input aria-label="ค้นหาตอนในสารบัญ" value={tocFilter} onChange={(event) => setTocFilter(event.target.value)} placeholder="ค้นหาตอนในสารบัญ..." className="w-full h-9 px-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:ring-2 focus:ring-accent/60" />
               </div>
-              <div className="max-h-[50vh] overflow-y-auto divide-y divide-line">
+              <div ref={tocScrollRef} className="max-h-[50vh] overflow-y-auto divide-y divide-line">
               {readerProject.chapters.filter((chapter) => !tocFilter.trim() || chapter.title.toLowerCase().includes(tocFilter.trim().toLowerCase())).map((chapter) => (
-                <button key={chapter.url} type="button" onClick={() => { setShowToc(false); void fetchArticle(chapter.url); }}
+                <button key={chapter.url} ref={chapter.url === url ? activeTocChapterRef : null} type="button" onClick={() => { setShowToc(false); void fetchArticle(chapter.url); }}
                   className={`w-full text-left px-3 py-2.5 text-sm hover:bg-surface ${chapter.url === url ? 'bg-accent-soft text-accent-soft-fg font-semibold' : ''}`}>
                   <span className="mr-2 text-xs text-muted">{chapter.order + 1}.</span>{chapter.title}
                   {chapter.status !== 'pending' && <span className="ml-2 text-[10px] text-green-600">แคชแล้ว</span>}
