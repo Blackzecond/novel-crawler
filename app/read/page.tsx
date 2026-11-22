@@ -1156,6 +1156,7 @@ export default function ReaderPage() {
             <span className="hidden sm:inline">{projectId ? 'กลับหน้าสารบัญ' : 'โปรเจกต์แปล'}</span>
           </a>
 
+          {!article && (
           <form onSubmit={handleFormSubmit} className="flex gap-2 flex-1 min-w-0">
             <input
               type="url"
@@ -1175,40 +1176,8 @@ export default function ReaderPage() {
               <span className="hidden sm:inline">ดึงเนื้อหา</span>
             </button>
           </form>
+          )}
 
-          {/* History + Settings toggles */}
-          <div className="flex items-center gap-1 shrink-0">
-            {projectId && (
-              <button type="button" onClick={() => void toggleReaderGlossary()} title="เปิดคลังศัพท์ของเรื่องนี้" aria-label="เปิดคลังศัพท์"
-                className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors ${showGlossary ? 'border-accent-line bg-accent-soft text-accent-soft-fg' : 'border-line text-muted hover:bg-card hover:text-fg'}`}>
-                <BookMarked className="h-4 w-4" />
-              </button>
-            )}
-            <a
-              href="/dictionary"
-              title="คลังคำศัพท์พื้นฐาน"
-              aria-label="คลังคำศัพท์พื้นฐาน"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-card hover:text-fg"
-            >
-              <Library className="w-4 h-4" />
-            </a>
-            <a
-              href={`/settings/ai?returnTo=${encodeURIComponent(readerReturnTo)}`}
-              title="ตั้งค่า AI สำหรับการแปล"
-              aria-label="ตั้งค่า AI สำหรับการแปล"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line text-muted transition-colors hover:bg-card hover:text-fg"
-            >
-              <Sparkles className="w-4 h-4" />
-            </a>
-            <button
-              onClick={() => setShowHistory(!showHistory)}
-              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors cursor-pointer shrink-0 ${showHistory ? 'bg-accent-soft border-accent-line text-accent-soft-fg' : 'border-line text-muted hover:bg-card hover:text-fg'}`}
-              title="ประวัติการอ่าน"
-              aria-label="ประวัติการอ่าน"
-              aria-expanded={showHistory}
-            >
-              <History className="w-4 h-4" />
-            </button>
             <div className="shrink-0">
               <button
                 type="button"
