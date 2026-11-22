@@ -228,7 +228,7 @@ export default function ReaderPage() {
     if (!showToc || !readerProject || !activeTocChapterRef.current || !tocScrollRef.current) return;
     const container = tocScrollRef.current;
     const activeChapter = activeTocChapterRef.current;
-    const top = activeChapter.offsetTop - container.offsetTop;
+    const top = activeChapter.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
     const bottom = top + activeChapter.offsetHeight;
     if (top < container.scrollTop || bottom > container.scrollTop + container.clientHeight) {
       container.scrollTo({ top: Math.max(0, top - container.clientHeight / 2 + activeChapter.offsetHeight / 2), behavior: 'auto' });
