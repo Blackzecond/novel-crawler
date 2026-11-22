@@ -337,7 +337,7 @@ export default function ProjectsHomePage() {
               <span className="block text-[11px] text-muted mt-0.5 truncate">พื้นที่จัดการนิยายและงานแปล</span>
             </span>
           </a>
-          <nav aria-label="เมนูหลัก" className="flex min-w-0 flex-1 items-center justify-end gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-none sm:gap-2">
+          <nav aria-label="เมนูหลัก" className="flex min-w-0 flex-1 items-center justify-start gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-none sm:justify-end sm:gap-2">
             <a href="/read" className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap h-10 px-2.5 rounded-xl text-xs font-medium text-muted hover:text-fg hover:bg-surface transition-colors"><BookOpen className="w-4 h-4" />อ่านด่วน</a>
             <a href="/dictionary" className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap h-10 px-2.5 rounded-xl text-xs font-medium text-muted hover:text-fg hover:bg-surface transition-colors"><BookOpen className="w-4 h-4" />พจนานุกรม</a>
             <a href="/glossary-sets" className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap h-10 px-2.5 rounded-xl text-xs font-medium text-muted hover:text-fg hover:bg-surface transition-colors"><Library className="w-4 h-4" />ชุดศัพท์</a>
