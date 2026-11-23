@@ -79,6 +79,9 @@ export default function ProjectsHomePage() {
   const [projects, setProjects] = useState<NovelProject[]>([]);
   const [readingHistory, setReadingHistory] = useState<Array<{ url: string; title?: string; readAt: number; projectId?: string | null }>>([]);
   const [mounted, setMounted] = useState(false);
+  const accountScopeRef = useRef<string | null | undefined>(undefined);
+  const accountRequestVersionRef = useRef(0);
+  const reloadProjectsRef = useRef<() => Promise<boolean>>(async () => false);
   const [projectsError, setProjectsError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [projectSort, setProjectSort] = useState<'updated' | 'title' | 'progress'>('updated');
@@ -97,7 +100,7 @@ export default function ProjectsHomePage() {
   const [cloudUserId, setCloudUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    applySavedTheme(); // ใช้ธีมในเครื่องทันที แล้วปรับเป็นค่าจาก Cloud หากมี
+    applySavedTheme();
     void (async () => {
       try {
         const localSettings = loadReaderSettings();
@@ -113,104 +116,164 @@ export default function ProjectsHomePage() {
         console.warn('Could not sync reader theme:', syncError);
       }
     })();
-    void (async () => {
+
+    let active = true;
+    let authEventVersion = 0;
+    let projectLoadPending = false;
+    let projectsLoadAttempted = false;
+    const readLocalHistory = () => {
       try {
-        if (isSupabaseConfigured()) {
-          const { data, error: sessionError } = await getSupabase().auth.getSession();
-          if (sessionError) throw sessionError;
-          if (!data.session?.user) {
-            router.replace('/login');
-            return;
-          }
-          const userId = data.session.user.id;
-          setCloudUserId(userId);
+        const raw = window.localStorage.getItem('novel_history');
+        const parsed: unknown = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed as Array<{ url: string; title?: string; readAt: number; projectId?: string | null }> : [];
+      } catch {
+        return [];
+      }
+    };
+    const isCurrentRequest = (version: number, scope: string) =>
+      active && accountRequestVersionRef.current === version && accountScopeRef.current === scope;
+
+    const loadProjectsForScope = async (version: number, scope: string) => {
+      projectLoadPending = true;
+      try {
+        const nextProjects = await getStore().listProjects();
+        if (!isCurrentRequest(version, scope)) return false;
+        setProjects(nextProjects);
+        setProjectsError('');
+        return true;
+      } catch (loadError) {
+        if (!isCurrentRequest(version, scope)) return false;
+        setProjectsError(loadError instanceof Error ? loadError.message : 'โหลดข้อมูลไม่สำเร็จ');
+        return false;
+      } finally {
+        if (isCurrentRequest(version, scope)) {
+          projectLoadPending = false;
+          projectsLoadAttempted = true;
+          setMounted(true);
+        }
+      }
+    };
+
+    const refreshCloudHistory = async (version: number, scope: string) => {
+      // Keep the last successful combined history visible while a same-account refresh is pending.
+      // On account changes the caller has already cleared the previous account's state.
+      try {
+        const cloudHistory = await loadCloudReadingHistory();
+        if (!isCurrentRequest(version, scope)) return;
+        const localHistory = readLocalHistory();
+        setReadingHistory([...localHistory, ...(Array.isArray(cloudHistory) ? cloudHistory : [])]);
+      } catch (historyError) {
+        // A failed refresh must not roll back a previously successful cloud history snapshot.
+        console.info('Could not refresh cloud reading history; keeping the last successful history:', historyError);
+      }
+    };
+
+    const activateAccount = (userId: string | null) => {
+      const scope = isSupabaseConfigured() ? userId : 'local';
+      if (scope === null) {
+        if (accountScopeRef.current !== null) {
+          accountRequestVersionRef.current++;
+          accountScopeRef.current = null;
+          setProjects([]);
+          setReadingHistory([]);
+          setProjectsError('');
+          setMounted(false);
+          setCloudUserId(null);
+          setLocalMigrationCount(0);
+        }
+        router.replace('/login');
+        return;
+      }
+
+      const changedAccount = accountScopeRef.current !== scope;
+      if (changedAccount) {
+        accountRequestVersionRef.current++;
+        accountScopeRef.current = scope;
+        setProjects([]);
+        setReadingHistory(readLocalHistory());
+        setProjectsError('');
+        setMounted(false);
+        setCloudUserId(userId);
+        setLocalMigrationCount(0);
+        setImportNotice('');
+        if (userId) {
           const migrationKey = `novel_cloud_migrated_v1_${userId}`;
           if (window.localStorage.getItem(migrationKey) !== '1') {
             setLocalMigrationCount(getLocalProjectsForMigration().length);
           }
         }
-        setProjects(await getStore().listProjects());
-        setProjectsError('');
-      } catch (err) {
-        setProjectsError(err instanceof Error ? err.message : 'โหลดข้อมูลไม่สำเร็จ');
-      } finally {
-        setMounted(true);
       }
-    })();
+
+      const version = accountRequestVersionRef.current;
+      if (changedAccount || (!projectsLoadAttempted && !projectLoadPending)) {
+        void loadProjectsForScope(version, scope);
+      }
+      if (userId) void refreshCloudHistory(version, scope);
+      else if (changedAccount) setReadingHistory(readLocalHistory());
+    };
+
+    if (isSupabaseConfigured()) {
+      const { data } = getSupabase().auth.onAuthStateChange((event, session) => {
+        if (!['INITIAL_SESSION', 'SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED'].includes(event)) return;
+        authEventVersion++;
+        queueMicrotask(() => {
+          if (active) activateAccount(session?.user?.id ?? null);
+        });
+      });
+
+      const initialAuthEventVersion = authEventVersion;
+      void getSupabase().auth.getSession().then(({ data, error: sessionError }) => {
+        if (!active || authEventVersion !== initialAuthEventVersion) return;
+        if (sessionError) {
+          setProjectsError(sessionError.message);
+          setMounted(true);
+          return;
+        }
+        activateAccount(data.session?.user?.id ?? null);
+      }).catch((sessionError) => {
+        if (!active || authEventVersion !== initialAuthEventVersion) return;
+        setProjectsError(sessionError instanceof Error ? sessionError.message : 'ตรวจสอบสถานะเข้าสู่ระบบไม่สำเร็จ');
+        setMounted(true);
+      });
+
+      reloadProjectsRef.current = async () => {
+        const scope = accountScopeRef.current;
+        if (!scope) return false;
+        return loadProjectsForScope(accountRequestVersionRef.current, scope);
+      };
+
+      return () => {
+        active = false;
+        accountRequestVersionRef.current++;
+        data.subscription.unsubscribe();
+        reloadProjectsRef.current = async () => false;
+      };
+    }
+
+    activateAccount(null);
+    reloadProjectsRef.current = async () => {
+      const scope = accountScopeRef.current;
+      if (scope !== 'local') return false;
+      return loadProjectsForScope(accountRequestVersionRef.current, scope);
+    };
+    return () => {
+      active = false;
+      accountRequestVersionRef.current++;
+      reloadProjectsRef.current = async () => false;
+    };
   }, [router]);
 
-
-
-  const loadProjects = async () => {
-    try {
-      const nextProjects = await getStore().listProjects();
-      setProjects(nextProjects);
-      setProjectsError('');
-      return true;
-    } catch (err) {
-      setProjectsError(err instanceof Error ? err.message : 'โหลดข้อมูลไม่สำเร็จ');
-      return false;
-    }
-  };
+  const loadProjects = async () => reloadProjectsRef.current();
 
   const retryLoadProjects = async () => {
     if (retryingProjects) return;
     setRetryingProjects(true);
-    setProjectsError('');
     try {
       await loadProjects();
     } finally {
       setRetryingProjects(false);
     }
   };
-
-
-
-  // Read local history immediately; cloud history is independent of shelf loading.
-  // Ignore late cloud responses after unmount or an account change.
-  useEffect(() => {
-    let active = true;
-    let requestVersion = 0;
-    let localHistory: Array<{ url: string; title?: string; readAt: number; projectId?: string | null }> = [];
-    try {
-      const raw = window.localStorage.getItem('novel_history');
-      const parsed: unknown = raw ? JSON.parse(raw) : [];
-      localHistory = Array.isArray(parsed) ? parsed : [];
-    } catch {
-      localHistory = [];
-    }
-    setReadingHistory(localHistory);
-
-    let subscription: { unsubscribe: () => void } | null = null;
-    const loadCloudHistory = async () => {
-      const version = ++requestVersion;
-      try {
-        const cloudHistory = await loadCloudReadingHistory();
-        if (active && version === requestVersion && Array.isArray(cloudHistory)) {
-          setReadingHistory([...localHistory, ...cloudHistory]);
-        }
-      } catch (historyError) {
-        console.info('Could not load cloud reading history; keeping local history:', historyError);
-      }
-    };
-
-    if (isSupabaseConfigured()) {
-      const { data } = getSupabase().auth.onAuthStateChange((event) => {
-        if (event !== 'SIGNED_IN' && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') return;
-        requestVersion++;
-        setReadingHistory(localHistory);
-        if (event !== 'SIGNED_OUT') queueMicrotask(() => { if (active) void loadCloudHistory(); });
-      });
-      subscription = data.subscription;
-      void loadCloudHistory();
-    }
-
-    return () => {
-      active = false;
-      requestVersion++;
-      subscription?.unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     if (!showCreateForm || projects.length === 0) return;
@@ -587,7 +650,7 @@ export default function ProjectsHomePage() {
             <div role="alert" className="flex flex-col gap-3 rounded-2xl border border-danger-line bg-danger-bg p-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-danger-fg">โหลดคลังโปรเจกต์ไม่สำเร็จ</p>
-                <p className="mt-1 break-words text-xs text-danger-fg/80">{projectsError}</p>
+                <p className="mt-1 break-words text-xs text-danger-fg/80">{retryingProjects ? "กำลังโหลดคลังอีกครั้ง…" : projectsError}</p>
               </div>
               <button type="button" onClick={() => void retryLoadProjects()} disabled={retryingProjects}
                 className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-danger-line bg-card px-3 text-xs font-semibold text-danger-fg disabled:opacity-50">
@@ -633,7 +696,7 @@ export default function ProjectsHomePage() {
                   <div className="mt-4 h-9 rounded-xl bg-surface" />
                 </div>
               ))}
-              <span className="sr-only">กำลังโหลดโปรเจกต์…</span>
+              <span className="sr-only">{retryingProjects ? "กำลังโหลดคลังอีกครั้ง…" : "กำลังโหลดโปรเจกต์…"}</span>
             </div>
           ) : !projectsError && projects.length > 0 ? (
             <>
