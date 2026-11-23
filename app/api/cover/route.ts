@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { parseHTML } from 'linkedom';
 import { fetchArticleHtml } from '@/lib/fetchHtml';
 
+export const runtime = 'nodejs';
+
 function isPublicHttpUrl(value: string): URL | null {
   try {
     const url = new URL(value);
@@ -76,6 +78,59 @@ function extractCover(html: string, pageUrl: string, title?: string): string | n
   return null;
 }
 
+function normalizeTitle(value: string): string {
+  return value.toLocaleLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
+}
+
+/**
+ * Last-resort lookup for Chinese web-novel covers.
+ * Only accept Bing image results whose metadata repeats the requested title.
+ * Return Bing's hosted thumbnail so the bookshelf does not depend on the
+ * original image host's hotlink policy.
+ */
+async function searchChineseNovelCover(title: string): Promise<string | null> {
+  const cleanTitle = title.trim();
+  if (!cleanTitle || cleanTitle.length < 2) return null;
+
+  try {
+    const query = encodeURIComponent(`"${cleanTitle}" 小说 封面`);
+    const response = await fetch(`https://www.bing.com/images/search?q=${query}&qft=+filterui:imagesize-medium`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; NovelCrawler/1.0)',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      signal: AbortSignal.timeout(4500),
+      cache: 'no-store',
+    });
+    if (!response.ok) return null;
+
+    const html = await response.text();
+    const { document } = parseHTML(html);
+    const wanted = normalizeTitle(cleanTitle);
+    const results = Array.from(document.querySelectorAll('a.iusc'));
+    for (const result of results.slice(0, 12)) {
+      const rawMetadata = result.getAttribute('m');
+      if (!rawMetadata) continue;
+      try {
+        const metadata = JSON.parse(rawMetadata) as { t?: string; desc?: string; turl?: string; murl?: string };
+        const searchableText = normalizeTitle(`${metadata.t ?? ''} ${metadata.desc ?? ''}`);
+        if (!searchableText.includes(wanted)) continue;
+
+        const thumbnail = absoluteImageUrl(metadata.turl, 'https://www.bing.com');
+        if (thumbnail && new URL(thumbnail).hostname.endsWith('mm.bing.net')) return thumbnail;
+
+        const original = absoluteImageUrl(metadata.murl, 'https://www.bing.com');
+        if (original) return original;
+      } catch {
+        // Ignore malformed image-result metadata and continue to the next result.
+      }
+    }
+  } catch {
+    // Search is optional; a timeout or blocked search provider must not affect project creation.
+  }
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
@@ -83,8 +138,18 @@ export async function POST(req: NextRequest) {
     if (!isPublicHttpUrl(pageUrl)) {
       return NextResponse.json({ error: 'URL ไม่ถูกต้อง' }, { status: 400 });
     }
-    const html = await fetchArticleHtml(pageUrl);
-    const coverUrl = extractCover(html, pageUrl, typeof body?.title === 'string' ? body.title : '');
+
+    let coverUrl: string | null = null;
+    try {
+      const html = await fetchArticleHtml(pageUrl);
+      coverUrl = extractCover(html, pageUrl, typeof body?.title === 'string' ? body.title : '');
+    } catch {
+      // A failed source-page fetch should still allow the optional title search.
+    }
+
+    if (!coverUrl && typeof body?.title === 'string') {
+      coverUrl = await searchChineseNovelCover(body.title);
+    }
     return NextResponse.json({ coverUrl });
   } catch (error) {
     return NextResponse.json({
