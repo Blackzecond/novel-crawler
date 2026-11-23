@@ -11,3 +11,8 @@ export function isLikelyChapterGroup(items: Array<{ title: string }>): boolean;
 export function withStableReplacementOrder<T extends object>(items: T[], baseTime?: number): Array<T & { created_at: string }>;
 
 export function resolveChapterStatus<T extends string>(current: T, requested?: T, clearsTranslation?: boolean): T;
+
+export function selectLatestReadableChapter<
+  TChapter extends { url: string },
+  TProject extends { id: string; chapters: TChapter[] },
+>(projects: TProject[], historyCollections?: ReadingHistoryEntry[][]): { project: TProject; chapter: TChapter; readAt: number } | null;
