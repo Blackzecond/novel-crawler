@@ -536,7 +536,12 @@ export default function ProjectClient({ id }: { id: string }) {
 
       <main className="mx-auto max-w-4xl space-y-4 px-4 py-5 sm:space-y-5 sm:px-6 sm:py-7">
         <section className="flex min-w-0 items-start gap-4">
-          <NovelCover projectId={project.id} title={project.title} size="large" />
+          <NovelCover
+            projectId={project.id}
+            title={project.title}
+            coverUrl={project.coverUrl}
+            size="large"
+          />
           <div className="min-w-0 flex-1">
             {renaming ? (
               <div className="flex flex-wrap items-center gap-2">
