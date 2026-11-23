@@ -207,29 +207,31 @@ test('home page keeps the last cloud chapter when same-account getUser returns a
   }
 });
 
-test('home page clears the previous cloud chapter after a successful empty cloud-history read', async () => {
-  const state = {
-    getSessionCalls: 0,
-    getUserCalls: 0,
-    listProjectsCalls: 0,
-    redirects: [],
-    sessionResults: [sessionA],
-    userResults: [
-      { data: { user: { id: 'account-A' } }, error: null },
-      { data: { user: { id: 'account-A' } }, error: null },
-    ],
-    preferenceRows: [preferences([historyA]), preferences([])],
-  };
-  const app = await mountHomePage(state);
-  try {
-    await app.flush();
-    assert.ok(app.dom.window.document.querySelector('a[aria-label="อ่านต่อ นิยายบัญชี A ตอน ตอน A"]'));
-    app.state.authCallback('SIGNED_IN', { user: { id: 'account-A' } });
-    await app.flush();
-    assert.equal(app.dom.window.document.querySelector('a[aria-label="อ่านต่อ นิยายบัญชี A ตอน ตอน A"]'), null,
-      'a successful empty cloud response must clear old cloud history');
-  } finally {
-    await app.unmount();
+test('home page clears the previous cloud chapter for a missing preference row, null history, or empty array', async () => {
+  for (const emptyPreferences of [null, preferences(null), preferences([])]) {
+    const state = {
+      getSessionCalls: 0,
+      getUserCalls: 0,
+      listProjectsCalls: 0,
+      redirects: [],
+      sessionResults: [sessionA],
+      userResults: [
+        { data: { user: { id: 'account-A' } }, error: null },
+        { data: { user: { id: 'account-A' } }, error: null },
+      ],
+      preferenceRows: [preferences([historyA]), emptyPreferences],
+    };
+    const app = await mountHomePage(state);
+    try {
+      await app.flush();
+      assert.ok(app.dom.window.document.querySelector('a[aria-label="อ่านต่อ นิยายบัญชี A ตอน ตอน A"]'));
+      app.state.authCallback('SIGNED_IN', { user: { id: 'account-A' } });
+      await app.flush();
+      assert.equal(app.dom.window.document.querySelector('a[aria-label="อ่านต่อ นิยายบัญชี A ตอน ตอน A"]'), null,
+        'a successful empty cloud response must clear old cloud history');
+    } finally {
+      await app.unmount();
+    }
   }
 });
 
