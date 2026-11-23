@@ -186,6 +186,7 @@ export default function ProjectsHomePage() {
           setMounted(false);
           setCloudUserId(null);
           setLocalMigrationCount(0);
+          setRetryingProjects(false);
         }
         router.replace('/login');
         return;
@@ -203,6 +204,7 @@ export default function ProjectsHomePage() {
         setCloudUserId(userId);
         setLocalMigrationCount(0);
         setImportNotice('');
+        setRetryingProjects(false);
         if (userId) {
           const migrationKey = `novel_cloud_migrated_v1_${userId}`;
           if (window.localStorage.getItem(migrationKey) !== '1') {
