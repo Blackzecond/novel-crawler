@@ -92,7 +92,6 @@ export default function ProjectsHomePage() {
   const [localMigrationCount, setLocalMigrationCount] = useState(0);
   const [migratingLocal, setMigratingLocal] = useState(false);
   const [cloudUserId, setCloudUserId] = useState<string | null>(null);
-  const coverFetchInProgress = useRef(new Set<string>());
 
   useEffect(() => {
     applySavedTheme(); // ใช้ธีมในเครื่องทันที แล้วปรับเป็นค่าจาก Cloud หากมี
@@ -137,29 +136,7 @@ export default function ProjectsHomePage() {
     })();
   }, [router]);
 
-  useEffect(() => {
-    const missingCovers = projects.filter((project) => project.sourceUrl && !project.coverUrl && !coverFetchInProgress.current.has(project.id));
-    for (const project of missingCovers) {
-      coverFetchInProgress.current.add(project.id);
-      void (async () => {
-        try {
-          const response = await fetch('/api/cover', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: project.sourceUrl, title: project.title }),
-          });
-          const result = await response.json().catch(() => ({}));
-          if (!response.ok || typeof result.coverUrl !== 'string' || !result.coverUrl) return;
-          const updated = await getStore().updateProject(project.id, { coverUrl: result.coverUrl });
-          if (updated) {
-            setProjects((current) => current.map((item) => item.id === project.id ? { ...item, coverUrl: result.coverUrl } : item));
-          }
-        } catch (coverError) {
-          console.warn('Could not load novel cover:', project.sourceUrl, coverError);
-        }
-      })();
-    }
-  }, [projects]);
+
 
   const loadProjects = async () => {
     try {
@@ -283,6 +260,25 @@ export default function ProjectsHomePage() {
           chapters: data.chapters,
         });
         if (usedNativeBrowser) rememberNativeBrowser(project.id);
+
+        // Cover lookup is deliberately fire-and-forget: project creation and navigation never wait for it.
+        if (!project.coverUrl && project.sourceUrl) {
+          void (async () => {
+            try {
+              const coverResponse = await fetch('/api/cover', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: project.sourceUrl, title: project.title }),
+              });
+              const coverResult = await coverResponse.json().catch(() => ({}));
+              if (!coverResponse.ok || typeof coverResult.coverUrl !== 'string' || !coverResult.coverUrl) return;
+              await getStore().updateProject(project.id, { coverUrl: coverResult.coverUrl });
+            } catch (coverError) {
+              console.warn('Could not resolve novel cover:', project.sourceUrl, coverError);
+            }
+          })();
+        }
+
         router.push(`/project/${project.id}`);
         return;
       }
