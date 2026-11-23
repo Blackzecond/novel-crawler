@@ -37,6 +37,7 @@ export interface NovelProject {
   translationProfile: TranslationProfile;
   title: string;
   sourceUrl: string;
+  coverUrl?: string;
   host: string;
   glossary: Record<string, string>;
   glossaryTypes: Record<string, 'character' | 'term'>;
@@ -72,7 +73,7 @@ export interface NovelStore {
   renameProject(id: string, title: string): Promise<NovelProject | null>;
   updateProject(
     id: string,
-    patch: Partial<Pick<NovelProject, 'title' | 'translationProfile' | 'glossary' | 'glossaryTypes' | 'glossaryMetadata' | 'glossaryDetection' | 'glossaryMode' | 'lastReadChapterId' | 'wordReplacements'>>
+    patch: Partial<Pick<NovelProject, 'title' | 'coverUrl' | 'translationProfile' | 'glossary' | 'glossaryTypes' | 'glossaryMetadata' | 'glossaryDetection' | 'glossaryMode' | 'lastReadChapterId' | 'wordReplacements'>>
   ): Promise<NovelProject | null>;
   deleteGlossaryTerms(projectId: string, sourceTerms: string[]): Promise<NovelProject | null>;
   deleteChapters(projectId: string, chapterIds: string[]): Promise<NovelProject | null>;
@@ -114,6 +115,7 @@ function normalizeProject(p: any): NovelProject | null {
     title: String(p.title ?? 'ไม่มีชื่อเรื่อง'),
     translationProfile: ['modern','xianxia','wuxia','fantasy','scifi'].includes(p.translationProfile) ? p.translationProfile : 'general',
     sourceUrl: String(p.sourceUrl ?? ''),
+    coverUrl: typeof p.coverUrl === 'string' ? p.coverUrl : undefined,
     host: String(p.host ?? ''),
     glossary: p.glossary && typeof p.glossary === 'object' ? p.glossary : {},
     glossaryTypes: p.glossaryTypes && typeof p.glossaryTypes === 'object' ? p.glossaryTypes : {},
@@ -201,6 +203,7 @@ export const localStorageStore: NovelStore = {
     const target = projects.find((p) => p.id === id);
     if (!target) return null;
     if (patch.title !== undefined) target.title = patch.title;
+    if (patch.coverUrl !== undefined) target.coverUrl = patch.coverUrl;
     if (patch.translationProfile !== undefined) target.translationProfile = patch.translationProfile;
     if (patch.glossary !== undefined) target.glossary = patch.glossary;
     if (patch.glossaryTypes !== undefined) target.glossaryTypes = patch.glossaryTypes;
