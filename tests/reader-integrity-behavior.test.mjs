@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isReaderTargetCurrent, mergeReadingHistory, escapeReaderText, isCloudflareChallengeMarkup, isChapterTitle, isLikelyChapterGroup, isArticleTargetCurrent } from '../lib/readerIntegrity.mjs';
+import { isReaderTargetCurrent, mergeReadingHistory, escapeReaderText, isCloudflareChallengeMarkup, isChapterTitle, isLikelyChapterGroup, isArticleTargetCurrent, selectLatestReadableChapter } from '../lib/readerIntegrity.mjs';
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 test('late request from another project is rejected', async () => {
   let active = { requestId: 1, projectId: 'P', url: '/P/A' }; const target = { ...active }; const gate = deferred();
@@ -36,4 +36,62 @@ test('forced source refresh can clear translated status while ordinary fetch can
   assert.equal(resolveChapterStatus('translated', 'fetched'), 'translated');
   assert.equal(resolveChapterStatus('translated', 'fetched', true), 'fetched');
   assert.equal(resolveChapterStatus('pending', 'fetched'), 'fetched');
+});
+
+
+test('latest shelf target follows read time, not project update time', () => {
+  const projects = [
+    { id: 'A', updatedAt: 100, chapters: [{ id: 'a11', url: '/a/11', title: 'A11' }, { id: 'a12', url: '/a/12', title: 'ชื่อบท A12 ใหม่' }] },
+    { id: 'B', updatedAt: 999, chapters: [{ id: 'b5', url: '/b/5', title: 'B5' }] },
+  ];
+  const result = selectLatestReadableChapter(projects, [[
+    { projectId: 'B', url: '/b/5', readAt: 9 },
+    { projectId: 'A', url: '/a/12', readAt: 10 },
+  ]]);
+  assert.equal(result.project.id, 'A');
+  assert.equal(result.chapter.id, 'a12');
+  assert.equal(result.chapter.title, 'ชื่อบท A12 ใหม่');
+});
+
+test('cloud and local histories compete by timestamp; local wins exact ties', () => {
+  const project = { id: 'A', chapters: [{ id: 'a11', url: '/a/11' }, { id: 'a12', url: '/a/12' }] };
+  const result = selectLatestReadableChapter([project], [
+    [{ projectId: 'A', url: '/a/11', readAt: 10 }],
+    [{ projectId: 'A', url: '/a/12', readAt: 10 }],
+  ]);
+  assert.equal(result.chapter.id, 'a11');
+  const newerCloud = selectLatestReadableChapter([project], [
+    [{ projectId: 'A', url: '/a/11', readAt: 9 }],
+    [{ projectId: 'A', url: '/a/12', readAt: 10 }],
+  ]);
+  assert.equal(newerCloud.chapter.id, 'a12');
+});
+
+test('history requires projectId and exact chapter URL; standalone and shared URLs cannot cross projects', () => {
+  const projects = [
+    { id: 'A', chapters: [{ id: 'a', url: '/same?chapter=1' }] },
+    { id: 'B', chapters: [{ id: 'b', url: '/same?chapter=1' }] },
+  ];
+  const result = selectLatestReadableChapter(projects, [[
+    { projectId: null, url: '/same?chapter=1', readAt: 100 },
+    { url: '/same?chapter=1', readAt: 99 },
+    { projectId: 'A', url: '/same', readAt: 98 },
+    { projectId: 'B', url: '/same?chapter=1', readAt: 5 },
+  ]]);
+  assert.equal(result.project.id, 'B');
+  assert.equal(result.chapter.id, 'b');
+});
+
+test('invalid timestamps and removed projects or chapters are skipped', () => {
+  const projects = [{ id: 'A', chapters: [{ id: 'a1', url: '/a/1' }] }];
+  const result = selectLatestReadableChapter(projects, [[
+    { projectId: 'A', url: '/a/1', readAt: Infinity },
+    { projectId: 'A', url: '/a/1', readAt: 0 },
+    { projectId: 'A', url: '/removed', readAt: 30 },
+    { projectId: 'gone', url: '/gone', readAt: 40 },
+    { projectId: 'A', url: '/a/1', readAt: 2 },
+  ]]);
+  assert.equal(result.chapter.id, 'a1');
+  assert.equal(result.readAt, 2);
+  assert.equal(selectLatestReadableChapter(projects, [[{ projectId: 'A', url: '/removed', readAt: 50 }]]), null);
 });
