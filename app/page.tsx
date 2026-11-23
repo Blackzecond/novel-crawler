@@ -9,7 +9,8 @@ import {
 import { getLocalProjectsForMigration, getStore, NovelProject } from '@/lib/storage';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { applySavedTheme, loadReaderSettings, saveReaderSettings } from '@/lib/readerPrefs';
-import { loadCloudReaderSettings, saveCloudReaderSettings } from '@/lib/cloudPreferences';
+import { loadCloudReaderSettings, saveCloudReaderSettings, loadCloudReadingHistory } from '@/lib/cloudPreferences';
+import { selectLatestReadableChapter, isAccountRequestCurrent, resolveShelfHistoryRefresh, isShelfHistoryRequestCurrent } from '@/lib/readerIntegrity.mjs';
 import { fetchWithNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 import { exportNovelMemoryBundle } from '@/lib/novelMemory';
 import NovelCover from '@/components/NovelCover';
@@ -59,8 +60,8 @@ function ProjectCard({
         </p>
         <div className="mt-auto flex flex-wrap items-center gap-2 pt-3">
           {lastRead ? (
-            <a href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(lastRead.url)}`} className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg hover:brightness-105">
-              <BookOpen className="h-4 w-4" /><span className="min-w-0 truncate">อ่านต่อ · {lastRead.title}</span>
+            <a href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(lastRead.url)}`} aria-label={`อ่านต่อ ${project.title} ตอน ${lastRead.title}`} className="inline-flex min-h-11 w-fit max-w-full items-center justify-start gap-1.5 rounded-lg px-2 text-xs font-semibold text-accent-soft-fg hover:bg-accent-soft hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2">
+              <BookOpen className="h-4 w-4 shrink-0" /><span className="min-w-0 truncate">อ่านต่อ ›</span>
             </a>
           ) : (
             <a href={`/project/${project.id}`} className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium text-fg hover:bg-surface">
@@ -76,7 +77,11 @@ function ProjectCard({
 export default function ProjectsHomePage() {
   const router = useRouter();
   const [projects, setProjects] = useState<NovelProject[]>([]);
+  const [readingHistory, setReadingHistory] = useState<Array<{ url: string; title?: string; readAt: number; projectId?: string | null }>>([]);
   const [mounted, setMounted] = useState(false);
+  const accountScopeRef = useRef<string | null | undefined>(undefined);
+  const accountRequestVersionRef = useRef(0);
+  const reloadProjectsRef = useRef<() => Promise<boolean>>(async () => false);
   const [projectsError, setProjectsError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [projectSort, setProjectSort] = useState<'updated' | 'title' | 'progress'>('updated');
@@ -88,13 +93,14 @@ export default function ProjectsHomePage() {
   const [error, setError] = useState('');
   const [chapterNotice, setChapterNotice] = useState<string>('');
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const createUrlInputRef = useRef<HTMLInputElement | null>(null);
   const [importNotice, setImportNotice] = useState('');
   const [localMigrationCount, setLocalMigrationCount] = useState(0);
   const [migratingLocal, setMigratingLocal] = useState(false);
   const [cloudUserId, setCloudUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    applySavedTheme(); // ใช้ธีมในเครื่องทันที แล้วปรับเป็นค่าจาก Cloud หากมี
+    applySavedTheme();
     void (async () => {
       try {
         const localSettings = loadReaderSettings();
@@ -110,56 +116,212 @@ export default function ProjectsHomePage() {
         console.warn('Could not sync reader theme:', syncError);
       }
     })();
-    void (async () => {
+
+    let active = true;
+    let authEventVersion = 0;
+    let projectLoadPending = false;
+    let projectRequestVersion = 0;
+    let historyRequestVersion = 0;
+    let projectsLoadAttempted = false;
+    let lastSuccessfulCloudHistory: Array<{ url: string; title?: string; readAt: number; projectId?: string | null }> = [];
+    const readLocalHistory = () => {
       try {
-        if (isSupabaseConfigured()) {
-          const { data, error: sessionError } = await getSupabase().auth.getSession();
-          if (sessionError) throw sessionError;
-          if (!data.session?.user) {
-            router.replace('/login');
-            return;
-          }
-          const userId = data.session.user.id;
-          setCloudUserId(userId);
+        const raw = window.localStorage.getItem('novel_history');
+        const parsed: unknown = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed as Array<{ url: string; title?: string; readAt: number; projectId?: string | null }> : [];
+      } catch {
+        return [];
+      }
+    };
+    const isCurrentRequest = (version: number, scope: string) =>
+      active && isAccountRequestCurrent(accountRequestVersionRef.current, version, accountScopeRef.current ?? null, scope);
+
+    const loadProjectsForScope = async (version: number, scope: string) => {
+      const thisProjectRequest = ++projectRequestVersion;
+      projectLoadPending = true;
+      try {
+        const nextProjects = await getStore().listProjects();
+        if (!isCurrentRequest(version, scope) || thisProjectRequest !== projectRequestVersion) return false;
+        setProjects(nextProjects);
+        setProjectsError('');
+        return true;
+      } catch (loadError) {
+        if (!isCurrentRequest(version, scope) || thisProjectRequest !== projectRequestVersion) return false;
+        setProjectsError(loadError instanceof Error ? loadError.message : 'โหลดข้อมูลไม่สำเร็จ');
+        return false;
+      } finally {
+        if (isCurrentRequest(version, scope) && thisProjectRequest === projectRequestVersion) {
+          projectLoadPending = false;
+          projectsLoadAttempted = true;
+          setMounted(true);
+        }
+      }
+    };
+
+    const refreshCloudHistory = async (version: number, scope: string) => {
+      const thisHistoryRequest = ++historyRequestVersion;
+      const isCurrentHistoryRequest = () => isShelfHistoryRequestCurrent(
+        accountRequestVersionRef.current, version, historyRequestVersion, thisHistoryRequest,
+        accountScopeRef.current ?? null, scope,
+      ) && active;
+      // Keep the last successful combined history visible while a same-account refresh is pending.
+      // On account changes the caller has already cleared the previous account's state.
+      try {
+        const cloudHistory = await loadCloudReadingHistory(scope);
+        if (!isCurrentHistoryRequest()) return;
+        const refreshed = resolveShelfHistoryRefresh(readLocalHistory(), lastSuccessfulCloudHistory, cloudHistory, true);
+        lastSuccessfulCloudHistory = refreshed.cloudHistory;
+        setReadingHistory(refreshed.combinedHistory);
+      } catch (historyError) {
+        // Preserve the last good cloud snapshot but reread local storage (it may have been cleared).
+        if (isCurrentHistoryRequest()) {
+          const refreshed = resolveShelfHistoryRefresh(readLocalHistory(), lastSuccessfulCloudHistory, null, false);
+          setReadingHistory(refreshed.combinedHistory);
+        }
+        console.info('Could not refresh cloud reading history; keeping the last successful history:', historyError);
+      }
+    };
+
+    const activateAccount = (userId: string | null): Promise<boolean> => {
+      const scope = isSupabaseConfigured() ? userId : 'local';
+      if (scope === null) {
+        if (accountScopeRef.current !== null) {
+          accountRequestVersionRef.current++;
+          projectRequestVersion++;
+          historyRequestVersion++;
+          accountScopeRef.current = null;
+          setProjects([]);
+          lastSuccessfulCloudHistory = [];
+          setReadingHistory([]);
+          setProjectsError('');
+          setMounted(false);
+          setCloudUserId(null);
+          setLocalMigrationCount(0);
+          setRetryingProjects(false);
+        }
+        router.replace('/login');
+        return Promise.resolve(false);
+      }
+
+      const changedAccount = accountScopeRef.current !== scope;
+      if (changedAccount) {
+        accountRequestVersionRef.current++;
+        projectRequestVersion++;
+        historyRequestVersion++;
+        accountScopeRef.current = scope;
+        setProjects([]);
+        lastSuccessfulCloudHistory = [];
+        setReadingHistory(readLocalHistory());
+        setProjectsError('');
+        setMounted(false);
+        setCloudUserId(userId);
+        setLocalMigrationCount(0);
+        setImportNotice('');
+        setRetryingProjects(false);
+        if (userId) {
           const migrationKey = `novel_cloud_migrated_v1_${userId}`;
           if (window.localStorage.getItem(migrationKey) !== '1') {
             setLocalMigrationCount(getLocalProjectsForMigration().length);
           }
         }
-        setProjects(await getStore().listProjects());
-        setProjectsError('');
-      } catch (err) {
-        setProjectsError(err instanceof Error ? err.message : 'โหลดข้อมูลไม่สำเร็จ');
-      } finally {
-        setMounted(true);
       }
-    })();
+
+      const version = accountRequestVersionRef.current;
+      let projectLoad: Promise<boolean> | null = null;
+      if (changedAccount || (!projectsLoadAttempted && !projectLoadPending)) {
+        projectLoad = loadProjectsForScope(version, scope);
+      }
+      if (userId) void refreshCloudHistory(version, scope);
+      else if (changedAccount) setReadingHistory(readLocalHistory());
+      return projectLoad ?? Promise.resolve(true);
+    };
+
+    if (isSupabaseConfigured()) {
+      let sessionResolutionPromise: Promise<boolean> | null = null;
+      const resolveSessionAndActivate = (): Promise<boolean> => {
+        if (sessionResolutionPromise) return sessionResolutionPromise;
+        const requestAuthEventVersion = authEventVersion;
+        setMounted(false);
+        const request = (async () => {
+          try {
+            const { data, error: sessionError } = await getSupabase().auth.getSession();
+            if (!active || authEventVersion !== requestAuthEventVersion) return false;
+            if (sessionError) throw sessionError;
+            return await activateAccount(data.session?.user?.id ?? null);
+          } catch (sessionError) {
+            if (!active || authEventVersion !== requestAuthEventVersion) return false;
+            setProjectsError(sessionError instanceof Error ? sessionError.message : 'ตรวจสอบสถานะเข้าสู่ระบบไม่สำเร็จ');
+            setMounted(true);
+            return false;
+          }
+        })();
+        sessionResolutionPromise = request;
+        void request.then(
+          () => { if (sessionResolutionPromise === request) sessionResolutionPromise = null; },
+          () => { if (sessionResolutionPromise === request) sessionResolutionPromise = null; },
+        );
+        return request;
+      };
+
+      const { data } = getSupabase().auth.onAuthStateChange((event, session) => {
+        if (!['INITIAL_SESSION', 'SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED'].includes(event)) return;
+        authEventVersion++;
+        queueMicrotask(() => {
+          if (active) void activateAccount(session?.user?.id ?? null);
+        });
+      });
+
+      void resolveSessionAndActivate();
+
+      reloadProjectsRef.current = async () => {
+        const scope = accountScopeRef.current;
+        if (scope === undefined) return resolveSessionAndActivate();
+        if (scope === null) {
+          router.replace('/login');
+          return false;
+        }
+        return loadProjectsForScope(accountRequestVersionRef.current, scope);
+      };
+
+      return () => {
+        active = false;
+        accountRequestVersionRef.current++;
+        data.subscription.unsubscribe();
+        reloadProjectsRef.current = async () => false;
+      };
+    }
+
+    activateAccount(null);
+    reloadProjectsRef.current = async () => {
+      const scope = accountScopeRef.current;
+      if (scope !== 'local') return false;
+      return loadProjectsForScope(accountRequestVersionRef.current, scope);
+    };
+    return () => {
+      active = false;
+      accountRequestVersionRef.current++;
+      reloadProjectsRef.current = async () => false;
+    };
   }, [router]);
 
-
-
-  const loadProjects = async () => {
-    try {
-      const nextProjects = await getStore().listProjects();
-      setProjects(nextProjects);
-      setProjectsError('');
-      return true;
-    } catch (err) {
-      setProjectsError(err instanceof Error ? err.message : 'โหลดข้อมูลไม่สำเร็จ');
-      return false;
-    }
-  };
+  const loadProjects = async () => reloadProjectsRef.current();
 
   const retryLoadProjects = async () => {
     if (retryingProjects) return;
     setRetryingProjects(true);
-    setProjectsError('');
     try {
       await loadProjects();
     } finally {
       setRetryingProjects(false);
     }
   };
+
+  useEffect(() => {
+    if (!showCreateForm || projects.length === 0) return;
+    const input = createUrlInputRef.current;
+    input?.focus({ preventScroll: true });
+    input?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [showCreateForm, projects.length]);
 
   const visibleProjects = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase();
@@ -177,11 +339,9 @@ export default function ProjectsHomePage() {
     });
   }, [projects, searchQuery, projectSort]);
 
-  // Use the per-project last-read pointer and its existing update timestamp;
-  // if the chapter was removed, fall back to the regular shelf entry.
-  const latestReadProject = useMemo(() => projects
-    .filter((project) => project.lastReadChapterId && project.chapters.some((chapter) => chapter.id === project.lastReadChapterId))
-    .sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null, [projects]);
+  // Pick one validated project + chapter pair from actual read timestamps.
+  const latestRead = useMemo(() => selectLatestReadableChapter(projects, [readingHistory]), [projects, readingHistory]);
+  const emptyLibrary = mounted && !projectsError && !retryingProjects && projects.length === 0;
 
   const migrateLocalProjects = async () => {
     if (migratingLocal || !cloudUserId) return;
@@ -394,7 +554,7 @@ export default function ProjectsHomePage() {
           </section>
         )}
         {/* ฟอร์มเพิ่มนิยายเปิดเมื่อผู้ใช้เรียก หรือเมื่อคลังว่างจริง */}
-        {(showCreateForm || (mounted && !projectsError && projects.length === 0)) && (
+        {(showCreateForm || emptyLibrary) && (
         <section id="new-project" className="rounded-2xl border border-line bg-card shadow-sm">
           <div className="p-5 sm:p-8 space-y-5 sm:space-y-6">
           <div className="flex items-start gap-3">
@@ -403,9 +563,9 @@ export default function ProjectsHomePage() {
             </span>
             <div className="min-w-0 pt-0.5">
               <p className="text-[11px] font-semibold tracking-[0.14em] uppercase text-accent-soft-fg mb-1">เริ่มต้นใช้งาน</p>
-              <h2 className="text-xl sm:text-2xl font-bold leading-tight tracking-tight">เริ่มโปรเจกต์แปลเรื่องใหม่</h2>
+              <h2 className="text-xl sm:text-2xl font-bold leading-tight tracking-tight">{emptyLibrary ? 'เพิ่มนิยายเรื่องแรก' : 'เริ่มโปรเจกต์แปลเรื่องใหม่'}</h2>
               <p className="text-sm text-muted mt-1.5 leading-relaxed max-w-xl">
-                วางลิงก์หน้าสารบัญนิยายจีน แล้วระบบจะดึงรายชื่อบทมาเตรียมไว้ให้
+                {emptyLibrary ? 'วางลิงก์หน้าสารบัญของเรื่องที่อยากอ่าน' : 'วางลิงก์หน้าสารบัญนิยายจีน แล้วระบบจะดึงรายชื่อบทมาเตรียมไว้ให้'}
               </p>
             </div>
           </div>
@@ -414,6 +574,7 @@ export default function ProjectsHomePage() {
             <label htmlFor="novel-toc-url" className="sr-only">ลิงก์หน้าสารบัญนิยาย</label>
             <input
               id="novel-toc-url"
+              ref={createUrlInputRef}
               type="url"
               required
               value={url}
@@ -431,7 +592,7 @@ export default function ProjectsHomePage() {
               ) : (
                 <ChevronRight className="w-4 h-4" />
               )}
-              สร้างโปรเจกต์
+              {emptyLibrary ? 'เพิ่มนิยาย' : 'สร้างโปรเจกต์'}
             </button>
           </form>
 
@@ -486,10 +647,10 @@ export default function ProjectsHomePage() {
               <p className="text-xs text-muted mt-1">แตะปกเพื่อเปิดสารบัญ หรืออ่านต่อจากตอนที่ค้างไว้</p>
             </div>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => setShowCreateForm((open) => !open)}
+              {!emptyLibrary && <button type="button" onClick={() => setShowCreateForm((open) => !open)}
                 className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-accent px-3 text-xs font-semibold text-accent-fg hover:brightness-105">
                 <FolderOpen className="h-4 w-4" /> เพิ่มนิยาย
-              </button>
+              </button>}
               <details className="relative">
                 <summary className="flex h-10 cursor-pointer list-none items-center gap-1.5 rounded-xl border border-line bg-card px-3 text-xs font-medium hover:bg-surface">จัดการคลัง <ChevronDown className="h-3.5 w-3.5" /></summary>
                 <div className="absolute right-0 top-full z-30 mt-2 flex min-w-44 flex-col gap-1 rounded-xl border border-line bg-card p-2 shadow-xl">
@@ -530,7 +691,7 @@ export default function ProjectsHomePage() {
             <div role="alert" className="flex flex-col gap-3 rounded-2xl border border-danger-line bg-danger-bg p-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-danger-fg">โหลดคลังโปรเจกต์ไม่สำเร็จ</p>
-                <p className="mt-1 break-words text-xs text-danger-fg/80">{projectsError}</p>
+                <p className="mt-1 break-words text-xs text-danger-fg/80">{retryingProjects ? "กำลังโหลดคลังอีกครั้ง…" : projectsError}</p>
               </div>
               <button type="button" onClick={() => void retryLoadProjects()} disabled={retryingProjects}
                 className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-danger-line bg-card px-3 text-xs font-semibold text-danger-fg disabled:opacity-50">
@@ -540,35 +701,21 @@ export default function ProjectsHomePage() {
             </div>
           )}
 
-          {mounted && !projectsError && projects.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-accent-line bg-accent-soft/40 py-10 px-6 text-center">
-              <span className="h-14 w-14 rounded-2xl bg-card border border-line inline-flex items-center justify-center mb-4 text-accent-soft-fg">
-                <FolderOpen className="w-7 h-7" />
-              </span>
-              <p className="text-base font-semibold">ชั้นหนังสือของคุณยังว่างอยู่</p>
-              <p className="text-xs text-muted mt-1.5 max-w-sm mx-auto leading-relaxed">
-                เริ่มจากเพิ่มนิยายเรื่องแรก ระบบจะสร้างพื้นที่เก็บสารบัญ เนื้อหาบท และงานแปลไว้ให้
-              </p>
-              <a href="#new-project" className="mt-5 inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-accent text-accent-fg text-xs font-semibold shadow-sm hover:brightness-110 transition-all">
-                <FolderOpen className="w-4 h-4" /> เพิ่มนิยายเรื่องแรก
-              </a>
-            </div>
-          )}
-
           {importNotice && (
             <p className={`text-xs rounded-lg px-3 py-2 border ${importNotice.startsWith('นำเข้าไม่สำเร็จ') ? 'bg-danger-bg border-danger-line text-danger-fg' : 'bg-accent-soft border-accent-line text-accent-soft-fg'}`}>{importNotice}</p>
           )}
 
-          {latestReadProject && (
+          {latestRead && (
             <section className="flex items-center gap-3 rounded-2xl border border-accent-line bg-accent-soft/50 p-3 sm:p-4">
-              <NovelCover projectId={latestReadProject.id} title={latestReadProject.title} coverUrl={latestReadProject.coverUrl} />
+              <NovelCover projectId={latestRead.project.id} title={latestRead.project.title} coverUrl={latestRead.project.coverUrl} />
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-semibold tracking-wide text-accent-soft-fg">อ่านค้างไว้</p>
-                <p className="mt-0.5 truncate font-serif text-base font-semibold">{latestReadProject.title}</p>
-                <p className="truncate text-xs text-muted">{latestReadProject.chapters.find((chapter) => chapter.id === latestReadProject.lastReadChapterId)?.title}</p>
+                <p className="mt-0.5 truncate font-serif text-base font-semibold">{latestRead.project.title}</p>
+                <p className="truncate text-xs text-muted">{latestRead.chapter.title}</p>
               </div>
-              <a href={`/read?projectId=${encodeURIComponent(latestReadProject.id)}&url=${encodeURIComponent(latestReadProject.chapters.find((chapter) => chapter.id === latestReadProject.lastReadChapterId)!.url)}`}
-                className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg">
+              <a href={`/read?projectId=${encodeURIComponent(latestRead.project.id)}&url=${encodeURIComponent(latestRead.chapter.url)}`}
+                aria-label={`อ่านต่อ ${latestRead.project.title} ตอน ${latestRead.chapter.title}`}
+                className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2">
                 อ่านต่อ <ChevronRight className="h-4 w-4" />
               </a>
             </section>
@@ -590,7 +737,7 @@ export default function ProjectsHomePage() {
                   <div className="mt-4 h-9 rounded-xl bg-surface" />
                 </div>
               ))}
-              <span className="sr-only">กำลังโหลดโปรเจกต์…</span>
+              <span className="sr-only">{retryingProjects ? "กำลังโหลดคลังอีกครั้ง…" : "กำลังโหลดโปรเจกต์…"}</span>
             </div>
           ) : !projectsError && projects.length > 0 ? (
             <>

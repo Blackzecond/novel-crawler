@@ -19,15 +19,25 @@ type PreferencesRow = {
   reading_history: ReadingHistoryItem[] | null;
 };
 
-async function currentUserId(): Promise<string | null> {
-  if (!isSupabaseConfigured()) return null;
+async function currentUserId(expectedUserId?: string): Promise<string | null> {
+  if (!isSupabaseConfigured()) {
+    if (expectedUserId) throw new Error('Supabase is not configured for the expected account');
+    return null;
+  }
   const { data, error } = await getSupabase().auth.getUser();
-  if (error || !data.user) return null;
-  return data.user.id;
+  if (expectedUserId) {
+    if (error) throw error;
+    if (!data.user || data.user.id !== expectedUserId) {
+      throw new Error('The active Supabase account no longer matches the requested account');
+    }
+  } else if (error || !data.user) {
+    return null;
+  }
+  return data.user?.id ?? null;
 }
 
-async function readPreferences(): Promise<PreferencesRow | null> {
-  const userId = await currentUserId();
+async function readPreferences(expectedUserId?: string): Promise<PreferencesRow | null> {
+  const userId = await currentUserId(expectedUserId);
   if (!userId) return null;
   const { data, error } = await getSupabase()
     .from('user_preferences')
@@ -61,8 +71,9 @@ export async function saveCloudReaderSettings(settings: ReaderSettings): Promise
   await writePreference('reader_settings', settings);
 }
 
-export async function loadCloudReadingHistory(): Promise<ReadingHistoryItem[] | null> {
-  const row = await readPreferences();
+export async function loadCloudReadingHistory(expectedUserId?: string): Promise<ReadingHistoryItem[] | null> {
+  const row = await readPreferences(expectedUserId);
+  if (expectedUserId) return Array.isArray(row?.reading_history) ? row!.reading_history! : [];
   return Array.isArray(row?.reading_history) ? row!.reading_history! : null;
 }
 
