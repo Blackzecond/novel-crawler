@@ -16,3 +16,6 @@ export function selectLatestReadableChapter<
   TChapter extends { url: string; title?: string },
   TProject extends { id: string; chapters: TChapter[] },
 >(projects: TProject[], historyCollections?: Array<Array<{ url: string; title?: string; readAt: number; projectId?: string | null }>>): { project: TProject; chapter: TChapter; readAt: number } | null;
+
+export function isAccountRequestCurrent(activeVersion: number, requestVersion: number, activeScope: string | null, requestScope: string | null): boolean;
+export function resolveShelfHistoryRefresh<TLocal, TCloud>(localHistory: TLocal[], previousCloudHistory: TCloud[], cloudHistory: TCloud[] | null, succeeded: boolean): { cloudHistory: TCloud[]; combinedHistory: Array<TLocal | TCloud> };
