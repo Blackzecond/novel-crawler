@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isReaderTargetCurrent, mergeReadingHistory, escapeReaderText, isCloudflareChallengeMarkup, isChapterTitle, isLikelyChapterGroup, isArticleTargetCurrent, selectLatestReadableChapter } from '../lib/readerIntegrity.mjs';
+import { isReaderTargetCurrent, mergeReadingHistory, escapeReaderText, isCloudflareChallengeMarkup, isChapterTitle, isLikelyChapterGroup, isArticleTargetCurrent, selectLatestReadableChapter, isAccountRequestCurrent, resolveShelfHistoryRefresh } from '../lib/readerIntegrity.mjs';
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 test('late request from another project is rejected', async () => {
   let active = { requestId: 1, projectId: 'P', url: '/P/A' }; const target = { ...active }; const gate = deferred();
@@ -94,4 +94,33 @@ test('invalid timestamps and removed projects or chapters are skipped', () => {
   assert.equal(result.chapter.id, 'a1');
   assert.equal(result.readAt, 2);
   assert.equal(selectLatestReadableChapter(projects, [[{ projectId: 'A', url: '/removed', readAt: 50 }]]), null);
+});
+
+
+test('account-scoped async results from a previous account are rejected', () => {
+  assert.equal(isAccountRequestCurrent(8, 7, 'account-B', 'account-A'), false);
+  assert.equal(isAccountRequestCurrent(8, 8, 'account-B', 'account-B'), true);
+  assert.equal(isAccountRequestCurrent(9, 8, 'account-B', 'account-B'), false);
+});
+
+test('same-account cloud refresh failure preserves last successful cloud history and rereads local history', () => {
+  const result = resolveShelfHistoryRefresh(
+    [{ projectId: 'A', url: '/local/new', readAt: 12 }],
+    [{ projectId: 'A', url: '/cloud/old', readAt: 10 }],
+    null,
+    false,
+  );
+  assert.deepEqual(result.cloudHistory.map((item) => item.url), ['/cloud/old']);
+  assert.deepEqual(result.combinedHistory.map((item) => item.url), ['/local/new', '/cloud/old']);
+});
+
+test('successful empty cloud history clears cloud entries while retaining fresh local history', () => {
+  const result = resolveShelfHistoryRefresh(
+    [{ projectId: 'A', url: '/local/current', readAt: 15 }],
+    [{ projectId: 'A', url: '/cloud/old', readAt: 10 }],
+    [],
+    true,
+  );
+  assert.deepEqual(result.cloudHistory, []);
+  assert.deepEqual(result.combinedHistory.map((item) => item.url), ['/local/current']);
 });
