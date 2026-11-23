@@ -10,7 +10,7 @@ import { getLocalProjectsForMigration, getStore, NovelProject } from '@/lib/stor
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { applySavedTheme, loadReaderSettings, saveReaderSettings } from '@/lib/readerPrefs';
 import { loadCloudReaderSettings, saveCloudReaderSettings, loadCloudReadingHistory } from '@/lib/cloudPreferences';
-import { selectLatestReadableChapter } from '@/lib/readerIntegrity.mjs';
+import { selectLatestReadableChapter, isAccountRequestCurrent, resolveShelfHistoryRefresh } from '@/lib/readerIntegrity.mjs';
 import { fetchWithNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 import { exportNovelMemoryBundle } from '@/lib/novelMemory';
 import NovelCover from '@/components/NovelCover';
@@ -121,6 +121,7 @@ export default function ProjectsHomePage() {
     let authEventVersion = 0;
     let projectLoadPending = false;
     let projectsLoadAttempted = false;
+    let lastSuccessfulCloudHistory: Array<{ url: string; title?: string; readAt: number; projectId?: string | null }> = [];
     const readLocalHistory = () => {
       try {
         const raw = window.localStorage.getItem('novel_history');
@@ -131,7 +132,7 @@ export default function ProjectsHomePage() {
       }
     };
     const isCurrentRequest = (version: number, scope: string) =>
-      active && accountRequestVersionRef.current === version && accountScopeRef.current === scope;
+      active && isAccountRequestCurrent(accountRequestVersionRef.current, version, accountScopeRef.current ?? null, scope);
 
     const loadProjectsForScope = async (version: number, scope: string) => {
       projectLoadPending = true;
@@ -160,10 +161,15 @@ export default function ProjectsHomePage() {
       try {
         const cloudHistory = await loadCloudReadingHistory();
         if (!isCurrentRequest(version, scope)) return;
-        const localHistory = readLocalHistory();
-        setReadingHistory([...localHistory, ...(Array.isArray(cloudHistory) ? cloudHistory : [])]);
+        const refreshed = resolveShelfHistoryRefresh(readLocalHistory(), lastSuccessfulCloudHistory, cloudHistory, true);
+        lastSuccessfulCloudHistory = refreshed.cloudHistory;
+        setReadingHistory(refreshed.combinedHistory);
       } catch (historyError) {
-        // A failed refresh must not roll back a previously successful cloud history snapshot.
+        // Preserve the last good cloud snapshot but reread local storage (it may have been cleared).
+        if (isCurrentRequest(version, scope)) {
+          const refreshed = resolveShelfHistoryRefresh(readLocalHistory(), lastSuccessfulCloudHistory, null, false);
+          setReadingHistory(refreshed.combinedHistory);
+        }
         console.info('Could not refresh cloud reading history; keeping the last successful history:', historyError);
       }
     };
@@ -190,6 +196,7 @@ export default function ProjectsHomePage() {
         accountRequestVersionRef.current++;
         accountScopeRef.current = scope;
         setProjects([]);
+        lastSuccessfulCloudHistory = [];
         setReadingHistory(readLocalHistory());
         setProjectsError('');
         setMounted(false);
