@@ -10,7 +10,7 @@ import { getLocalProjectsForMigration, getStore, NovelProject } from '@/lib/stor
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { applySavedTheme, loadReaderSettings, saveReaderSettings } from '@/lib/readerPrefs';
 import { loadCloudReaderSettings, saveCloudReaderSettings, loadCloudReadingHistory } from '@/lib/cloudPreferences';
-import { selectLatestReadableChapter, isAccountRequestCurrent, resolveShelfHistoryRefresh } from '@/lib/readerIntegrity.mjs';
+import { selectLatestReadableChapter, isAccountRequestCurrent, resolveShelfHistoryRefresh, isShelfHistoryRequestCurrent } from '@/lib/readerIntegrity.mjs';
 import { fetchWithNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 import { exportNovelMemoryBundle } from '@/lib/novelMemory';
 import NovelCover from '@/components/NovelCover';
@@ -120,6 +120,8 @@ export default function ProjectsHomePage() {
     let active = true;
     let authEventVersion = 0;
     let projectLoadPending = false;
+    let projectRequestVersion = 0;
+    let historyRequestVersion = 0;
     let projectsLoadAttempted = false;
     let lastSuccessfulCloudHistory: Array<{ url: string; title?: string; readAt: number; projectId?: string | null }> = [];
     const readLocalHistory = () => {
@@ -135,19 +137,20 @@ export default function ProjectsHomePage() {
       active && isAccountRequestCurrent(accountRequestVersionRef.current, version, accountScopeRef.current ?? null, scope);
 
     const loadProjectsForScope = async (version: number, scope: string) => {
+      const thisProjectRequest = ++projectRequestVersion;
       projectLoadPending = true;
       try {
         const nextProjects = await getStore().listProjects();
-        if (!isCurrentRequest(version, scope)) return false;
+        if (!isCurrentRequest(version, scope) || thisProjectRequest !== projectRequestVersion) return false;
         setProjects(nextProjects);
         setProjectsError('');
         return true;
       } catch (loadError) {
-        if (!isCurrentRequest(version, scope)) return false;
+        if (!isCurrentRequest(version, scope) || thisProjectRequest !== projectRequestVersion) return false;
         setProjectsError(loadError instanceof Error ? loadError.message : 'โหลดข้อมูลไม่สำเร็จ');
         return false;
       } finally {
-        if (isCurrentRequest(version, scope)) {
+        if (isCurrentRequest(version, scope) && thisProjectRequest === projectRequestVersion) {
           projectLoadPending = false;
           projectsLoadAttempted = true;
           setMounted(true);
@@ -156,17 +159,22 @@ export default function ProjectsHomePage() {
     };
 
     const refreshCloudHistory = async (version: number, scope: string) => {
+      const thisHistoryRequest = ++historyRequestVersion;
+      const isCurrentHistoryRequest = () => isShelfHistoryRequestCurrent(
+        accountRequestVersionRef.current, version, historyRequestVersion, thisHistoryRequest,
+        accountScopeRef.current ?? null, scope,
+      ) && active;
       // Keep the last successful combined history visible while a same-account refresh is pending.
       // On account changes the caller has already cleared the previous account's state.
       try {
         const cloudHistory = await loadCloudReadingHistory();
-        if (!isCurrentRequest(version, scope)) return;
+        if (!isCurrentHistoryRequest()) return;
         const refreshed = resolveShelfHistoryRefresh(readLocalHistory(), lastSuccessfulCloudHistory, cloudHistory, true);
         lastSuccessfulCloudHistory = refreshed.cloudHistory;
         setReadingHistory(refreshed.combinedHistory);
       } catch (historyError) {
         // Preserve the last good cloud snapshot but reread local storage (it may have been cleared).
-        if (isCurrentRequest(version, scope)) {
+        if (isCurrentHistoryRequest()) {
           const refreshed = resolveShelfHistoryRefresh(readLocalHistory(), lastSuccessfulCloudHistory, null, false);
           setReadingHistory(refreshed.combinedHistory);
         }
@@ -179,6 +187,8 @@ export default function ProjectsHomePage() {
       if (scope === null) {
         if (accountScopeRef.current !== null) {
           accountRequestVersionRef.current++;
+          projectRequestVersion++;
+          historyRequestVersion++;
           accountScopeRef.current = null;
           setProjects([]);
           setReadingHistory([]);
@@ -195,6 +205,8 @@ export default function ProjectsHomePage() {
       const changedAccount = accountScopeRef.current !== scope;
       if (changedAccount) {
         accountRequestVersionRef.current++;
+        projectRequestVersion++;
+        historyRequestVersion++;
         accountScopeRef.current = scope;
         setProjects([]);
         lastSuccessfulCloudHistory = [];
