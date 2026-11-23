@@ -191,6 +191,7 @@ export default function ProjectsHomePage() {
           historyRequestVersion++;
           accountScopeRef.current = null;
           setProjects([]);
+          lastSuccessfulCloudHistory = [];
           setReadingHistory([]);
           setProjectsError('');
           setMounted(false);
