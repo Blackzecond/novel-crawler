@@ -39,7 +39,7 @@ function ProjectCard({
   return (
     <article className="group flex min-w-0 gap-3 rounded-2xl border border-line bg-card p-3 shadow-sm transition-colors hover:border-accent-line sm:gap-4 sm:p-4">
       <a href={`/project/${project.id}`} className="shrink-0" aria-label={`เปิดสารบัญ ${project.title}`}>
-        <NovelCover projectId={project.id} title={project.title} />
+        <NovelCover projectId={project.id} title={project.title} coverUrl={project.coverUrl} />
       </a>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-start gap-2">
@@ -92,6 +92,7 @@ export default function ProjectsHomePage() {
   const [localMigrationCount, setLocalMigrationCount] = useState(0);
   const [migratingLocal, setMigratingLocal] = useState(false);
   const [cloudUserId, setCloudUserId] = useState<string | null>(null);
+  const coverFetchInProgress = useRef(new Set<string>());
 
   useEffect(() => {
     applySavedTheme(); // ใช้ธีมในเครื่องทันที แล้วปรับเป็นค่าจาก Cloud หากมี
@@ -135,6 +136,30 @@ export default function ProjectsHomePage() {
       }
     })();
   }, [router]);
+
+  useEffect(() => {
+    const missingCovers = projects.filter((project) => project.sourceUrl && !project.coverUrl && !coverFetchInProgress.current.has(project.id));
+    for (const project of missingCovers) {
+      coverFetchInProgress.current.add(project.id);
+      void (async () => {
+        try {
+          const response = await fetch('/api/cover', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: project.sourceUrl, title: project.title }),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || typeof result.coverUrl !== 'string' || !result.coverUrl) return;
+          const updated = await getStore().updateProject(project.id, { coverUrl: result.coverUrl });
+          if (updated) {
+            setProjects((current) => current.map((item) => item.id === project.id ? { ...item, coverUrl: result.coverUrl } : item));
+          }
+        } catch (coverError) {
+          console.warn('Could not load novel cover:', project.sourceUrl, coverError);
+        }
+      })();
+    }
+  }, [projects]);
 
   const loadProjects = async () => {
     try {
@@ -540,7 +565,7 @@ export default function ProjectsHomePage() {
 
           {latestReadProject && (
             <section className="flex items-center gap-3 rounded-2xl border border-accent-line bg-accent-soft/50 p-3 sm:p-4">
-              <NovelCover projectId={latestReadProject.id} title={latestReadProject.title} />
+              <NovelCover projectId={latestReadProject.id} title={latestReadProject.title} coverUrl={latestReadProject.coverUrl} />
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-semibold tracking-wide text-accent-soft-fg">อ่านค้างไว้</p>
                 <p className="mt-0.5 truncate font-serif text-base font-semibold">{latestReadProject.title}</p>
