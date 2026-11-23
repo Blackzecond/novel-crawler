@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const COVER_PALETTES = [
   ['#7f3f35', '#d39b78', '#f1d9b6'],
@@ -22,22 +22,36 @@ export default function NovelCover({
   coverUrl?: string;
   size?: 'small' | 'large';
 }) {
-  const [imageFailed, setImageFailed] = useState(false);
+  const [readyCoverUrl, setReadyCoverUrl] = useState<string | null>(null);
+  const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
   const seed = Array.from(projectId).reduce((value, char) => (value * 31 + char.charCodeAt(0)) >>> 0, 7);
   const palette = COVER_PALETTES[seed % COVER_PALETTES.length];
   const mark = ['水', '山', '月', '雲', '竹', '風'][seed % 6];
   const large = size === 'large';
   const dimensions = large ? 'h-32 w-24 sm:h-40 sm:w-30' : 'h-24 w-[4.5rem]';
 
-  if (coverUrl && !imageFailed) {
+  // Let the page content and card layout paint before requesting remote cover images.
+  // Native lazy loading then defers covers that are still outside the viewport.
+  useEffect(() => {
+    if (!coverUrl) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setReadyCoverUrl(coverUrl);
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [coverUrl]);
+
+  if (coverUrl && readyCoverUrl === coverUrl && failedCoverUrl !== coverUrl) {
     return (
       <div className={`relative shrink-0 overflow-hidden rounded-xl border border-black/10 bg-surface shadow-sm ${dimensions}`}>
         <img
           src={coverUrl}
           alt={`${title} 封面`}
           loading="lazy"
+          decoding="async"
           referrerPolicy="no-referrer"
-          onError={() => setImageFailed(true)}
+          onError={() => setFailedCoverUrl(coverUrl)}
           className="h-full w-full object-cover"
         />
       </div>
