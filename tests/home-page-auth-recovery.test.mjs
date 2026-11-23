@@ -113,7 +113,12 @@ async function mountHomePage(state, { localHistory = [] } = {}) {
     coverUrl: null,
     lastReadChapterId: null,
   };
-  const store = { listProjects: async () => { state.listProjectsCalls += 1; return [project]; } };
+  const store = { listProjects: async () => {
+    state.listProjectsCalls += 1;
+    const nextError = state.listProjectsErrors?.shift();
+    if (nextError) throw nextError;
+    return state.projects ?? [project];
+  } };
   const router = { replace: (url) => { state.redirects.push(url); }, push() {} };
   const iconStub = new Proxy({}, { get: () => () => null });
   const mocks = {
@@ -265,6 +270,126 @@ test('home page retry rechecks the session after the initial getSession failure'
     assert.equal(state.listProjectsCalls, 1);
     assert.ok(app.dom.window.document.body.textContent.includes('นิยายบัญชี A'));
     assert.equal(app.dom.window.document.querySelector('#novel-toc-url'), null);
+  } finally {
+    await app.unmount();
+  }
+});
+
+test('home page allows another session retry after the service remains offline', async () => {
+  const state = {
+    getSessionCalls: 0,
+    getUserCalls: 0,
+    listProjectsCalls: 0,
+    redirects: [],
+    sessionResults: [
+      { data: { session: null }, error: authError },
+      { data: { session: null }, error: authError },
+      sessionA,
+    ],
+    userResults: [{ data: { user: { id: 'account-A' } }, error: null }],
+    preferenceRows: [preferences([])],
+  };
+  const app = await mountHomePage(state);
+  try {
+    await app.flush();
+    await app.clickRetry();
+    await app.flush();
+    assert.equal(state.getSessionCalls, 2);
+    assert.ok(app.dom.window.document.querySelector('[role="alert"]'));
+    assert.ok([...app.dom.window.document.querySelectorAll('button')].some((button) => button.textContent.includes('ลองโหลดอีกครั้ง')));
+    assert.equal(app.dom.window.document.querySelector('#novel-toc-url'), null);
+    await app.clickRetry();
+    await app.flush();
+    assert.equal(state.getSessionCalls, 3);
+    assert.equal(state.listProjectsCalls, 1);
+    assert.ok(app.dom.window.document.body.textContent.includes('นิยายบัญชี A'));
+  } finally {
+    await app.unmount();
+  }
+});
+
+test('home page routes to login when a retried session is confirmed signed out', async () => {
+  const state = {
+    getSessionCalls: 0,
+    getUserCalls: 0,
+    listProjectsCalls: 0,
+    redirects: [],
+    sessionResults: [
+      { data: { session: null }, error: authError },
+      { data: { session: null }, error: null },
+    ],
+    userResults: [],
+    preferenceRows: [],
+  };
+  const app = await mountHomePage(state);
+  try {
+    await app.flush();
+    await app.clickRetry();
+    await app.flush();
+    assert.deepEqual(state.redirects, ['/login']);
+    assert.equal(state.listProjectsCalls, 0);
+    assert.equal(app.dom.window.document.querySelector('#novel-toc-url'), null);
+  } finally {
+    await app.unmount();
+  }
+});
+
+test('retry after a project-list failure does not recheck the known session', async () => {
+  const state = {
+    getSessionCalls: 0,
+    getUserCalls: 0,
+    listProjectsCalls: 0,
+    listProjectsErrors: [new Error('temporary project-list failure')],
+    redirects: [],
+    sessionResults: [sessionA],
+    userResults: [{ data: { user: { id: 'account-A' } }, error: null }],
+    preferenceRows: [preferences([])],
+  };
+  const app = await mountHomePage(state);
+  try {
+    await app.flush();
+    assert.ok(app.dom.window.document.querySelector('[role="alert"]'));
+    await app.clickRetry();
+    await app.flush();
+    assert.equal(state.getSessionCalls, 1);
+    assert.equal(state.listProjectsCalls, 2);
+    assert.ok(app.dom.window.document.body.textContent.includes('นิยายบัญชี A'));
+  } finally {
+    await app.unmount();
+  }
+});
+
+test('late initial session response cannot replace the account activated by a newer auth event', async () => {
+  const initialSession = deferred();
+  const projectB = {
+    id: 'project-B',
+    title: 'นิยายบัญชี B',
+    host: 'example.net',
+    chapters: [],
+    updatedAt: 20,
+    coverUrl: null,
+    lastReadChapterId: null,
+  };
+  const state = {
+    getSessionCalls: 0,
+    getUserCalls: 0,
+    listProjectsCalls: 0,
+    redirects: [],
+    projects: [projectB],
+    sessionResults: [() => initialSession.promise],
+    userResults: [{ data: { user: { id: 'account-B' } }, error: null }],
+    preferenceRows: [preferences([])],
+  };
+  const app = await mountHomePage(state);
+  try {
+    state.authCallback('SIGNED_IN', { user: { id: 'account-B' } });
+    await app.flush();
+    assert.ok(app.dom.window.document.body.textContent.includes('นิยายบัญชี B'));
+    initialSession.resolve(sessionA);
+    await app.flush();
+    assert.ok(app.dom.window.document.body.textContent.includes('นิยายบัญชี B'));
+    assert.equal(app.dom.window.document.body.textContent.includes('นิยายบัญชี A'), false);
+    assert.equal(state.listProjectsCalls, 1);
   } finally {
     await app.unmount();
   }
