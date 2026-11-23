@@ -19,3 +19,4 @@ export function selectLatestReadableChapter<
 
 export function isAccountRequestCurrent(activeVersion: number, requestVersion: number, activeScope: string | null, requestScope: string | null): boolean;
 export function resolveShelfHistoryRefresh<TLocal, TCloud>(localHistory: TLocal[], previousCloudHistory: TCloud[], cloudHistory: TCloud[] | null, succeeded: boolean): { cloudHistory: TCloud[]; combinedHistory: Array<TLocal | TCloud> };
+export function isShelfHistoryRequestCurrent(accountVersion: number, requestAccountVersion: number, historyVersion: number, requestHistoryVersion: number, activeScope: string | null, requestScope: string | null): boolean;
