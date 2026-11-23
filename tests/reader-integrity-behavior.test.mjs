@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isReaderTargetCurrent, mergeReadingHistory, escapeReaderText, isCloudflareChallengeMarkup, isChapterTitle, isLikelyChapterGroup, isArticleTargetCurrent, selectLatestReadableChapter, isAccountRequestCurrent, resolveShelfHistoryRefresh } from '../lib/readerIntegrity.mjs';
+import { isReaderTargetCurrent, mergeReadingHistory, escapeReaderText, isCloudflareChallengeMarkup, isChapterTitle, isLikelyChapterGroup, isArticleTargetCurrent, selectLatestReadableChapter, isAccountRequestCurrent, resolveShelfHistoryRefresh, isShelfHistoryRequestCurrent } from '../lib/readerIntegrity.mjs';
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 test('late request from another project is rejected', async () => {
   let active = { requestId: 1, projectId: 'P', url: '/P/A' }; const target = { ...active }; const gate = deferred();
@@ -123,4 +123,11 @@ test('successful empty cloud history clears cloud entries while retaining fresh 
   );
   assert.deepEqual(result.cloudHistory, []);
   assert.deepEqual(result.combinedHistory.map((item) => item.url), ['/local/current']);
+});
+
+
+test('older same-account history refresh responses are ignored', () => {
+  assert.equal(isShelfHistoryRequestCurrent(4, 4, 3, 2, 'account-A', 'account-A'), false);
+  assert.equal(isShelfHistoryRequestCurrent(4, 4, 3, 3, 'account-A', 'account-A'), true);
+  assert.equal(isShelfHistoryRequestCurrent(5, 4, 3, 3, 'account-B', 'account-A'), false);
 });
