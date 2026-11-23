@@ -167,7 +167,7 @@ export default function ProjectsHomePage() {
       // Keep the last successful combined history visible while a same-account refresh is pending.
       // On account changes the caller has already cleared the previous account's state.
       try {
-        const cloudHistory = await loadCloudReadingHistory();
+        const cloudHistory = await loadCloudReadingHistory(scope);
         if (!isCurrentHistoryRequest()) return;
         const refreshed = resolveShelfHistoryRefresh(readLocalHistory(), lastSuccessfulCloudHistory, cloudHistory, true);
         lastSuccessfulCloudHistory = refreshed.cloudHistory;
@@ -182,7 +182,7 @@ export default function ProjectsHomePage() {
       }
     };
 
-    const activateAccount = (userId: string | null) => {
+    const activateAccount = (userId: string | null): Promise<boolean> => {
       const scope = isSupabaseConfigured() ? userId : 'local';
       if (scope === null) {
         if (accountScopeRef.current !== null) {
@@ -200,7 +200,7 @@ export default function ProjectsHomePage() {
           setRetryingProjects(false);
         }
         router.replace('/login');
-        return;
+        return Promise.resolve(false);
       }
 
       const changedAccount = accountScopeRef.current !== scope;
@@ -227,40 +227,59 @@ export default function ProjectsHomePage() {
       }
 
       const version = accountRequestVersionRef.current;
+      let projectLoad: Promise<boolean> | null = null;
       if (changedAccount || (!projectsLoadAttempted && !projectLoadPending)) {
-        void loadProjectsForScope(version, scope);
+        projectLoad = loadProjectsForScope(version, scope);
       }
       if (userId) void refreshCloudHistory(version, scope);
       else if (changedAccount) setReadingHistory(readLocalHistory());
+      return projectLoad ?? Promise.resolve(true);
     };
 
     if (isSupabaseConfigured()) {
+      let sessionResolutionPromise: Promise<boolean> | null = null;
+      const resolveSessionAndActivate = (): Promise<boolean> => {
+        if (sessionResolutionPromise) return sessionResolutionPromise;
+        const requestAuthEventVersion = authEventVersion;
+        setMounted(false);
+        const request = (async () => {
+          try {
+            const { data, error: sessionError } = await getSupabase().auth.getSession();
+            if (!active || authEventVersion !== requestAuthEventVersion) return false;
+            if (sessionError) throw sessionError;
+            return await activateAccount(data.session?.user?.id ?? null);
+          } catch (sessionError) {
+            if (!active || authEventVersion !== requestAuthEventVersion) return false;
+            setProjectsError(sessionError instanceof Error ? sessionError.message : 'ตรวจสอบสถานะเข้าสู่ระบบไม่สำเร็จ');
+            setMounted(true);
+            return false;
+          }
+        })();
+        sessionResolutionPromise = request;
+        void request.then(
+          () => { if (sessionResolutionPromise === request) sessionResolutionPromise = null; },
+          () => { if (sessionResolutionPromise === request) sessionResolutionPromise = null; },
+        );
+        return request;
+      };
+
       const { data } = getSupabase().auth.onAuthStateChange((event, session) => {
         if (!['INITIAL_SESSION', 'SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED'].includes(event)) return;
         authEventVersion++;
         queueMicrotask(() => {
-          if (active) activateAccount(session?.user?.id ?? null);
+          if (active) void activateAccount(session?.user?.id ?? null);
         });
       });
 
-      const initialAuthEventVersion = authEventVersion;
-      void getSupabase().auth.getSession().then(({ data, error: sessionError }) => {
-        if (!active || authEventVersion !== initialAuthEventVersion) return;
-        if (sessionError) {
-          setProjectsError(sessionError.message);
-          setMounted(true);
-          return;
-        }
-        activateAccount(data.session?.user?.id ?? null);
-      }).catch((sessionError) => {
-        if (!active || authEventVersion !== initialAuthEventVersion) return;
-        setProjectsError(sessionError instanceof Error ? sessionError.message : 'ตรวจสอบสถานะเข้าสู่ระบบไม่สำเร็จ');
-        setMounted(true);
-      });
+      void resolveSessionAndActivate();
 
       reloadProjectsRef.current = async () => {
         const scope = accountScopeRef.current;
-        if (!scope) return false;
+        if (scope === undefined) return resolveSessionAndActivate();
+        if (scope === null) {
+          router.replace('/login');
+          return false;
+        }
         return loadProjectsForScope(accountRequestVersionRef.current, scope);
       };
 
