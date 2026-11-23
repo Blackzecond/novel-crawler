@@ -28,7 +28,7 @@ function compileTsModule(filePath, mocks) {
       esModuleInterop: true,
     },
   }).outputText;
-  const compiled = new Module(absolutePath, module);
+  const compiled = new Module(absolutePath);
   compiled.filename = absolutePath;
   compiled.paths = Module._nodeModulePaths(dirname(absolutePath));
   const originalLoad = Module._load;
