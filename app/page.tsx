@@ -9,7 +9,8 @@ import {
 import { getLocalProjectsForMigration, getStore, NovelProject } from '@/lib/storage';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { applySavedTheme, loadReaderSettings, saveReaderSettings } from '@/lib/readerPrefs';
-import { loadCloudReaderSettings, saveCloudReaderSettings } from '@/lib/cloudPreferences';
+import { loadCloudReaderSettings, saveCloudReaderSettings, loadCloudReadingHistory } from '@/lib/cloudPreferences';
+import { selectLatestReadableChapter } from '@/lib/readerIntegrity.mjs';
 import { fetchWithNativeBrowser, rememberNativeBrowser } from '@/lib/nativeBrowserFetch';
 import { exportNovelMemoryBundle } from '@/lib/novelMemory';
 import NovelCover from '@/components/NovelCover';
@@ -59,8 +60,8 @@ function ProjectCard({
         </p>
         <div className="mt-auto flex flex-wrap items-center gap-2 pt-3">
           {lastRead ? (
-            <a href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(lastRead.url)}`} className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg hover:brightness-105">
-              <BookOpen className="h-4 w-4" /><span className="min-w-0 truncate">อ่านต่อ · {lastRead.title}</span>
+            <a href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(lastRead.url)}`} aria-label={`อ่านต่อ ${project.title} ตอน ${lastRead.title}`} className="inline-flex min-h-11 w-fit max-w-full items-center justify-start gap-1.5 rounded-lg px-2 text-xs font-semibold text-accent-soft-fg hover:bg-accent-soft hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2">
+              <BookOpen className="h-4 w-4 shrink-0" /><span className="min-w-0 truncate">อ่านต่อ ›</span>
             </a>
           ) : (
             <a href={`/project/${project.id}`} className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium text-fg hover:bg-surface">
@@ -76,6 +77,7 @@ function ProjectCard({
 export default function ProjectsHomePage() {
   const router = useRouter();
   const [projects, setProjects] = useState<NovelProject[]>([]);
+  const [readingHistory, setReadingHistory] = useState<Array<{ url: string; title?: string; readAt: number; projectId?: string | null }>>([]);
   const [mounted, setMounted] = useState(false);
   const [projectsError, setProjectsError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -88,6 +90,7 @@ export default function ProjectsHomePage() {
   const [error, setError] = useState('');
   const [chapterNotice, setChapterNotice] = useState<string>('');
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const createUrlInputRef = useRef<HTMLInputElement | null>(null);
   const [importNotice, setImportNotice] = useState('');
   const [localMigrationCount, setLocalMigrationCount] = useState(0);
   const [migratingLocal, setMigratingLocal] = useState(false);
@@ -161,6 +164,61 @@ export default function ProjectsHomePage() {
     }
   };
 
+
+
+  // Read local history immediately; cloud history is independent of shelf loading.
+  // Ignore late cloud responses after unmount or an account change.
+  useEffect(() => {
+    let active = true;
+    let requestVersion = 0;
+    let localHistory: Array<{ url: string; title?: string; readAt: number; projectId?: string | null }> = [];
+    try {
+      const raw = window.localStorage.getItem('novel_history');
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      localHistory = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      localHistory = [];
+    }
+    setReadingHistory(localHistory);
+
+    let subscription: { unsubscribe: () => void } | null = null;
+    const loadCloudHistory = async () => {
+      const version = ++requestVersion;
+      try {
+        const cloudHistory = await loadCloudReadingHistory();
+        if (active && version === requestVersion && Array.isArray(cloudHistory)) {
+          setReadingHistory([...localHistory, ...cloudHistory]);
+        }
+      } catch (historyError) {
+        console.info('Could not load cloud reading history; keeping local history:', historyError);
+      }
+    };
+
+    if (isSupabaseConfigured()) {
+      const { data } = getSupabase().auth.onAuthStateChange((event) => {
+        if (event !== 'SIGNED_IN' && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') return;
+        requestVersion++;
+        setReadingHistory(localHistory);
+        if (event !== 'SIGNED_OUT') queueMicrotask(() => { if (active) void loadCloudHistory(); });
+      });
+      subscription = data.subscription;
+      void loadCloudHistory();
+    }
+
+    return () => {
+      active = false;
+      requestVersion++;
+      subscription?.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showCreateForm || projects.length === 0) return;
+    const input = createUrlInputRef.current;
+    input?.focus({ preventScroll: true });
+    input?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [showCreateForm, projects.length]);
+
   const visibleProjects = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase();
     const filtered = projects.filter((project) =>
@@ -177,11 +235,9 @@ export default function ProjectsHomePage() {
     });
   }, [projects, searchQuery, projectSort]);
 
-  // Use the per-project last-read pointer and its existing update timestamp;
-  // if the chapter was removed, fall back to the regular shelf entry.
-  const latestReadProject = useMemo(() => projects
-    .filter((project) => project.lastReadChapterId && project.chapters.some((chapter) => chapter.id === project.lastReadChapterId))
-    .sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null, [projects]);
+  // Pick one validated project + chapter pair from actual read timestamps.
+  const latestRead = useMemo(() => selectLatestReadableChapter(projects, [readingHistory]), [projects, readingHistory]);
+  const emptyLibrary = mounted && !projectsError && !retryingProjects && projects.length === 0;
 
   const migrateLocalProjects = async () => {
     if (migratingLocal || !cloudUserId) return;
@@ -394,7 +450,7 @@ export default function ProjectsHomePage() {
           </section>
         )}
         {/* ฟอร์มเพิ่มนิยายเปิดเมื่อผู้ใช้เรียก หรือเมื่อคลังว่างจริง */}
-        {(showCreateForm || (mounted && !projectsError && projects.length === 0)) && (
+        {(showCreateForm || emptyLibrary) && (
         <section id="new-project" className="rounded-2xl border border-line bg-card shadow-sm">
           <div className="p-5 sm:p-8 space-y-5 sm:space-y-6">
           <div className="flex items-start gap-3">
@@ -403,9 +459,9 @@ export default function ProjectsHomePage() {
             </span>
             <div className="min-w-0 pt-0.5">
               <p className="text-[11px] font-semibold tracking-[0.14em] uppercase text-accent-soft-fg mb-1">เริ่มต้นใช้งาน</p>
-              <h2 className="text-xl sm:text-2xl font-bold leading-tight tracking-tight">เริ่มโปรเจกต์แปลเรื่องใหม่</h2>
+              <h2 className="text-xl sm:text-2xl font-bold leading-tight tracking-tight">{emptyLibrary ? 'เพิ่มนิยายเรื่องแรก' : 'เริ่มโปรเจกต์แปลเรื่องใหม่'}</h2>
               <p className="text-sm text-muted mt-1.5 leading-relaxed max-w-xl">
-                วางลิงก์หน้าสารบัญนิยายจีน แล้วระบบจะดึงรายชื่อบทมาเตรียมไว้ให้
+                {emptyLibrary ? 'วางลิงก์หน้าสารบัญของเรื่องที่อยากอ่าน' : 'วางลิงก์หน้าสารบัญนิยายจีน แล้วระบบจะดึงรายชื่อบทมาเตรียมไว้ให้'}
               </p>
             </div>
           </div>
@@ -414,6 +470,7 @@ export default function ProjectsHomePage() {
             <label htmlFor="novel-toc-url" className="sr-only">ลิงก์หน้าสารบัญนิยาย</label>
             <input
               id="novel-toc-url"
+              ref={createUrlInputRef}
               type="url"
               required
               value={url}
@@ -431,7 +488,7 @@ export default function ProjectsHomePage() {
               ) : (
                 <ChevronRight className="w-4 h-4" />
               )}
-              สร้างโปรเจกต์
+              {emptyLibrary ? 'เพิ่มนิยาย' : 'สร้างโปรเจกต์'}
             </button>
           </form>
 
@@ -486,10 +543,10 @@ export default function ProjectsHomePage() {
               <p className="text-xs text-muted mt-1">แตะปกเพื่อเปิดสารบัญ หรืออ่านต่อจากตอนที่ค้างไว้</p>
             </div>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => setShowCreateForm((open) => !open)}
+              {!emptyLibrary && <button type="button" onClick={() => setShowCreateForm((open) => !open)}
                 className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-accent px-3 text-xs font-semibold text-accent-fg hover:brightness-105">
                 <FolderOpen className="h-4 w-4" /> เพิ่มนิยาย
-              </button>
+              </button>}
               <details className="relative">
                 <summary className="flex h-10 cursor-pointer list-none items-center gap-1.5 rounded-xl border border-line bg-card px-3 text-xs font-medium hover:bg-surface">จัดการคลัง <ChevronDown className="h-3.5 w-3.5" /></summary>
                 <div className="absolute right-0 top-full z-30 mt-2 flex min-w-44 flex-col gap-1 rounded-xl border border-line bg-card p-2 shadow-xl">
@@ -540,35 +597,21 @@ export default function ProjectsHomePage() {
             </div>
           )}
 
-          {mounted && !projectsError && projects.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-accent-line bg-accent-soft/40 py-10 px-6 text-center">
-              <span className="h-14 w-14 rounded-2xl bg-card border border-line inline-flex items-center justify-center mb-4 text-accent-soft-fg">
-                <FolderOpen className="w-7 h-7" />
-              </span>
-              <p className="text-base font-semibold">ชั้นหนังสือของคุณยังว่างอยู่</p>
-              <p className="text-xs text-muted mt-1.5 max-w-sm mx-auto leading-relaxed">
-                เริ่มจากเพิ่มนิยายเรื่องแรก ระบบจะสร้างพื้นที่เก็บสารบัญ เนื้อหาบท และงานแปลไว้ให้
-              </p>
-              <a href="#new-project" className="mt-5 inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-accent text-accent-fg text-xs font-semibold shadow-sm hover:brightness-110 transition-all">
-                <FolderOpen className="w-4 h-4" /> เพิ่มนิยายเรื่องแรก
-              </a>
-            </div>
-          )}
-
           {importNotice && (
             <p className={`text-xs rounded-lg px-3 py-2 border ${importNotice.startsWith('นำเข้าไม่สำเร็จ') ? 'bg-danger-bg border-danger-line text-danger-fg' : 'bg-accent-soft border-accent-line text-accent-soft-fg'}`}>{importNotice}</p>
           )}
 
-          {latestReadProject && (
+          {latestRead && (
             <section className="flex items-center gap-3 rounded-2xl border border-accent-line bg-accent-soft/50 p-3 sm:p-4">
-              <NovelCover projectId={latestReadProject.id} title={latestReadProject.title} coverUrl={latestReadProject.coverUrl} />
+              <NovelCover projectId={latestRead.project.id} title={latestRead.project.title} coverUrl={latestRead.project.coverUrl} />
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-semibold tracking-wide text-accent-soft-fg">อ่านค้างไว้</p>
-                <p className="mt-0.5 truncate font-serif text-base font-semibold">{latestReadProject.title}</p>
-                <p className="truncate text-xs text-muted">{latestReadProject.chapters.find((chapter) => chapter.id === latestReadProject.lastReadChapterId)?.title}</p>
+                <p className="mt-0.5 truncate font-serif text-base font-semibold">{latestRead.project.title}</p>
+                <p className="truncate text-xs text-muted">{latestRead.chapter.title}</p>
               </div>
-              <a href={`/read?projectId=${encodeURIComponent(latestReadProject.id)}&url=${encodeURIComponent(latestReadProject.chapters.find((chapter) => chapter.id === latestReadProject.lastReadChapterId)!.url)}`}
-                className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg">
+              <a href={`/read?projectId=${encodeURIComponent(latestRead.project.id)}&url=${encodeURIComponent(latestRead.chapter.url)}`}
+                aria-label={`อ่านต่อ ${latestRead.project.title} ตอน ${latestRead.chapter.title}`}
+                className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2">
                 อ่านต่อ <ChevronRight className="h-4 w-4" />
               </a>
             </section>
