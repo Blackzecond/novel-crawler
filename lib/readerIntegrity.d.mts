@@ -15,4 +15,4 @@ export function resolveChapterStatus<T extends string>(current: T, requested?: T
 export function selectLatestReadableChapter<
   TChapter extends { url: string },
   TProject extends { id: string; chapters: TChapter[] },
->(projects: TProject[], historyCollections?: ReadingHistoryEntry[][]): { project: TProject; chapter: TChapter; readAt: number } | null;
+>(projects: TProject[], historyCollections?: Array<Array<{ url: string; title?: string; readAt: number; projectId?: string | null }>>): { project: TProject; chapter: TChapter; readAt: number } | null;
