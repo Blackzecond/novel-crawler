@@ -6,7 +6,7 @@ import { withStableReplacementOrder, resolveChapterStatus } from '@/lib/readerIn
 const BUCKET = 'novel-content';
 
 type ProjectRow = {
-  id: string; title: string; source_url: string; host: string; translation_profile?: NovelProject['translationProfile'] | null;
+  id: string; title: string; source_url: string; cover_url?: string | null; host: string; translation_profile?: NovelProject['translationProfile'] | null;
   glossary_mode: 'manual' | 'auto'; glossary_metadata?: Record<string, GlossaryMetadata> | null; glossary_detection?: GlossaryDetection | null; last_read_chapter_id: string | null;
   chapter_catalog: { url: string; title: string; order: number }[] | null;
   created_at: string; updated_at: string;
@@ -57,6 +57,7 @@ function mapProject(row: ProjectRow, fetchedChapters: NovelChapter[], glossary: 
     title: row.title,
     translationProfile: row.translation_profile ?? 'general',
     sourceUrl: row.source_url,
+    coverUrl: row.cover_url ?? undefined,
     host: row.host,
     glossary,
     glossaryTypes,
@@ -286,6 +287,7 @@ export const supabaseStore: NovelStore = {
     const supabase = getSupabase();
     const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (patch.title !== undefined) update.title = patch.title;
+    if (patch.coverUrl !== undefined) update.cover_url = patch.coverUrl || null;
     if (patch.translationProfile !== undefined) update.translation_profile = patch.translationProfile;
     if (patch.glossaryMode !== undefined) update.glossary_mode = patch.glossaryMode;
     if (patch.glossaryMetadata !== undefined) update.glossary_metadata = patch.glossaryMetadata;
