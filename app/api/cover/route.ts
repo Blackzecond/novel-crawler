@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { parseHTML } from 'linkedom';
 import { fetchArticleHtml } from '@/lib/fetchHtml';
 
-export const runtime = 'nodejs';
 
 function isPublicHttpUrl(value: string): URL | null {
   try {
