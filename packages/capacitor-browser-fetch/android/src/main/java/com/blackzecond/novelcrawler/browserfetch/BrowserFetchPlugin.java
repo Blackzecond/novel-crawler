@@ -290,7 +290,7 @@ public class BrowserFetchPlugin extends Plugin {
         actions.setPadding(12, 8, 12, 12);
 
         Button sendButton = new Button(getActivity());
-        sendButton.setText("ส่งเนื้อหาเข้าแอป");
+        sendButton.setText("ยืนยันสารบัญและส่งเข้าแอป");
         sendButton.setEnabled(false);
         actions.addView(sendButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
@@ -365,11 +365,14 @@ public class BrowserFetchPlugin extends Plugin {
                                 stablePolls[0] = 1;
                             }
                             if (stablePolls[0] >= 3) {
-                                status.setText("ตรวจพบหน้าเว็บปกติและเนื้อหานิ่งแล้ว — กำลังดึงเนื้อหาอัตโนมัติ…");
-                                extractPage(call, webView, dialog, status, finished, captureInProgress, handler, pollTask[0], expandToc, capturedTocPages, visitedTocPages);
-                                return;
+                                sendButton.setEnabled(true);
+                                status.setText(expandToc
+                                    ? "หน้าเว็บพร้อมแล้ว — ตรวจสอบสารบัญ เลื่อนหน้าเว็บหรือกดขยายรายการตอนให้ครบ จากนั้นกดยืนยันสารบัญ"
+                                    : "หน้าเว็บพร้อมแล้ว — ตรวจสอบเนื้อหา จากนั้นกดยืนยันเพื่อส่งเข้าแอป");
+                            } else {
+                                sendButton.setEnabled(false);
+                                status.setText(expandToc ? "กำลังตรวจสอบความพร้อมของสารบัญ (" + stablePolls[0] + "/3)" : "กำลังเตรียมหน้าเว็บ…");
                             }
-                            status.setText(expandToc ? "หน้าเว็บปกติ — กำลังตรวจสอบความสมบูรณ์ของสารบัญ (" + stablePolls[0] + "/3)" : "หน้าเว็บปกติ — กำลังเตรียมดึงเนื้อหา…");
                         }
                     } catch (Exception ignored) {
                         stablePolls[0] = 0;
@@ -387,6 +390,7 @@ public class BrowserFetchPlugin extends Plugin {
                 stablePolls[0] = 0;
                 lastSignature[0] = "";
                 handler.removeCallbacks(pollTask[0]);
+                sendButton.setEnabled(false);
                 status.setText("กำลังโหลดหน้าเว็บและตรวจสอบ CAPTCHA…");
             }
 
@@ -394,8 +398,8 @@ public class BrowserFetchPlugin extends Plugin {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 CookieManager.getInstance().flush();
-                status.setText("กำลังตรวจสอบหน้าเว็บ — หากไม่มี CAPTCHA ระบบจะดึงเนื้อหาให้อัตโนมัติ");
-                sendButton.setEnabled(true);
+                status.setText("กำลังตรวจสอบหน้าเว็บ — รอให้สารบัญโหลดครบก่อนยืนยัน");
+                sendButton.setEnabled(false);
                 handler.removeCallbacks(pollTask[0]);
                 handler.postDelayed(pollTask[0], expandToc ? 1200 : 300);
             }
