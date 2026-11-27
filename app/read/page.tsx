@@ -371,6 +371,7 @@ export default function ReaderPage() {
             };
             chapterCacheRef.current.set(cacheKey, cachedArticle);
             setProjectId(activeProjectId);
+            setReaderProject((current) => current?.id === activeProjectId ? current : null);
             setCurrentChapterId(cached.id);
             setTranslationError('');
             setArticle(cachedArticle);
@@ -631,6 +632,7 @@ export default function ReaderPage() {
             chapterCacheRef.current.set(cacheKey, savedArticle);
             if (activeChapterUrlRef.current === targetUrl && activeProjectIdRef.current === activeProjectId) {
               setCurrentChapterId(savedChapter.id);
+              syncReaderUrl(targetUrl, activeProjectId, savedChapter.id);
               setArticle((current) => current && current.sourceUrl === targetUrl
                 && (current.projectId ?? null) === (activeProjectId ?? null)
                 ? { ...current, chapterId: savedChapter.id }
