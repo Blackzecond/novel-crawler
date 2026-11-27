@@ -250,7 +250,9 @@ public class BrowserFetchPlugin extends Plugin {
         root.setBackgroundColor(Color.WHITE);
 
         TextView status = new TextView(getActivity());
-        status.setText("กำลังเปิดเว็บไซต์ต้นทาง… หากพบ CAPTCHA ให้ยืนยันในหน้านี้ เมื่อเห็นเนื้อหาบทแล้วจึงกดส่งเนื้อหา");
+        status.setText(expandToc
+            ? "เปิดหน้าสารบัญต้นทาง — ตรวจสอบรายการตอนและเปิดหน้าอื่นได้ตามต้องการ จากนั้นกดเก็บแต่ละหน้าและยืนยัน"
+            : "กำลังเปิดเว็บไซต์ต้นทาง… หากพบ CAPTCHA ให้ยืนยันในหน้านี้ เมื่อเห็นเนื้อหาบทแล้วจึงกดส่งเนื้อหา");
         status.setTextColor(Color.DKGRAY);
         status.setTextSize(13);
         status.setPadding(16, 12, 16, 12);
@@ -410,7 +412,7 @@ public class BrowserFetchPlugin extends Plugin {
                 super.onPageFinished(view, url);
                 CookieManager.getInstance().flush();
                 status.setText(expandToc ? "เปิดหน้าสารบัญแล้ว — ตรวจสอบและกดเก็บแต่ละหน้าเอง" : "กำลังตรวจสอบหน้าเว็บ — หากไม่มี CAPTCHA ระบบจะดึงเนื้อหาให้อัตโนมัติ");
-                sendButton.setEnabled(true);
+                sendButton.setEnabled(!expandToc);
                 handler.removeCallbacks(pollTask[0]);
                 handler.postDelayed(pollTask[0], expandToc ? 1200 : 300);
             }
