@@ -267,7 +267,7 @@ export default function ReaderPage() {
   };
 
   // Keep the current chapter in the address bar so refresh restores the chapter being read.
-  const syncReaderUrl = (targetUrl: string, activeProjectId: string | null) => {
+  const syncReaderUrl = (targetUrl: string, activeProjectId: string | null, chapterId?: string | null) => {
     const nextUrl = new URL(window.location.href);
     nextUrl.searchParams.set('url', targetUrl);
     if (activeProjectId) {
@@ -275,6 +275,8 @@ export default function ReaderPage() {
     } else {
       nextUrl.searchParams.delete('projectId');
     }
+    if (chapterId) nextUrl.searchParams.set('chapterId', chapterId);
+    else nextUrl.searchParams.delete('chapterId');
     window.history.replaceState(
       window.history.state,
       '',
@@ -325,7 +327,7 @@ export default function ReaderPage() {
           }
           if (!(activeProjectId && !cachedChapterId)) {
             setProjectId(activeProjectId);
-            syncReaderUrl(targetUrl, activeProjectId);
+            syncReaderUrl(targetUrl, activeProjectId, cachedChapterId);
             saveToHistory(targetUrl, inMemoryArticle.title, activeProjectId);
             window.scrollTo({ top: 0, behavior: 'smooth' });
             return;
@@ -349,6 +351,7 @@ export default function ReaderPage() {
             })
           : Promise.resolve(null);
         [project, cached] = await Promise.all([projectRequest, cachedChapterRequest]);
+        if (cached && cached.url !== targetUrl) cached = null;
         if (!isCurrentRequest()) return;
         if (project) {
           chapter = project.chapters.find((item) => item.url === targetUrl)
@@ -382,7 +385,7 @@ export default function ReaderPage() {
           setTranslationError('');
 
           setArticle(cachedArticle);
-          syncReaderUrl(targetUrl, activeProjectId);
+          syncReaderUrl(targetUrl, activeProjectId, chapter.id);
           saveToHistory(targetUrl, cachedArticle.title, activeProjectId);
           void getStore().updateProject(activeProjectId, { lastReadChapterId: chapter.id }).catch((progressError) => console.warn('Could not update last-read progress:', progressError));
           if (index === project.chapters.length - 1) {
@@ -505,7 +508,7 @@ export default function ReaderPage() {
       setTranslationError('');
 
       setArticle(articleData);
-      syncReaderUrl(targetUrl, activeProjectId);
+      syncReaderUrl(targetUrl, activeProjectId, articleData.chapterId);
 
       if (activeProjectId && project) {
         void (async () => {
