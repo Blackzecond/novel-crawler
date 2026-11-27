@@ -96,6 +96,7 @@ export default function ProjectsHomePage() {
     title: string;
     host: string;
     chapters: { url: string; title: string; order: number }[];
+    excludedUrls: string[];
     pages: { url: string; title: string; html: string }[];
     usedNativeBrowser: boolean;
   } | null>(null);
@@ -419,6 +420,7 @@ export default function ProjectsHomePage() {
         title: data.novelTitle || data.host,
         host: data.host,
         chapters: data.chapters,
+        excludedUrls: [],
         pages,
         usedNativeBrowser: Boolean(nativePage),
       };
@@ -456,14 +458,21 @@ export default function ProjectsHomePage() {
       if (data.type !== 'directory' || !Array.isArray(data.chapters) || data.chapters.length === 0) {
         throw new Error(data.message || 'ไม่พบรายการบทจากหน้าที่เก็บไว้');
       }
+      const editedChapters = new Map(tocDraft.chapters.map((chapter) => [chapter.url, chapter]));
+      const chapters = data.chapters
+        .filter((chapter: { url: string }) => !tocDraft.excludedUrls.includes(chapter.url))
+        .map((chapter: { url: string; title: string; order: number }) => ({
+          ...chapter,
+          title: editedChapters.get(chapter.url)?.title ?? chapter.title,
+        }));
       setTocDraft({
         title: data.novelTitle || tocDraft.title,
         host: data.host || tocDraft.host,
-        chapters: data.chapters,
+        chapters,
+        excludedUrls: tocDraft.excludedUrls,
         pages: mergedPages,
         usedNativeBrowser: true,
       });
-      setTocDraftTitle(data.novelTitle || tocDraftTitle);
     } catch (err: any) {
       setError(err.message || 'กลับไปตรวจสารบัญไม่สำเร็จ');
     } finally {
@@ -717,6 +726,9 @@ export default function ProjectsHomePage() {
                       onClick={() => setTocDraft((current) => current ? ({
                         ...current,
                         chapters: current.chapters.filter((item) => item.url !== chapter.url),
+                        excludedUrls: current.excludedUrls.includes(chapter.url)
+                          ? current.excludedUrls
+                          : [...current.excludedUrls, chapter.url],
                       }) : current)}
                       className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-bg hover:text-danger-fg">
                       <Trash2 className="h-3.5 w-3.5" />
