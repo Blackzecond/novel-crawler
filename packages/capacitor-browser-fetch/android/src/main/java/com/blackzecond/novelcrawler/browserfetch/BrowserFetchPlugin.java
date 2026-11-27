@@ -290,9 +290,16 @@ public class BrowserFetchPlugin extends Plugin {
         actions.setPadding(12, 8, 12, 12);
 
         Button sendButton = new Button(getActivity());
-        sendButton.setText("ส่งเนื้อหาเข้าแอป");
+        sendButton.setText(expandToc ? "เก็บหน้านี้" : "ส่งเนื้อหาเข้าแอป");
         sendButton.setEnabled(false);
         actions.addView(sendButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+        Button finishButton = new Button(getActivity());
+        finishButton.setText("ยืนยันสารบัญ (0 หน้า)");
+        finishButton.setEnabled(false);
+        if (expandToc) {
+            actions.addView(finishButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        }
 
         Button closeButton = new Button(getActivity());
         closeButton.setText("ปิด");
@@ -315,7 +322,8 @@ public class BrowserFetchPlugin extends Plugin {
             window.setBackgroundDrawableResource(android.R.color.white);
         }
 
-        sendButton.setOnClickListener(v -> extractPage(call, webView, dialog, status, finished, captureInProgress, handler, pollTask[0], expandToc, capturedTocPages, visitedTocPages));
+        sendButton.setOnClickListener(v -> extractPage(call, webView, dialog, status, sendButton, finishButton, finished, captureInProgress, handler, pollTask[0], expandToc, capturedTocPages, visitedTocPages));
+        finishButton.setOnClickListener(v -> finishTocCapture(call, dialog, finished, capturedTocPages));
         closeButton.setOnClickListener(v -> {
             if (!finished[0]) {
                 finished[0] = true;
@@ -330,7 +338,7 @@ public class BrowserFetchPlugin extends Plugin {
             public void run() {
                 if (finished[0] || captureInProgress[0] || !dialog.isShowing()) return;
                 final int currentNavigation = navigationId[0];
-                String probeScript = "(()=>{const expandToc="+expandToc+";let moreLoading=false;if(expandToc){const nodes=[...document.querySelectorAll('button,a,[role=button],.more,.show-all,.all-chapters')];for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!txt||el.dataset.ncExpandedOnce==='1')continue;if(/全部章节|查看全部章节|展开全部|显示全部|全部展开|展开目录|查看目录/.test(txt)){el.dataset.ncExpandedOnce='1';el.click();break;}}for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!/加载更多|显示更多|展开更多|更多章节/.test(txt))continue;const rect=el.getBoundingClientRect();if(rect.width>0&&rect.height>0&&getComputedStyle(el).display!=='none'){const count=Number(el.dataset.ncLoadMoreCount||'0');if(count<30){moreLoading=true;el.dataset.ncLoadMoreCount=String(count+1);el.click();}break;}}}const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const hl=h.toLowerCase();const challenge=u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||hl.includes('__cf_chl_')||hl.includes('cf-browser-verification')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge,[data-cf-challenge]')||b.includes('正在验证浏览器')||b.includes('检查您是否为机器人')||b.includes('检查您不是机器人')||b.includes('ตรวจสอบว่าคุณไม่ใช่บอต')||b.includes('กำลังตรวจสอบว่าคุณไม่ใช่บอต');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-180);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig,moreLoading:moreLoading})})()";
+                String probeScript = "(()=>{const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const hl=h.toLowerCase();const challenge=u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||hl.includes('__cf_chl_')||hl.includes('cf-browser-verification')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge,[data-cf-challenge]')||b.includes('正在验证浏览器')||b.includes('检查您是否为机器人')||b.includes('检查您不是机器人')||b.includes('ตรวจสอบว่าคุณไม่ใช่บอต')||b.includes('กำลังตรวจสอบว่าคุณไม่ใช่บอต');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-180);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig})})()";let moreLoading=false;if(expandToc){const nodes=[...document.querySelectorAll('button,a,[role=button],.more,.show-all,.all-chapters')];for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!txt||el.dataset.ncExpandedOnce==='1')continue;if(/全部章节|查看全部章节|展开全部|显示全部|全部展开|展开目录|查看目录/.test(txt)){el.dataset.ncExpandedOnce='1';el.click();break;}}for(const el of nodes){const txt=(el.innerText||el.textContent||'').replace(/\\s+/g,'').trim();if(!/加载更多|显示更多|展开更多|更多章节/.test(txt))continue;const rect=el.getBoundingClientRect();if(rect.width>0&&rect.height>0&&getComputedStyle(el).display!=='none'){const count=Number(el.dataset.ncLoadMoreCount||'0');if(count<30){moreLoading=true;el.dataset.ncLoadMoreCount=String(count+1);el.click();}break;}}}const b=document.body?document.body.innerText:'';const h=document.documentElement?document.documentElement.innerHTML:'';const t=document.title||'';const u=location.href;const hl=h.toLowerCase();const challenge=u.toLowerCase().includes('/cdn-cgi/challenge-platform/')||hl.includes('__cf_chl_')||hl.includes('cf-browser-verification')||!!document.querySelector('#challenge-form,#challenge-running,.cf-challenge,[data-cf-challenge]')||b.includes('正在验证浏览器')||b.includes('检查您是否为机器人')||b.includes('检查您不是机器人')||b.includes('ตรวจสอบว่าคุณไม่ใช่บอต')||b.includes('กำลังตรวจสอบว่าคุณไม่ใช่บอต');const sig=u+'|'+t+'|'+b.length+'|'+h.length+'|'+b.slice(-180);return JSON.stringify({ready:document.readyState==='complete',challenge:challenge,bodyLength:b.trim().length,htmlLength:h.length,signature:sig,moreLoading:moreLoading})})()";
                 webView.evaluateJavascript(probeScript, value -> {
                     if (finished[0] || captureInProgress[0] || currentNavigation != navigationId[0]) return;
                     try {
@@ -365,8 +373,14 @@ public class BrowserFetchPlugin extends Plugin {
                                 stablePolls[0] = 1;
                             }
                             if (stablePolls[0] >= 3) {
+                                if (expandToc) {
+                                    sendButton.setEnabled(true);
+                                    status.setText("หน้าเว็บพร้อมแล้ว — ตรวจสอบสารบัญ เลื่อนหรือเปลี่ยนหน้าเว็บได้ แล้วกด “เก็บหน้านี้” ทีละหน้า เมื่อครบแล้วกด “ยืนยันสารบัญ”");
+                                    handler.postDelayed(this, 1200);
+                                    return;
+                                }
                                 status.setText("ตรวจพบหน้าเว็บปกติและเนื้อหานิ่งแล้ว — กำลังดึงเนื้อหาอัตโนมัติ…");
-                                extractPage(call, webView, dialog, status, finished, captureInProgress, handler, pollTask[0], expandToc, capturedTocPages, visitedTocPages);
+                                extractPage(call, webView, dialog, status, sendButton, finishButton, finished, captureInProgress, handler, pollTask[0], expandToc, capturedTocPages, visitedTocPages);
                                 return;
                             }
                             status.setText(expandToc ? "หน้าเว็บปกติ — กำลังตรวจสอบความสมบูรณ์ของสารบัญ (" + stablePolls[0] + "/3)" : "หน้าเว็บปกติ — กำลังเตรียมดึงเนื้อหา…");
@@ -384,6 +398,7 @@ public class BrowserFetchPlugin extends Plugin {
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 super.onPageStarted(view, url, favicon);
                 navigationId[0]++;
+                if (expandToc) sendButton.setEnabled(false);
                 stablePolls[0] = 0;
                 lastSignature[0] = "";
                 handler.removeCallbacks(pollTask[0]);
@@ -394,7 +409,7 @@ public class BrowserFetchPlugin extends Plugin {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 CookieManager.getInstance().flush();
-                status.setText("กำลังตรวจสอบหน้าเว็บ — หากไม่มี CAPTCHA ระบบจะดึงเนื้อหาให้อัตโนมัติ");
+                status.setText(expandToc ? "เปิดหน้าสารบัญแล้ว — ตรวจสอบและกดเก็บแต่ละหน้าเอง" : "กำลังตรวจสอบหน้าเว็บ — หากไม่มี CAPTCHA ระบบจะดึงเนื้อหาให้อัตโนมัติ");
                 sendButton.setEnabled(true);
                 handler.removeCallbacks(pollTask[0]);
                 handler.postDelayed(pollTask[0], expandToc ? 1200 : 300);
@@ -430,11 +445,29 @@ public class BrowserFetchPlugin extends Plugin {
         webView.loadUrl(targetUrl);
     }
 
+    private void finishTocCapture(PluginCall call, Dialog dialog, boolean[] finished, JSONArray capturedTocPages) {
+        if (finished[0] || capturedTocPages.length() == 0) return;
+        finished[0] = true;
+        call.setKeepAlive(false);
+        JSObject result = new JSObject();
+        JSONObject firstPage = capturedTocPages.optJSONObject(0);
+        if (firstPage != null) {
+            result.put("url", firstPage.optString("url", ""));
+            result.put("title", firstPage.optString("title", ""));
+            result.put("html", firstPage.optString("html", ""));
+        }
+        result.put("pages", capturedTocPages);
+        call.resolve(result);
+        dialog.dismiss();
+    }
+
     private void extractPage(
         PluginCall call,
         WebView webView,
         Dialog dialog,
         TextView status,
+        Button sendButton,
+        Button finishButton,
         boolean[] finished,
         boolean[] captureInProgress,
         Handler handler,
@@ -500,14 +533,24 @@ public class BrowserFetchPlugin extends Plugin {
 
                 CookieManager.getInstance().flush();
                 if (expandToc) {
-                    capturedTocPages.put(new JSONObject().put("url", pageUrl).put("title", title).put("html", html));
-                    if (!nextUrl.isEmpty() && !visitedTocPages.contains(nextUrl) && capturedTocPages.length() < 50) {
-                        visitedTocPages.add(nextUrl);
-                        captureInProgress[0] = false;
-                        status.setText("เก็บสารบัญแล้ว " + capturedTocPages.length() + " หน้า — กำลังเปิดหน้าถัดไปอัตโนมัติ…");
-                        webView.loadUrl(nextUrl);
-                        return;
+                    boolean alreadyCaptured = false;
+                    for (int i = 0; i < capturedTocPages.length(); i++) {
+                        JSONObject saved = capturedTocPages.optJSONObject(i);
+                        if (saved != null && pageUrl.equals(saved.optString("url", ""))) {
+                            alreadyCaptured = true;
+                            break;
+                        }
                     }
+                    if (!alreadyCaptured && capturedTocPages.length() < 50) {
+                        capturedTocPages.put(new JSONObject().put("url", pageUrl).put("title", title).put("html", html));
+                    }
+                    finishButton.setText("ยืนยันสารบัญ (" + capturedTocPages.length() + " หน้า)");
+                    finishButton.setEnabled(capturedTocPages.length() > 0);
+                    sendButton.setEnabled(false);
+                    captureInProgress[0] = false;
+                    status.setText("เก็บแล้ว " + capturedTocPages.length() + " หน้า — คุณสามารถเปิดหน้าสารบัญหน้าอื่นแล้วกดเก็บเพิ่ม หรือยืนยันเพื่อดูตัวอย่างรายการตอน");
+                    handler.postDelayed(pollRunnable, 500);
+                    return;
                 }
                 finished[0] = true;
                 call.setKeepAlive(false);
