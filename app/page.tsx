@@ -376,43 +376,21 @@ export default function ProjectsHomePage() {
     setError('');
     setChapterNotice('');
     try {
-      let usedNativeBrowser = false;
+      // On Android, let the user inspect the live source page and explicitly confirm
+      // before parsing or creating anything. Web/PWA keeps the server parser path.
+      const nativePage = await fetchWithNativeBrowser(url, { expandToc: true });
+      const usedNativeBrowser = Boolean(nativePage);
       const res = await fetch('/api/toc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify(nativePage
+          ? { url, pageUrl: nativePage.url, html: nativePage.html, pages: nativePage.pages }
+          : { url }),
       });
-      let data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const nativePage = await fetchWithNativeBrowser(url, { expandToc: true });
-        if (!nativePage) throw new Error(data.error || 'เกิดข้อผิดพลาด');
-        usedNativeBrowser = true;
-        const fallbackRes = await fetch('/api/toc', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, pageUrl: nativePage.url, html: nativePage.html, pages: nativePage.pages }),
-        });
-        data = await fallbackRes.json().catch(() => ({}));
-        if (!fallbackRes.ok) throw new Error(data.error || 'อ่านสารบัญจากหน้าเว็บไม่สำเร็จ');
-      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'อ่านสารบัญจากหน้าเว็บไม่สำเร็จ');
 
-      // A server response may be successful but contain only a JS shell with no TOC.
-      // Give the native WebView one chance before treating it as a chapter page.
-      if (data.type !== 'directory' && !usedNativeBrowser) {
-        const nativePage = await fetchWithNativeBrowser(url, { expandToc: true });
-        if (nativePage) {
-          usedNativeBrowser = true;
-          const fallbackRes = await fetch('/api/toc', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, pageUrl: nativePage.url, html: nativePage.html, pages: nativePage.pages }),
-          });
-          data = await fallbackRes.json().catch(() => ({}));
-          if (!fallbackRes.ok) throw new Error(data.error || 'อ่านสารบัญจากหน้าเว็บไม่สำเร็จ');
-        }
-      }
-
-      if (data.type === 'directory') {
+      if (data.type === 'directory' && Array.isArray(data.chapters) && data.chapters.length > 0) {
         const project = await getStore().createProject({
           title: data.novelTitle || data.host,
           sourceUrl: url,
@@ -442,8 +420,7 @@ export default function ProjectsHomePage() {
         router.push(`/project/${project.id}`);
         return;
       }
-      // เป็นหน้าบทหรือจับสารบัญไม่ได้
-      setChapterNotice(data.message || 'ไม่พบรายการบทบนหน้านี้');
+      setChapterNotice(data.message || 'ไม่พบรายการบทบนหน้านี้ กรุณากลับไปตรวจสอบสารบัญในหน้าเว็บต้นทางแล้วลองอีกครั้ง');
     } catch (err: any) {
       setError(err.message);
     } finally {
