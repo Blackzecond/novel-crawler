@@ -42,7 +42,7 @@ function ProjectCard({
     <article className="group flex min-w-0 gap-3 rounded-2xl border border-line bg-card p-3 shadow-sm transition-colors hover:border-accent-line sm:gap-4 sm:p-4">
       <Link href={`/project/${project.id}`} className="shrink-0" aria-label={`เปิดสารบัญ ${project.title}`}>
         <NovelCover projectId={project.id} title={project.title} coverUrl={project.coverUrl} />
-      </a>
+      </Link>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-start gap-2">
           <Link href={`/project/${project.id}`} className="min-w-0 flex-1">
