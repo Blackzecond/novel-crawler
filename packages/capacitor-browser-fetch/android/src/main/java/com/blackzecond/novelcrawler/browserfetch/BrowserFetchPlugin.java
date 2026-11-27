@@ -526,9 +526,11 @@ public class BrowserFetchPlugin extends Plugin {
                     handler.postDelayed(pollRunnable, 1200);
                     return;
                 }
-                if (html.length() < 300 || bodyText.trim().length() < 80) {
+                if (html.length() < 300 || bodyText.trim().length() < (expandToc ? 20 : 80)) {
                     captureInProgress[0] = false;
-                    status.setText("ยังไม่พบเนื้อหาบทที่สมบูรณ์ ลองรอให้หน้าเว็บโหลดเพิ่ม หรือกดส่งเนื้อหาเอง");
+                    status.setText(expandToc
+                        ? "ยังไม่พบรายการสารบัญที่อ่านได้ ลองรอหรือเปิดหน้าสารบัญให้ครบก่อนเก็บ"
+                        : "ยังไม่พบเนื้อหาบทที่สมบูรณ์ ลองรอให้หน้าเว็บโหลดเพิ่ม หรือกดส่งเนื้อหาเอง");
                     handler.postDelayed(pollRunnable, 1200);
                     return;
                 }
