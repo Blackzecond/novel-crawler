@@ -355,7 +355,7 @@ public class BrowserFetchPlugin extends Plugin {
                         } else if (probe.optBoolean("moreLoading") || !probe.optBoolean("ready") || probe.optInt("bodyLength") < 180 || probe.optInt("htmlLength") < 1000) {
                             stablePolls[0] = 0;
                             lastSignature[0] = "";
-                            status.setText(expandToc ? "กำลังขยายรายการตอนทั้งหมดและรอให้โหลดครบ…" : "ผ่านหน้าตรวจสอบแล้ว — กำลังรอเนื้อหาบทโหลดให้ครบ…");
+                            status.setText(expandToc ? "กำลังรอให้หน้าเว็บและรายการสารบัญโหลดพร้อม…" : "ผ่านหน้าตรวจสอบแล้ว — กำลังรอเนื้อหาบทโหลดให้ครบ…");
                         } else {
                             if (challengeSeen[0]) {
                                 if (challengeClearedAt[0] == 0L) challengeClearedAt[0] = System.currentTimeMillis();
