@@ -233,7 +233,9 @@ export const supabaseStore: NovelStore = {
     const includeTranslatedText = options.includeTranslatedText !== false;
     const chapter = mapChapter(row);
     const [originalText, readerContent, translatedText, preProofreadText] = await Promise.all([
-      includeOriginalText && row.original_storage_provider === 'supabase'
+      // readerContent is the rendered form of the original chapter. Avoid
+      // downloading the duplicate original file when the Reader cache exists.
+      includeOriginalText && !row.reader_storage_path && row.original_storage_provider === 'supabase'
         ? readText(row.original_storage_path)
         : Promise.resolve(undefined),
       row.reader_storage_path ? readText(row.reader_storage_path) : Promise.resolve(undefined),
