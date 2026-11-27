@@ -185,10 +185,11 @@ export default function ReaderPage() {
     const params = new URLSearchParams(window.location.search);
     const target = params.get('url');
     const targetProjectId = params.get('projectId');
+    const targetChapterId = params.get('chapterId');
     if (targetProjectId) setProjectId(targetProjectId);
     if (target) {
       setUrl(target);
-      void fetchArticle(target, false, targetProjectId);
+      void fetchArticle(target, false, targetProjectId, targetChapterId);
     }
   }, []);
 
@@ -281,9 +282,10 @@ export default function ReaderPage() {
     );
   };
 
-  const fetchArticle = async (targetUrl: string, forceRender = false, projectIdOverride?: string | null) => {
+  const fetchArticle = async (targetUrl: string, forceRender = false, projectIdOverride?: string | null, chapterIdOverride?: string | null) => {
     if (!targetUrl) return;
     const activeProjectId = projectIdOverride === undefined ? projectId : projectIdOverride;
+    const requestedChapterId = chapterIdOverride || null;
     if (typeof window !== 'undefined') setShowTranslation(window.localStorage.getItem(`novel_reader_edition:${activeProjectId ?? 'standalone'}`) === 'translation');
     const requestId = ++readerRequestRef.current;
     const isCurrentRequest = () => isReaderTargetCurrent(
@@ -333,21 +335,35 @@ export default function ReaderPage() {
 
       let project: NovelProject | null = null;
       let chapter: NovelChapter | null = null;
+      let cached: NovelChapter | null = null;
       if (activeProjectId) {
-        project = readerProject?.id === activeProjectId
-          ? readerProject
-          : await getStore().getProject(activeProjectId);
+        // The shelf passes the persisted chapter UUID so its Storage lookup can start
+        // at the same time as project metadata instead of waiting for the full project.
+        const projectRequest = readerProject?.id === activeProjectId
+          ? Promise.resolve(readerProject)
+          : getStore().getProject(activeProjectId);
+        const cachedChapterRequest = !forceRender && requestedChapterId
+          ? getStore().getChapterContent(activeProjectId, requestedChapterId, {
+              includeOriginalText: true,
+              includeTranslatedText: true,
+            })
+          : Promise.resolve(null);
+        [project, cached] = await Promise.all([projectRequest, cachedChapterRequest]);
         if (!isCurrentRequest()) return;
         if (project) {
-          chapter = project.chapters.find((item) => item.url === targetUrl) ?? null;
+          chapter = project.chapters.find((item) => item.url === targetUrl)
+            ?? project.chapters.find((item) => item.id === requestedChapterId)
+            ?? null;
         }
       }
-      if (!forceRender && activeProjectId && project && chapter && chapter.status !== 'pending') {
-        const cached = await getStore().getChapterContent(activeProjectId, chapter.id, {
+      if (!cached && !forceRender && activeProjectId && project && chapter && chapter.status !== 'pending') {
+        cached = await getStore().getChapterContent(activeProjectId, chapter.id, {
           includeOriginalText: true,
           includeTranslatedText: true,
         });
         if (!isCurrentRequest()) return;
+      }
+      if (!forceRender && activeProjectId && project && chapter && chapter.status !== 'pending') {
         if (cached && (cached.readerContent !== undefined || cached.originalText !== undefined)) {
           const index = project.chapters.findIndex((item) => item.url === targetUrl);
           const cachedHtml = cached.readerContent ?? (cached.originalText ?? '').split(/\n{2,}/).map((paragraph: string) => `<p>${escapeReaderText(paragraph).replace(/\n/g, '<br>')}</p>`).join('');
