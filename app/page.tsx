@@ -696,7 +696,7 @@ export default function ProjectsHomePage() {
             <div className="space-y-4">
               <div className="rounded-xl border border-accent-line bg-accent-soft/50 p-3">
                 <p className="text-sm font-semibold text-accent-soft-fg">ตรวจสอบสารบัญก่อนสร้างโปรเจค</p>
-                <p className="mt-1 text-xs text-muted">ตรวจพบ {tocDraft.chapters.length.toLocaleString('th-TH')} ตอน จาก {tocDraft.pages.length.toLocaleString('th-TH')} หน้าที่เก็บไว้ โปรดตรวจชื่อเรื่องและรายการตอนก่อนยืนยัน</p>
+                <p className="mt-1 text-xs text-muted">ตรวจพบ {tocDraft.chapters.length.toLocaleString('th-TH')} ตอน {tocDraft.usedNativeBrowser ? `จาก ${tocDraft.pages.length.toLocaleString('th-TH')} หน้าที่เก็บไว้` : 'จากการอ่านหน้าเว็บต้นทาง'} โปรดตรวจชื่อเรื่องและรายการตอนก่อนยืนยัน</p>
               </div>
               <label className="block space-y-1.5">
                 <span className="text-xs font-medium text-muted">ชื่อโปรเจค</span>
