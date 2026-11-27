@@ -92,6 +92,15 @@ export default function ProjectsHomePage() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [chapterNotice, setChapterNotice] = useState<string>('');
+  const [tocDraft, setTocDraft] = useState<{
+    title: string;
+    host: string;
+    chapters: { url: string; title: string; order: number }[];
+    excludedUrls: string[];
+    pages: { url: string; title: string; html: string }[];
+    usedNativeBrowser: boolean;
+  } | null>(null);
+  const [tocDraftTitle, setTocDraftTitle] = useState('');
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const createUrlInputRef = useRef<HTMLInputElement | null>(null);
   const [importNotice, setImportNotice] = useState('');
@@ -369,83 +378,141 @@ export default function ProjectsHomePage() {
     else router.replace('/login');
   };
 
+  const analyzeTocPages = async (
+    sourceUrl: string,
+    nativePage: Awaited<ReturnType<typeof fetchWithNativeBrowser>>,
+  ) => {
+    const response = await fetch('/api/toc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(nativePage
+        ? { url: sourceUrl, pageUrl: nativePage.url, html: nativePage.html, pages: nativePage.pages }
+        : { url: sourceUrl }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'อ่านสารบัญจากหน้าเว็บไม่สำเร็จ');
+    return data;
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url.trim() || creating) return;
+    const sourceUrl = url.trim();
+    if (!sourceUrl || creating) return;
     setCreating(true);
     setError('');
     setChapterNotice('');
+    setTocDraft(null);
     try {
-      let usedNativeBrowser = false;
-      const res = await fetch('/api/toc', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
-      });
-      let data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const nativePage = await fetchWithNativeBrowser(url, { expandToc: true });
-        if (!nativePage) throw new Error(data.error || 'เกิดข้อผิดพลาด');
-        usedNativeBrowser = true;
-        const fallbackRes = await fetch('/api/toc', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, pageUrl: nativePage.url, html: nativePage.html, pages: nativePage.pages }),
-        });
-        data = await fallbackRes.json().catch(() => ({}));
-        if (!fallbackRes.ok) throw new Error(data.error || 'อ่านสารบัญจากหน้าเว็บไม่สำเร็จ');
-      }
-
-      // A server response may be successful but contain only a JS shell with no TOC.
-      // Give the native WebView one chance before treating it as a chapter page.
-      if (data.type !== 'directory' && !usedNativeBrowser) {
-        const nativePage = await fetchWithNativeBrowser(url, { expandToc: true });
-        if (nativePage) {
-          usedNativeBrowser = true;
-          const fallbackRes = await fetch('/api/toc', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, pageUrl: nativePage.url, html: nativePage.html, pages: nativePage.pages }),
-          });
-          data = await fallbackRes.json().catch(() => ({}));
-          if (!fallbackRes.ok) throw new Error(data.error || 'อ่านสารบัญจากหน้าเว็บไม่สำเร็จ');
-        }
-      }
-
-      if (data.type === 'directory') {
-        const project = await getStore().createProject({
-          title: data.novelTitle || data.host,
-          sourceUrl: url,
-          host: data.host,
-          chapters: data.chapters,
-        });
-        if (usedNativeBrowser) rememberNativeBrowser(project.id);
-
-        // Cover lookup is deliberately fire-and-forget: project creation and navigation never wait for it.
-        if (!project.coverUrl && project.sourceUrl) {
-          void (async () => {
-            try {
-              const coverResponse = await fetch('/api/cover', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: project.sourceUrl, title: project.title }),
-              });
-              const coverResult = await coverResponse.json().catch(() => ({}));
-              if (!coverResponse.ok || typeof coverResult.coverUrl !== 'string' || !coverResult.coverUrl) return;
-              await getStore().updateProject(project.id, { coverUrl: coverResult.coverUrl });
-            } catch (coverError) {
-              console.warn('Could not resolve novel cover:', project.sourceUrl, coverError);
-            }
-          })();
-        }
-
-        router.push(`/project/${project.id}`);
+      // Android must let the user inspect and manually capture every TOC page first.
+      // Web/PWA has no native WebView, so it uses server extraction but still requires review.
+      const nativePage = await fetchWithNativeBrowser(sourceUrl, { expandToc: true });
+      const data = await analyzeTocPages(sourceUrl, nativePage);
+      if (data.type !== 'directory' || !Array.isArray(data.chapters) || data.chapters.length === 0) {
+        setChapterNotice(data.message || 'ไม่พบรายการบทบนหน้านี้');
         return;
       }
-      // เป็นหน้าบทหรือจับสารบัญไม่ได้
-      setChapterNotice(data.message || 'ไม่พบรายการบทบนหน้านี้');
+      const pages = nativePage?.pages?.length
+        ? nativePage.pages
+        : nativePage
+          ? [{ url: nativePage.url, title: nativePage.title, html: nativePage.html }]
+          : [];
+      const draft = {
+        title: data.novelTitle || data.host,
+        host: data.host,
+        chapters: data.chapters,
+        excludedUrls: [],
+        pages,
+        usedNativeBrowser: Boolean(nativePage),
+      };
+      setTocDraft(draft);
+      setTocDraftTitle(draft.title);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'อ่านสารบัญไม่สำเร็จ');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const reviewTocInBrowser = async () => {
+    if (!tocDraft || creating) return;
+    setCreating(true);
+    setError('');
+    try {
+      const nativePage = await fetchWithNativeBrowser(url.trim(), { expandToc: true });
+      if (!nativePage) throw new Error('การเปิด WebView เพื่อตรวจสารบัญรองรับในแอป Android เท่านั้น');
+      const newPages = nativePage.pages?.length
+        ? nativePage.pages
+        : [{ url: nativePage.url, title: nativePage.title, html: nativePage.html }];
+      const mergedPages = [...tocDraft.pages];
+      const seen = new Set(mergedPages.map((page) => page.url));
+      for (const page of newPages) {
+        if (!seen.has(page.url)) {
+          seen.add(page.url);
+          mergedPages.push(page);
+        }
+      }
+      const data = await analyzeTocPages(url.trim(), {
+        ...nativePage,
+        pages: mergedPages,
+      });
+      if (data.type !== 'directory' || !Array.isArray(data.chapters) || data.chapters.length === 0) {
+        throw new Error(data.message || 'ไม่พบรายการบทจากหน้าที่เก็บไว้');
+      }
+      const editedChapters = new Map(tocDraft.chapters.map((chapter) => [chapter.url, chapter]));
+      const chapters = data.chapters
+        .filter((chapter: { url: string }) => !tocDraft.excludedUrls.includes(chapter.url))
+        .map((chapter: { url: string; title: string; order: number }) => ({
+          ...chapter,
+          title: editedChapters.get(chapter.url)?.title ?? chapter.title,
+        }));
+      setTocDraft({
+        title: data.novelTitle || tocDraft.title,
+        host: data.host || tocDraft.host,
+        chapters,
+        excludedUrls: tocDraft.excludedUrls,
+        pages: mergedPages,
+        usedNativeBrowser: true,
+      });
+    } catch (err: any) {
+      setError(err.message || 'กลับไปตรวจสารบัญไม่สำเร็จ');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const confirmCreateProject = async () => {
+    if (!tocDraft || !tocDraft.chapters.length || creating) return;
+    setCreating(true);
+    setError('');
+    try {
+      const project = await getStore().createProject({
+        title: tocDraftTitle.trim() || tocDraft.title || tocDraft.host,
+        sourceUrl: url.trim(),
+        host: tocDraft.host,
+        chapters: tocDraft.chapters.map((chapter, order) => ({ ...chapter, order })),
+      });
+      if (tocDraft.usedNativeBrowser) rememberNativeBrowser(project.id);
+
+      // Cover lookup stays asynchronous and never blocks project creation/navigation.
+      if (!project.coverUrl && project.sourceUrl) {
+        void (async () => {
+          try {
+            const coverResponse = await fetch('/api/cover', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: project.sourceUrl, title: project.title }),
+            });
+            const coverResult = await coverResponse.json().catch(() => ({}));
+            if (!coverResponse.ok || typeof coverResult.coverUrl !== 'string' || !coverResult.coverUrl) return;
+            await getStore().updateProject(project.id, { coverUrl: coverResult.coverUrl });
+          } catch (coverError) {
+            console.warn('Could not resolve novel cover:', project.sourceUrl, coverError);
+          }
+        })();
+      }
+      router.push(`/project/${project.id}`);
+    } catch (err: any) {
+      setError(err.message || 'สร้างโปรเจคไม่สำเร็จ');
     } finally {
       setCreating(false);
     }
@@ -570,6 +637,8 @@ export default function ProjectsHomePage() {
             </div>
           </div>
 
+          {!tocDraft ? (
+          <>
           <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-2.5">
             <label htmlFor="novel-toc-url" className="sr-only">ลิงก์หน้าสารบัญนิยาย</label>
             <input
@@ -629,6 +698,61 @@ export default function ProjectsHomePage() {
           {error && (
             <div className="p-3 rounded-xl bg-danger-bg border border-danger-line text-danger-fg text-xs">
               {error}
+            </div>
+          )}
+          </>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-accent-line bg-accent-soft/50 p-3">
+                <p className="text-sm font-semibold text-accent-soft-fg">ตรวจสอบสารบัญก่อนสร้างโปรเจค</p>
+                <p className="mt-1 text-xs text-muted">ตรวจพบ {tocDraft.chapters.length.toLocaleString('th-TH')} ตอน {tocDraft.usedNativeBrowser ? `จาก ${tocDraft.pages.length.toLocaleString('th-TH')} หน้าที่เก็บไว้` : 'จากการอ่านหน้าเว็บต้นทาง'} โปรดตรวจชื่อเรื่องและรายการตอนก่อนยืนยัน</p>
+              </div>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted">ชื่อโปรเจค</span>
+                <input value={tocDraftTitle} onChange={(event) => setTocDraftTitle(event.target.value)}
+                  className="h-11 w-full rounded-xl border border-line bg-bg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent/40" />
+              </label>
+              <div className="max-h-80 space-y-1 overflow-y-auto rounded-xl border border-line p-2">
+                {tocDraft.chapters.map((chapter, index) => (
+                  <div key={chapter.url} className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-surface">
+                    <span className="w-10 shrink-0 text-right text-[11px] tabular-nums text-muted">{(index + 1).toLocaleString('th-TH')}</span>
+                    <input aria-label={`ชื่อบทที่ ${index + 1}`} value={chapter.title}
+                      onChange={(event) => setTocDraft((current) => current ? ({
+                        ...current,
+                        chapters: current.chapters.map((item) => item.url === chapter.url ? { ...item, title: event.target.value } : item),
+                      }) : current)}
+                      className="h-9 min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 text-xs text-fg focus:border-line focus:bg-bg focus:outline-none" />
+                    <button type="button" aria-label={`ลบบทที่ ${index + 1}`}
+                      onClick={() => setTocDraft((current) => current ? ({
+                        ...current,
+                        chapters: current.chapters.filter((item) => item.url !== chapter.url),
+                        excludedUrls: current.excludedUrls.includes(chapter.url)
+                          ? current.excludedUrls
+                          : [...current.excludedUrls, chapter.url],
+                      }) : current)}
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-bg hover:text-danger-fg">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted">สามารถแก้ชื่อบทหรือลบบทที่ไม่ถูกต้องได้ หากพบว่าขาดบางหน้า ให้กลับไปเปิดหน้าสารบัญและเก็บหน้าเพิ่มเติม</p>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => void reviewTocInBrowser()} disabled={creating}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-line px-3 text-xs font-semibold hover:bg-surface disabled:opacity-50">
+                  <Globe className="h-4 w-4" /> กลับไปตรวจใน WebView
+                </button>
+                <button type="button" onClick={() => void confirmCreateProject()} disabled={creating || tocDraft.chapters.length === 0}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-accent px-4 text-xs font-semibold text-accent-fg disabled:opacity-50">
+                  {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronRight className="h-4 w-4" />}
+                  ยืนยันและสร้างโปรเจค ({tocDraft.chapters.length.toLocaleString('th-TH')} ตอน)
+                </button>
+                <button type="button" onClick={() => { setTocDraft(null); setError(''); }}
+                  className="inline-flex h-10 items-center justify-center rounded-xl px-3 text-xs text-muted hover:bg-surface">
+                  ยกเลิก
+                </button>
+              </div>
+              {error && <div className="rounded-xl border border-danger-line bg-danger-bg p-3 text-xs text-danger-fg">{error}</div>}
             </div>
           )}
                   </div>
