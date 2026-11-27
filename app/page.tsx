@@ -67,7 +67,7 @@ function ProjectCard({
           ) : (
             <Link href={`/project/${project.id}`} className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium text-fg hover:bg-surface">
               <BookOpen className="h-4 w-4" /> เปิดสารบัญ
-            </a>
+            </Link>
           )}
         </div>
       </div>
@@ -594,13 +594,13 @@ export default function ProjectsHomePage() {
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <div className="space-y-2 min-w-0">
                 <p>{chapterNotice}</p>
-                <a
+                <Link
                   href={`/read?url=${encodeURIComponent(url)}`}
                   className="inline-flex items-center gap-1 underline hover:brightness-110 cursor-pointer"
                 >
                   <ExternalLink className="w-3 h-3" />
                   เปิดหน้านี้ด้วยอ่านด่วน
-                </a>
+                </Link>
               </div>
             </div>
           )}
@@ -691,11 +691,11 @@ export default function ProjectsHomePage() {
                 <p className="mt-0.5 truncate font-serif text-base font-semibold">{latestRead.project.title}</p>
                 <p className="truncate text-xs text-muted">{latestRead.chapter.title}</p>
               </div>
-              <a href={`/read?projectId=${encodeURIComponent(latestRead.project.id)}&url=${encodeURIComponent(latestRead.chapter.url)}`}
+              <Link href={`/read?projectId=${encodeURIComponent(latestRead.project.id)}&chapterId=${encodeURIComponent(latestRead.chapter.id)}&url=${encodeURIComponent(latestRead.chapter.url)}`}
                 aria-label={`อ่านต่อ ${latestRead.project.title} ตอน ${latestRead.chapter.title}`}
                 className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2">
                 อ่านต่อ <ChevronRight className="h-4 w-4" />
-              </a>
+              </Link>
             </section>
           )}
 
