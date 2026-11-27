@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   Library, BookOpen, Loader2, Trash2, Download, Upload,
   ChevronRight, ChevronDown, AlertTriangle, ExternalLink, Globe, Sparkles, FolderOpen, LogOut, CloudUpload, Search, ArrowUpDown, RefreshCw,
@@ -39,17 +40,17 @@ function ProjectCard({
 
   return (
     <article className="group flex min-w-0 gap-3 rounded-2xl border border-line bg-card p-3 shadow-sm transition-colors hover:border-accent-line sm:gap-4 sm:p-4">
-      <a href={`/project/${project.id}`} className="shrink-0" aria-label={`เปิดสารบัญ ${project.title}`}>
+      <Link href={`/project/${project.id}`} className="shrink-0" aria-label={`เปิดสารบัญ ${project.title}`}>
         <NovelCover projectId={project.id} title={project.title} coverUrl={project.coverUrl} />
       </a>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-start gap-2">
-          <a href={`/project/${project.id}`} className="min-w-0 flex-1">
+          <Link href={`/project/${project.id}`} className="min-w-0 flex-1">
             <span className="block line-clamp-2 break-words font-serif text-base font-semibold leading-snug text-fg group-hover:text-accent-soft-fg sm:text-lg">{project.title}</span>
             <span className="mt-1 inline-flex max-w-full items-center gap-1 text-xs text-muted">
               <Globe className="h-3 w-3 shrink-0" /><span className="truncate">{project.host}</span>
             </span>
-          </a>
+          </Link>
           <button onClick={() => onDelete(project)} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-bg hover:text-danger-fg" aria-label={`ลบโปรเจกต์ ${project.title}`} title="ลบเรื่องนี้">
             <Trash2 className="h-4 w-4" />
           </button>
@@ -60,11 +61,11 @@ function ProjectCard({
         </p>
         <div className="mt-auto flex flex-wrap items-center gap-2 pt-3">
           {lastRead ? (
-            <a href={`/read?projectId=${encodeURIComponent(project.id)}&url=${encodeURIComponent(lastRead.url)}`} aria-label={`อ่านต่อ ${project.title} ตอน ${lastRead.title}`} className="inline-flex min-h-11 w-fit max-w-full items-center justify-start gap-1.5 rounded-lg px-2 text-xs font-semibold text-accent-soft-fg hover:bg-accent-soft hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2">
+            <Link href={`/read?projectId=${encodeURIComponent(project.id)}&chapterId=${encodeURIComponent(lastRead.id)}&url=${encodeURIComponent(lastRead.url)}`} aria-label={`อ่านต่อ ${project.title} ตอน ${lastRead.title}`} className="inline-flex min-h-11 w-fit max-w-full items-center justify-start gap-1.5 rounded-lg px-2 text-xs font-semibold text-accent-soft-fg hover:bg-accent-soft hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2">
               <BookOpen className="h-4 w-4 shrink-0" /><span className="min-w-0 truncate">อ่านต่อ ›</span>
-            </a>
+            </Link>
           ) : (
-            <a href={`/project/${project.id}`} className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium text-fg hover:bg-surface">
+            <Link href={`/project/${project.id}`} className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium text-fg hover:bg-surface">
               <BookOpen className="h-4 w-4" /> เปิดสารบัญ
             </a>
           )}
@@ -505,7 +506,7 @@ export default function ProjectsHomePage() {
           </div>
           <nav aria-label="เมนูหลัก" className="flex w-full min-w-0 items-center justify-center overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:w-auto sm:flex-1 sm:justify-end">
             <div className="mx-auto flex w-max min-w-full items-center justify-center gap-1 sm:gap-2">
-            <a href="/read" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs"><BookOpen className="h-4 w-4" />อ่านด่วน</a>
+            <Link href="/read" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs"><BookOpen className="h-4 w-4" />อ่านด่วน</Link>
             <a href="/dictionary" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs"><BookOpen className="h-4 w-4" />พจนานุกรม</a>
             <a href="/glossary-sets" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs"><Library className="h-4 w-4" />ชุดศัพท์</a>
             <a href="/settings/ai" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs" title="ตั้งค่า API สำหรับการแปลและจับศัพท์"><Sparkles className="h-4 w-4" />ตั้งค่า AI</a>
