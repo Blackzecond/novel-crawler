@@ -1,7 +1,11 @@
-export interface BrowserFetchResult {
+export interface BrowserFetchPage {
   url: string;
   title: string;
   html: string;
+}
+
+export interface BrowserFetchResult extends BrowserFetchPage {
+  pages?: BrowserFetchPage[];
 }
 
 export interface BrowserFetchPlugin {
