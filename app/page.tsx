@@ -691,7 +691,7 @@ export default function ProjectsHomePage() {
                 <p className="mt-0.5 truncate font-serif text-base font-semibold">{latestRead.project.title}</p>
                 <p className="truncate text-xs text-muted">{latestRead.chapter.title}</p>
               </div>
-              <Link href={`/read?projectId=${encodeURIComponent(latestRead.project.id)}&chapterId=${encodeURIComponent(latestRead.chapter.id)}&url=${encodeURIComponent(latestRead.chapter.url)}`}
+              <Link href={`/read?projectId=${encodeURIComponent(latestRead.project.id)}&chapterId=${encodeURIComponent(latestRead.project.chapters.find((chapter) => chapter.url === latestRead.chapter.url)?.id ?? '')}&url=${encodeURIComponent(latestRead.chapter.url)}`}
                 aria-label={`อ่านต่อ ${latestRead.project.title} ตอน ${latestRead.chapter.title}`}
                 className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2">
                 อ่านต่อ <ChevronRight className="h-4 w-4" />
