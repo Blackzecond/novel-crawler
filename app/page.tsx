@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Library, BookOpen, Loader2, Trash2, Download, Upload,
-  ChevronRight, ChevronDown, AlertTriangle, ExternalLink, Globe, Sparkles, FolderOpen, LogOut, CloudUpload, Search, ArrowUpDown, RefreshCw,
+  ChevronRight, ChevronDown, AlertTriangle, ExternalLink, Globe, Sparkles, FolderOpen, LogOut, CloudUpload, Search, ArrowUpDown, RefreshCw, Bug,
 } from 'lucide-react';
 import { getLocalProjectsForMigration, getStore, NovelProject } from '@/lib/storage';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -506,7 +506,7 @@ export default function ProjectsHomePage() {
           </div>
           <nav aria-label="เมนูหลัก" className="flex w-full min-w-0 items-center justify-center overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:w-auto sm:flex-1 sm:justify-end">
             <div className="mx-auto flex w-max min-w-full items-center justify-center gap-1 sm:gap-2">
-            <Link href="/read" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs"><BookOpen className="h-4 w-4" />อ่านด่วน</Link>
+            <Link href="/read" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs"><BookOpen className="h-4 w-4" />อ่านด่วน</Link>\n            <Link href="/debug/network" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs"><Bug className="h-4 w-4" />Debug</Link>
             <a href="/dictionary" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs"><BookOpen className="h-4 w-4" />พจนานุกรม</a>
             <a href="/glossary-sets" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs"><Library className="h-4 w-4" />ชุดศัพท์</a>
             <a href="/settings/ai" className="inline-flex h-9 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 text-[11px] font-medium text-muted hover:text-fg hover:bg-surface transition-colors sm:gap-1.5 sm:px-2.5 sm:text-xs" title="ตั้งค่า API สำหรับการแปลและจับศัพท์"><Sparkles className="h-4 w-4" />ตั้งค่า AI</a>
