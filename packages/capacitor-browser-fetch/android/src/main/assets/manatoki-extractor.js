@@ -162,7 +162,7 @@ window.__ncManatokiPending = true;
         if (decodedData.kind !== 'text' || typeof decodedData.text !== 'string') {
           return fail('รูปแบบ Payload ของ Manatoki ไม่รองรับ');
         }
-      } else if (/^[{[]/.test(decodedText.trim())) {
+      } else if (decodedText.trim().startsWith('{') || decodedText.trim().startsWith('[')) {
         return fail('รูปแบบ JSON ของ Payload Manatoki ไม่ถูกต้องหรือไม่รองรับ');
       }
       const text = decodedData ? decodedData.text : decodedText;
