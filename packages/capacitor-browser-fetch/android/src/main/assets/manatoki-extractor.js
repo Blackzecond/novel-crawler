@@ -148,7 +148,16 @@
   } catch (error) {
     return fail(error && error.message ? error.message : 'ถอดรหัสเนื้อหา Manatoki ไม่สำเร็จ');
   }
-})().then((result) => JSON.stringify(result)).catch((error) => JSON.stringify({
-  ok: false,
-  error: error && error.message ? error.message : 'ถอดรหัสเนื้อหา Manatoki ไม่สำเร็จ'
-}));
+})().then((result) => {
+  window.__ncManatokiResult = JSON.stringify(result);
+  window.__ncManatokiPending = false;
+}).catch((error) => {
+  window.__ncManatokiResult = JSON.stringify({
+    ok: false,
+    error: error && error.message ? error.message : 'ถอดรหัสเนื้อหา Manatoki ไม่สำเร็จ'
+  });
+  window.__ncManatokiPending = false;
+});
+window.__ncManatokiResult = null;
+window.__ncManatokiPending = true;
+'__NC_MANATOKI_STARTED__';
