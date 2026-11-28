@@ -14,7 +14,7 @@ export default function NetworkDebugPage() {
 
   const startInspector = async () => {
     const target = url.trim();
-    if (!/^https?:\\/\\//i.test(target)) {
+    if (!(target.startsWith('https://') || target.startsWith('http://'))) {
       setMessage('กรุณาระบุ URL ที่ขึ้นต้นด้วย http:// หรือ https://');
       return;
     }
