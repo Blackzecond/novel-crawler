@@ -20,6 +20,7 @@ import androidx.webkit.WebViewFeature;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.ScrollView;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -712,8 +713,6 @@ public class BrowserFetchPlugin extends Plugin {
                     call.setKeepAlive(false);
                     call.resolve();
                 }
-                webView.stopLoading();
-                webView.destroy();
                 dialog.dismiss();
             });
             dialog.setOnDismissListener(v -> {
