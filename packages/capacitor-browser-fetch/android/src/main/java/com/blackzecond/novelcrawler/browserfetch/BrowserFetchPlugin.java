@@ -14,6 +14,9 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.ConsoleMessage;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -536,4 +539,195 @@ public class BrowserFetchPlugin extends Plugin {
             }
         });
     }
+
+    /**
+     * Temporary network inspector for diagnosing JavaScript-rendered chapter pages.
+     * Captures same-origin fetch/XHR text responses only; it does not alter page responses.
+     */
+    @PluginMethod
+    public void debugNetwork(PluginCall call) {
+        String targetUrl = call.getString("url");
+        if (targetUrl == null || !(targetUrl.startsWith("https://") || targetUrl.startsWith("http://"))) {
+            call.reject("URL ไม่ถูกต้อง");
+            return;
+        }
+        final android.net.Uri target = android.net.Uri.parse(targetUrl);
+        final String origin = target.getScheme() + "://" + target.getAuthority();
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            call.reject("Android System WebView รุ่นนี้ยังไม่รองรับการตรวจ Network แบบเริ่มก่อน JavaScript");
+            return;
+        }
+        call.setKeepAlive(true);
+        getActivity().runOnUiThread(() -> {
+            Dialog dialog = new Dialog(getActivity());
+            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            LinearLayout root = new LinearLayout(getActivity());
+            root.setOrientation(LinearLayout.VERTICAL);
+            root.setBackgroundColor(Color.WHITE);
+
+            TextView status = new TextView(getActivity());
+            status.setText("กำลังเตรียม Network Inspector…");
+            status.setTextColor(Color.DKGRAY);
+            status.setTextSize(12);
+            status.setPadding(12, 8, 12, 8);
+            root.addView(status, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ));
+
+            WebView webView = new WebView(getActivity());
+            webView.setBackgroundColor(Color.WHITE);
+            webView.getSettings().setJavaScriptEnabled(true);
+            webView.getSettings().setDomStorageEnabled(true);
+            webView.getSettings().setAllowFileAccess(false);
+            webView.getSettings().setAllowContentAccess(false);
+            webView.getSettings().setMixedContentMode(android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+
+            TextView logsView = new TextView(getActivity());
+            logsView.setTextColor(Color.BLACK);
+            logsView.setTextSize(10);
+            logsView.setPadding(10, 8, 10, 8);
+            logsView.setText("ยังไม่มี Fetch/XHR response ที่ตรวจพบ");
+            logsView.setBackgroundColor(0xFFF3F4F6);
+            ScrollView logScroll = new ScrollView(getActivity());
+            logScroll.addView(logsView);
+            root.addView(webView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f
+            ));
+            root.addView(logScroll, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 0.8f
+            ));
+
+            LinearLayout actions = new LinearLayout(getActivity());
+            actions.setOrientation(LinearLayout.HORIZONTAL);
+            actions.setGravity(Gravity.CENTER);
+            actions.setPadding(6, 4, 6, 8);
+            Button reloadButton = new Button(getActivity());
+            reloadButton.setText("โหลดใหม่");
+            actions.addView(reloadButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            Button clearButton = new Button(getActivity());
+            clearButton.setText("ล้าง");
+            actions.addView(clearButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            Button copyButton = new Button(getActivity());
+            copyButton.setText("คัดลอก Log");
+            actions.addView(copyButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            Button closeButton = new Button(getActivity());
+            closeButton.setText("ปิด");
+            actions.addView(closeButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            root.addView(actions);
+
+            dialog.setContentView(root);
+            Window window = dialog.getWindow();
+            if (window != null) {
+                window.setLayout(
+                    getActivity().getResources().getDisplayMetrics().widthPixels,
+                    getActivity().getResources().getDisplayMetrics().heightPixels
+                );
+                window.setBackgroundDrawableResource(android.R.color.white);
+            }
+
+            final StringBuilder capturedLogs = new StringBuilder();
+            final int[] eventCount = { 0 };
+            final boolean[] finished = { false };
+            final String prefix = "__NC_NET__";
+            final String hook = "(function(){if(window.__ncNetworkHooked)return;window.__ncNetworkHooked=true;" +
+                "const emit=x=>{try{console.log('" + prefix + "'+JSON.stringify(x))}catch(e){}};" +
+                "const same=u=>{try{return new URL(u,location.href).origin===location.origin}catch(e){return false}};" +
+                "const originalFetch=window.fetch;" +
+                "if(originalFetch)window.fetch=function(){const args=arguments;const req=args[0];const init=args[1]||{};" +
+                "const url=typeof req==='string'?req:(req&&req.url)||'';const method=init.method||(req&&req.method)||'GET';" +
+                "return originalFetch.apply(this,args).then(response=>{try{const copy=response.clone();const type=copy.headers.get('content-type')||'';" +
+                "if(same(url)&&(/json|text|xml|javascript/i.test(type))){copy.text().then(body=>emit({kind:'fetch',url:copy.url||url,method,status:copy.status,type,length:body.length,body:body.slice(0,12000)})).catch(()=>{});}" +
+                "}catch(e){}return response;});};" +
+                "const xo=XMLHttpRequest.prototype.open;const xs=XMLHttpRequest.prototype.send;" +
+                "XMLHttpRequest.prototype.open=function(method,url){this.__ncMeta={method:method||'GET',url:String(url||'')};return xo.apply(this,arguments)};" +
+                "XMLHttpRequest.prototype.send=function(){this.addEventListener('loadend',function(){try{const m=this.__ncMeta||{};const type=this.getResponseHeader('content-type')||'';" +
+                "if(same(m.url)&&(/json|text|xml|javascript/i.test(type))&&(this.responseType===''||this.responseType==='text')){" +
+                "const body=this.responseText||'';emit({kind:'xhr',url:new URL(m.url,location.href).href,method:m.method,status:this.status,type,length:body.length,body:body.slice(0,12000)});}}catch(e){}},{once:true});" +
+                "return xs.apply(this,arguments)};emit({kind:'hook-ready',url:location.href});})();";
+            WebViewCompat.addDocumentStartJavaScript(webView, hook, java.util.Collections.singleton(origin));
+            webView.setWebChromeClient(new WebChromeClient() {
+                @Override
+                public boolean onConsoleMessage(ConsoleMessage message) {
+                    String value = message.message();
+                    if (value == null || !value.startsWith(prefix)) return true;
+                    String payload = value.substring(prefix.length());
+                    try {
+                        JSONObject event = new JSONObject(payload);
+                        String kind = event.optString("kind", "event");
+                        String url = event.optString("url", "");
+                        String line;
+                        if ("hook-ready".equals(kind)) {
+                            line = "[HOOK] " + url;
+                        } else {
+                            line = "[" + kind.toUpperCase(Locale.ROOT) + " " + event.optInt("status") + "] "
+                                + event.optString("method") + " " + url
+                                + "\nContent-Type: " + event.optString("type")
+                                + " · " + event.optInt("length") + " chars\n"
+                                + event.optString("body", "");
+                        }
+                        if (capturedLogs.length() > 500000) {
+                            capturedLogs.setLength(0);
+                            capturedLogs.append("[older logs truncated]\n");
+                        }
+                        capturedLogs.append(line).append("\n\n");
+                        eventCount[0]++;
+                        String shown = capturedLogs.toString();
+                        logsView.setText(shown);
+                        status.setText("จับเหตุการณ์ได้ " + eventCount[0] + " รายการ · ตรวจเฉพาะ Fetch/XHR ของ origin เดียวกัน");
+                        logScroll.post(() -> logScroll.fullScroll(View.FOCUS_DOWN));
+                    } catch (Exception ignored) {
+                        capturedLogs.append(payload).append("\n");
+                    }
+                    return true;
+                }
+            });
+            webView.setWebViewClient(new WebViewClient() {
+                @Override
+                public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                    status.setText("กำลังโหลด: " + url);
+                }
+                @Override
+                public void onPageFinished(WebView view, String url) {
+                    status.setText("หน้าเว็บโหลดแล้ว · รอ Response จาก Fetch/XHR");
+                }
+            });
+            reloadButton.setOnClickListener(v -> webView.reload());
+            clearButton.setOnClickListener(v -> {
+                capturedLogs.setLength(0);
+                eventCount[0] = 0;
+                logsView.setText("ล้าง Log แล้ว");
+                status.setText("ล้าง Log แล้ว · กำลังรอ Request");
+            });
+            copyButton.setOnClickListener(v -> {
+                android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getActivity()
+                    .getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Novel Crawler Network Log", capturedLogs.toString()));
+                    status.setText("คัดลอก Log แล้ว");
+                }
+            });
+            closeButton.setOnClickListener(v -> {
+                if (!finished[0]) {
+                    finished[0] = true;
+                    call.setKeepAlive(false);
+                    call.resolve();
+                }
+                webView.stopLoading();
+                webView.destroy();
+                dialog.dismiss();
+            });
+            dialog.setOnDismissListener(v -> {
+                if (!finished[0]) {
+                    finished[0] = true;
+                    call.setKeepAlive(false);
+                    call.resolve();
+                }
+                webView.stopLoading();
+                webView.destroy();
+            });
+            dialog.show();
+            webView.loadUrl(targetUrl);
+        });
+    }
+
 }
