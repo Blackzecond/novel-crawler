@@ -32,6 +32,9 @@ import org.json.JSONObject;
 import org.json.JSONArray;
 import org.json.JSONTokener;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -164,6 +167,37 @@ public class BrowserFetchPlugin extends Plugin {
                                     return;
                                 }
                                 CookieManager.getInstance().flush();
+                                if (isManatokiUrl(pageUrl)) {
+                                    runManatokiExtractor(webView, handler, finished, extraction -> {
+                                        if (finished[0]) return;
+                                        try {
+                                            if (!extraction.optBoolean("ok")) {
+                                                String reason = extraction.optString("error", "ไม่ทราบสาเหตุ");
+                                                finishBackgroundPrefetch(call, webView, host, handler, pollTask[0], timeoutTask, finished,
+                                                    null, "ดึงเนื้อหา Manatoki ไม่สำเร็จ: " + reason);
+                                                return;
+                                            }
+                                            String extractedHtml = extraction.optString("html", "");
+                                            String extractedTitle = extraction.optString("title", title);
+                                            String extractedUrl = extraction.optString("url", pageUrl);
+                                            if (extractedHtml.length() < 100 || !extractedHtml.contains("reader-content")) {
+                                                finishBackgroundPrefetch(call, webView, host, handler, pollTask[0], timeoutTask, finished,
+                                                    null, "ถอดรหัส Manatoki แล้วแต่ไม่พบเนื้อหาที่อ่านได้");
+                                                return;
+                                            }
+                                            JSObject result = new JSObject();
+                                            result.put("url", extractedUrl);
+                                            result.put("title", extractedTitle);
+                                            result.put("html", extractedHtml);
+                                            finishBackgroundPrefetch(call, webView, host, handler, pollTask[0], timeoutTask, finished,
+                                                result, null);
+                                        } catch (Exception extractionError) {
+                                            finishBackgroundPrefetch(call, webView, host, handler, pollTask[0], timeoutTask, finished,
+                                                null, "อ่านผลการถอดรหัส Manatoki ไม่สำเร็จ");
+                                        }
+                                    });
+                                    return;
+                                }
                                 JSObject result = new JSObject();
                                 result.put("url", pageUrl);
                                 result.put("title", title);
@@ -215,8 +249,90 @@ public class BrowserFetchPlugin extends Plugin {
             }
         });
 
-        handler.postDelayed(timeoutTask, 25000);
+        handler.postDelayed(timeoutTask, isManatokiUrl(targetUrl) ? 45000 : 25000);
         webView.loadUrl(targetUrl);
+    }
+
+    private boolean isManatokiUrl(String url) {
+        try {
+            String host = android.net.Uri.parse(url).getHost();
+            return host != null && host.toLowerCase(Locale.ROOT).matches("manatoki\\d*\\.org");
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private interface ManatokiExtractionCallback {
+        void onComplete(JSONObject result);
+    }
+
+    private JSONObject manatokiFailure(String message) {
+        JSONObject result = new JSONObject();
+        try {
+            result.put("ok", false);
+            result.put("error", message);
+        } catch (Exception ignored) {
+            // JSONObject construction is best-effort; callers still handle malformed results.
+        }
+        return result;
+    }
+
+    private void runManatokiExtractor(
+        WebView webView,
+        Handler handler,
+        boolean[] finished,
+        ManatokiExtractionCallback callback
+    ) {
+        final String script;
+        try {
+            script = loadManatokiExtractorScript();
+        } catch (Exception assetError) {
+            callback.onComplete(manatokiFailure("โหลดตัวถอดรหัส Manatoki ไม่สำเร็จ"));
+            return;
+        }
+
+        webView.evaluateJavascript(script, ignored -> {
+            if (finished[0]) return;
+            final int[] attempts = { 0 };
+            final Runnable[] pollTask = { null };
+            pollTask[0] = () -> {
+                if (finished[0]) return;
+                webView.evaluateJavascript(
+                    "(function(){return window.__ncManatokiPending ? null : (window.__ncManatokiResult || null);})()",
+                    value -> {
+                        if (finished[0]) return;
+                        if (value == null || "null".equals(value)) {
+                            attempts[0]++;
+                            if (attempts[0] >= 150) {
+                                callback.onComplete(manatokiFailure("หมดเวลารอ API และการถอดรหัส Manatoki"));
+                            } else {
+                                handler.postDelayed(pollTask[0], 200);
+                            }
+                            return;
+                        }
+                        try {
+                            Object decoded = new JSONTokener(value).nextValue();
+                            callback.onComplete(new JSONObject(String.valueOf(decoded)));
+                        } catch (Exception parseError) {
+                            callback.onComplete(manatokiFailure("อ่านผลการถอดรหัส Manatoki ไม่สำเร็จ"));
+                        }
+                    }
+                );
+            };
+            handler.postDelayed(pollTask[0], 100);
+        });
+    }
+
+    private String loadManatokiExtractorScript() throws Exception {
+        try (InputStream input = getContext().getAssets().open("manatoki-extractor.js");
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                output.write(buffer, 0, count);
+            }
+            return new String(output.toByteArray(), StandardCharsets.UTF_8);
+        }
     }
 
     private void finishBackgroundPrefetch(
@@ -507,6 +623,43 @@ public class BrowserFetchPlugin extends Plugin {
                 }
 
                 CookieManager.getInstance().flush();
+                if (!expandToc && isManatokiUrl(pageUrl)) {
+                    status.setText("กำลังเรียก API และถอดรหัสเนื้อหา Manatoki…");
+                    runManatokiExtractor(webView, handler, finished, extraction -> {
+                        if (finished[0]) return;
+                        try {
+                            if (!extraction.optBoolean("ok")) {
+                                captureInProgress[0] = false;
+                                status.setText("ดึงเนื้อหา Manatoki ไม่สำเร็จ: "
+                                    + extraction.optString("error", "ไม่ทราบสาเหตุ"));
+                                handler.postDelayed(pollRunnable, 1200);
+                                return;
+                            }
+                            String extractedHtml = extraction.optString("html", "");
+                            String extractedTitle = extraction.optString("title", title);
+                            String extractedUrl = extraction.optString("url", pageUrl);
+                            if (extractedHtml.length() < 100 || !extractedHtml.contains("reader-content")) {
+                                captureInProgress[0] = false;
+                                status.setText("ถอดรหัส Manatoki แล้วแต่ไม่พบเนื้อหาที่อ่านได้");
+                                handler.postDelayed(pollRunnable, 1200);
+                                return;
+                            }
+                            finished[0] = true;
+                            call.setKeepAlive(false);
+                            JSObject result = new JSObject();
+                            result.put("url", extractedUrl);
+                            result.put("title", extractedTitle);
+                            result.put("html", extractedHtml);
+                            call.resolve(result);
+                            dialog.dismiss();
+                        } catch (Exception extractionError) {
+                            captureInProgress[0] = false;
+                            status.setText("อ่านผลการถอดรหัส Manatoki ไม่สำเร็จ");
+                            handler.postDelayed(pollRunnable, 1200);
+                        }
+                    });
+                    return;
+                }
                 if (expandToc) {
                     capturedTocPages.put(new JSONObject().put("url", pageUrl).put("title", title).put("html", html));
                     if (!nextUrl.isEmpty() && !visitedTocPages.contains(nextUrl) && capturedTocPages.length() < 50) {
