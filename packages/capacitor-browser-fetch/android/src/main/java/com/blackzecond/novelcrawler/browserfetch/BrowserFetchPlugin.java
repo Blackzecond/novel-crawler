@@ -168,19 +168,9 @@ public class BrowserFetchPlugin extends Plugin {
                                 }
                                 CookieManager.getInstance().flush();
                                 if (isManatokiUrl(pageUrl)) {
-                                    String extractorScript;
-                                    try {
-                                        extractorScript = loadManatokiExtractorScript();
-                                    } catch (Exception assetError) {
-                                        finishBackgroundPrefetch(call, webView, host, handler, pollTask[0], timeoutTask, finished,
-                                            null, "โหลดตัวถอดรหัส Manatoki ไม่สำเร็จ");
-                                        return;
-                                    }
-                                    webView.evaluateJavascript(extractorScript, extractionValue -> {
+                                    runManatokiExtractor(webView, handler, finished, extraction -> {
                                         if (finished[0]) return;
                                         try {
-                                            Object extractionDecoded = new JSONTokener(extractionValue).nextValue();
-                                            JSONObject extraction = new JSONObject(String.valueOf(extractionDecoded));
                                             if (!extraction.optBoolean("ok")) {
                                                 String reason = extraction.optString("error", "ไม่ทราบสาเหตุ");
                                                 finishBackgroundPrefetch(call, webView, host, handler, pollTask[0], timeoutTask, finished,
@@ -270,6 +260,67 @@ public class BrowserFetchPlugin extends Plugin {
         } catch (Exception ignored) {
             return false;
         }
+    }
+
+    private interface ManatokiExtractionCallback {
+        void onComplete(JSONObject result);
+    }
+
+    private JSONObject manatokiFailure(String message) {
+        JSONObject result = new JSONObject();
+        try {
+            result.put("ok", false);
+            result.put("error", message);
+        } catch (Exception ignored) {
+            // JSONObject construction is best-effort; callers still handle malformed results.
+        }
+        return result;
+    }
+
+    private void runManatokiExtractor(
+        WebView webView,
+        Handler handler,
+        boolean[] finished,
+        ManatokiExtractionCallback callback
+    ) {
+        final String script;
+        try {
+            script = loadManatokiExtractorScript();
+        } catch (Exception assetError) {
+            callback.onComplete(manatokiFailure("โหลดตัวถอดรหัส Manatoki ไม่สำเร็จ"));
+            return;
+        }
+
+        webView.evaluateJavascript(script, ignored -> {
+            if (finished[0]) return;
+            final int[] attempts = { 0 };
+            final Runnable[] pollTask = { null };
+            pollTask[0] = () -> {
+                if (finished[0]) return;
+                webView.evaluateJavascript(
+                    "(function(){return window.__ncManatokiPending ? null : (window.__ncManatokiResult || null);})()",
+                    value -> {
+                        if (finished[0]) return;
+                        if (value == null || "null".equals(value)) {
+                            attempts[0]++;
+                            if (attempts[0] >= 150) {
+                                callback.onComplete(manatokiFailure("หมดเวลารอ API และการถอดรหัส Manatoki"));
+                            } else {
+                                handler.postDelayed(pollTask[0], 200);
+                            }
+                            return;
+                        }
+                        try {
+                            Object decoded = new JSONTokener(value).nextValue();
+                            callback.onComplete(new JSONObject(String.valueOf(decoded)));
+                        } catch (Exception parseError) {
+                            callback.onComplete(manatokiFailure("อ่านผลการถอดรหัส Manatoki ไม่สำเร็จ"));
+                        }
+                    }
+                );
+            };
+            handler.postDelayed(pollTask[0], 100);
+        });
     }
 
     private String loadManatokiExtractorScript() throws Exception {
@@ -573,20 +624,10 @@ public class BrowserFetchPlugin extends Plugin {
 
                 CookieManager.getInstance().flush();
                 if (!expandToc && isManatokiUrl(pageUrl)) {
-                    String extractorScript;
-                    try {
-                        extractorScript = loadManatokiExtractorScript();
-                    } catch (Exception assetError) {
-                        captureInProgress[0] = false;
-                        status.setText("โหลดตัวถอดรหัส Manatoki ไม่สำเร็จ");
-                        return;
-                    }
                     status.setText("กำลังเรียก API และถอดรหัสเนื้อหา Manatoki…");
-                    webView.evaluateJavascript(extractorScript, extractionValue -> {
+                    runManatokiExtractor(webView, handler, finished, extraction -> {
                         if (finished[0]) return;
                         try {
-                            Object extractionDecoded = new JSONTokener(extractionValue).nextValue();
-                            JSONObject extraction = new JSONObject(String.valueOf(extractionDecoded));
                             if (!extraction.optBoolean("ok")) {
                                 captureInProgress[0] = false;
                                 status.setText("ดึงเนื้อหา Manatoki ไม่สำเร็จ: "
