@@ -51,6 +51,12 @@ export async function fetchWithNativeBrowser(url: string, options: { expandToc?:
  * app-private CookieManager session as the interactive browser.
  * Returns null on web/PWA; rejects when the page cannot be captured safely.
  */
+export async function debugNativeBrowserNetwork(url: string): Promise<boolean> {
+  if (!supportsNativeBrowser()) return false;
+  await BrowserFetch.debugNetwork({ url });
+  return true;
+}
+
 export async function prefetchWithNativeBrowser(url: string): Promise<NativeBrowserPage | null> {
   if (!supportsNativeBrowser()) {
     return null;
