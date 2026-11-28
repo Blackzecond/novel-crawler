@@ -15,13 +15,34 @@ window.__ncManatokiPending = true;
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     return bytes;
   };
-  const extractEscapedProperty = (source, name) => {
-    const marker = '\\"' + name + '\\":\\"';
-    const start = source.indexOf(marker);
-    if (start < 0) return null;
-    const valueStart = start + marker.length;
-    const end = source.indexOf('\\"', valueStart);
-    return end < 0 ? null : source.slice(valueStart, end);
+  const extractProperty = (source, name) => {
+    const input = String(source || '')
+      .replace(/&quot;|&#34;|&#x22;/gi, '"')
+      .replace(/&#39;|&#x27;|&apos;/gi, "'")
+      .replace(/&amp;/gi, '&');
+    // Accept ordinary JSON, escaped JSON, and multiply-escaped JSON strings.
+    const markers = [
+      '"' + name + '":"',
+      '\\"' + name + '\\":\\"',
+      '\\\\' + '"' + name + '\\\\' + '":' + '\\\\' + '"',
+      "'" + name + "':'",
+      '&quot;' + name + '&quot;:&quot;'
+    ];
+    for (const marker of markers) {
+      const start = input.indexOf(marker);
+      if (start < 0) continue;
+      const valueStart = start + marker.length;
+      const quote = marker.slice(0, marker.indexOf(name));
+      const end = input.indexOf(quote, valueStart);
+      if (end > valueStart) return input.slice(valueStart, end);
+    }
+
+    // Fallback for whitespace around the colon and variable escape depth.
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp('(?:\\\\*)["\\']' + escapedName +
+      '(?:\\\\*)["\\']\\s*:\\s*(?:\\\\*)["\\']([^"\\'\\\\]+)', 'i');
+    const match = input.match(pattern);
+    return match && match[1] ? match[1] : null;
   };
   const readCookie = (name) => {
     for (const part of document.cookie.split(';')) {
@@ -45,8 +66,8 @@ window.__ncManatokiPending = true;
     });
     if (!pageResponse.ok) return fail('โหลดข้อมูลหน้าตอนไม่สำเร็จ HTTP ' + pageResponse.status);
     const pageSource = await pageResponse.text();
-    const token = extractEscapedProperty(pageSource, 'token');
-    const cookieName = extractEscapedProperty(pageSource, 'cookieName') || 'nv';
+    const token = extractProperty(pageSource, 'token');
+    const cookieName = extractProperty(pageSource, 'cookieName') || 'nv';
     if (!token) return fail('ไม่พบ Token ของตอนในข้อมูลหน้าเว็บ');
 
     let cookieValue = readCookie(cookieName);
