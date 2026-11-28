@@ -46,8 +46,21 @@ window.__ncManatokiPending = true;
     const match = input.match(pattern);
     return match && match[1] ? match[1] : null;
   };
+  const parseDecodedPayload = (value) => {
+    const text = String(value ?? '');
+    const trimmed = text.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+      return { kind: 'text', text };
+    }
+    try {
+      return { kind: 'json', data: JSON.parse(trimmed) };
+    } catch (_) {
+      // A leading bracket is not sufficient evidence that the payload is JSON.
+      return { kind: 'text', text };
+    }
+  };
   if (window.__ncManatokiTestMode === true) {
-    window.__ncManatokiTestHooks = { extractProperty };
+    window.__ncManatokiTestHooks = { extractProperty, parseDecodedPayload };
   }
 
   const readCookie = (name) => {
@@ -136,10 +149,8 @@ window.__ncManatokiPending = true;
     }
     const decodedText = new TextDecoder('utf-8', { fatal: true }).decode(decryptedBytes);
 
-    let decodedData = null;
-    if (decodedText.trim().startsWith('{')) {
-      try { decodedData = JSON.parse(decodedText); } catch (_) { decodedData = null; }
-    }
+    const decodedPayload = parseDecodedPayload(decodedText);
+    const decodedData = decodedPayload.kind === 'json' ? decodedPayload.data : null;
 
     let contentHtml = '';
     let contentText = '';
@@ -158,14 +169,13 @@ window.__ncManatokiPending = true;
       contentHtml = parsed.body.innerHTML.trim();
       contentText = parsed.body.textContent || '';
     } else {
-      if (decodedData && typeof decodedData === 'object') {
-        if (decodedData.kind !== 'text' || typeof decodedData.text !== 'string') {
+      if (decodedPayload.kind === 'json') {
+        if (!decodedData || Array.isArray(decodedData) || typeof decodedData !== 'object' ||
+            decodedData.kind !== 'text' || typeof decodedData.text !== 'string') {
           return fail('รูปแบบ Payload ของ Manatoki ไม่รองรับ');
         }
-      } else if (decodedText.trim().startsWith('{') || decodedText.trim().startsWith('[')) {
-        return fail('รูปแบบ JSON ของ Payload Manatoki ไม่ถูกต้องหรือไม่รองรับ');
       }
-      const text = decodedData ? decodedData.text : decodedText;
+      const text = decodedPayload.kind === 'json' ? decodedData.text : decodedPayload.text;
       contentText = text;
       const paragraphs = text.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
       contentHtml = paragraphs.map((paragraph) => {
