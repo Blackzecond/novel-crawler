@@ -40,7 +40,7 @@ window.__ncManatokiPending = true;
     // Fallback for whitespace around the colon and variable escape depth.
     const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const pattern = new RegExp(
-      String.raw`(?:\\*)["']${escapedName}(?:\\*)["']\\s*:\\s*(?:\\*)["']([^"'\\]+)`,
+      String.raw`(?:\\*)["']${escapedName}(?:\\*)["']\s*:\\s*(?:\\*)["']([^"'\\]+)`,
       'i'
     );
     const match = input.match(pattern);
