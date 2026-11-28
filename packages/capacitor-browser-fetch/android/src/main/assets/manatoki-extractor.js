@@ -39,11 +39,17 @@ window.__ncManatokiPending = true;
 
     // Fallback for whitespace around the colon and variable escape depth.
     const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = new RegExp('(?:\\\\*)["\\']' + escapedName +
-      '(?:\\\\*)["\\']\\s*:\\s*(?:\\\\*)["\\']([^"\\'\\\\]+)', 'i');
+    const pattern = new RegExp(
+      String.raw`(?:\\*)["']${escapedName}(?:\\*)["']\\s*:\\s*(?:\\*)["']([^"'\\]+)`,
+      'i'
+    );
     const match = input.match(pattern);
     return match && match[1] ? match[1] : null;
   };
+  if (window.__ncManatokiTestMode === true) {
+    window.__ncManatokiTestHooks = { extractProperty };
+  }
+
   const readCookie = (name) => {
     for (const part of document.cookie.split(';')) {
       const item = part.trim();
@@ -136,6 +142,7 @@ window.__ncManatokiPending = true;
     }
 
     let contentHtml = '';
+    let contentText = '';
     if (decodedData && decodedData.kind === 'html' && typeof decodedData.html === 'string') {
       const parsed = new DOMParser().parseFromString(decodedData.html, 'text/html');
       parsed.querySelectorAll('script,style,iframe,ins,object,embed,link,meta').forEach((node) => node.remove());
@@ -149,10 +156,17 @@ window.__ncManatokiPending = true;
         }
       });
       contentHtml = parsed.body.innerHTML.trim();
+      contentText = parsed.body.textContent || '';
     } else {
-      const text = decodedData && decodedData.kind === 'text' && typeof decodedData.text === 'string'
-        ? decodedData.text
-        : decodedText;
+      if (decodedData && typeof decodedData === 'object') {
+        if (decodedData.kind !== 'text' || typeof decodedData.text !== 'string') {
+          return fail('รูปแบบ Payload ของ Manatoki ไม่รองรับ');
+        }
+      } else if (/^[{[]/.test(decodedText.trim())) {
+        return fail('รูปแบบ JSON ของ Payload Manatoki ไม่ถูกต้องหรือไม่รองรับ');
+      }
+      const text = decodedData ? decodedData.text : decodedText;
+      contentText = text;
       const paragraphs = text.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
       contentHtml = paragraphs.map((paragraph) => {
         const element = document.createElement('p');
@@ -161,7 +175,9 @@ window.__ncManatokiPending = true;
       }).join('');
     }
 
-    if (!contentHtml.trim()) return fail('ถอดรหัสสำเร็จแต่ไม่พบข้อความเนื้อหานิยาย');
+    if (!contentText || !contentText.replace(/\u00a0/g, ' ').trim()) {
+      return fail('ถอดรหัสสำเร็จแต่ไม่พบข้อความเนื้อหานิยาย');
+    }
     return {
       ok: true,
       url: pageUrl.href,
