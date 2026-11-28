@@ -123,6 +123,9 @@ async function mountHomePage(state, { localHistory = [] } = {}) {
   const iconStub = new Proxy({}, { get: () => () => null });
   const mocks = {
     'next/navigation': { useRouter: () => router },
+    // Keep this isolated jsdom harness focused on shelf behavior rather than
+    // Next.js Link's viewport-prefetch implementation (which needs browser APIs).
+    'next/link': ({ href, children, ...props }) => React.createElement('a', { href, ...props }, children),
     'lucide-react': iconStub,
     '@/lib/storage': { getLocalProjectsForMigration: () => [], getStore: () => store },
     '@/lib/supabase': { getSupabase: () => supabase, isSupabaseConfigured: () => true },
