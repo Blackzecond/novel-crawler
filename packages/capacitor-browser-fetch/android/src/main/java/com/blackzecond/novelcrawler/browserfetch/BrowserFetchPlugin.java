@@ -605,6 +605,9 @@ public class BrowserFetchPlugin extends Plugin {
             Button reloadButton = new Button(getActivity());
             reloadButton.setText("โหลดใหม่");
             actions.addView(reloadButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+            Button inspectButton = new Button(getActivity());
+            inspectButton.setText("ตรวจ DOM");
+            actions.addView(inspectButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
             Button clearButton = new Button(getActivity());
             clearButton.setText("ล้าง");
             actions.addView(clearButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
@@ -693,6 +696,23 @@ public class BrowserFetchPlugin extends Plugin {
                 }
             });
             reloadButton.setOnClickListener(v -> webView.reload());
+            inspectButton.setOnClickListener(v -> {
+                String inspectScript = "(()=>{const b=document.body;const e=document.querySelector('article,.chapter-content,.entry-content,.content,.reading-content,#content')||b;const sample=(e?.innerText||'').slice(0,5000);const raw=(e?.textContent||'').slice(0,5000);const el=e?.querySelector('*')||e;const cs=el?getComputedStyle(el):null;const styles=[...document.styleSheets].map(x=>x.href||'inline').slice(0,80);const scripts=[...document.scripts].map(x=>x.src||'inline').slice(0,80);const fonts=[...document.fonts].map(x=>({family:x.family,status:x.status,weight:x.weight})).slice(0,80);return JSON.stringify({kind:'dom-snapshot',url:location.href,title:document.title,readyState:document.readyState,bodyInnerText:(b?.innerText||'').slice(0,5000),bodyTextContent:(b?.textContent||'').slice(0,5000),contentInnerText:sample,contentTextContent:raw,contentHTML:(e?.innerHTML||'').slice(0,8000),fontFamily:cs?.fontFamily,fontSize:cs?.fontSize,stylesheets:styles,scripts:scripts,fonts:fonts,selection:String(getSelection()||'').slice(0,2000)})})()";
+                webView.evaluateJavascript(inspectScript, value -> {
+                    try {
+                        Object decoded = new JSONTokener(value).nextValue();
+                        JSONObject snapshot = new JSONObject(String.valueOf(decoded));
+                        String line = "[DOM SNAPSHOT]\n" + snapshot.toString(2);
+                        if (capturedLogs.length() > 500000) capturedLogs.setLength(0);
+                        capturedLogs.append(line).append("\n\n");
+                        logsView.setText(capturedLogs.toString());
+                        status.setText("เพิ่ม DOM Snapshot แล้ว · คัดลอก Log เพื่อตรวจ");
+                        logScroll.post(() -> logScroll.fullScroll(View.FOCUS_DOWN));
+                    } catch (Exception error) {
+                        status.setText("อ่าน DOM Snapshot ไม่สำเร็จ");
+                    }
+                });
+            });
             clearButton.setOnClickListener(v -> {
                 capturedLogs.setLength(0);
                 eventCount[0] = 0;
