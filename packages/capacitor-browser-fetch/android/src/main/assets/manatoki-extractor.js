@@ -15,14 +15,54 @@ window.__ncManatokiPending = true;
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     return bytes;
   };
-  const extractEscapedProperty = (source, name) => {
-    const marker = '\\"' + name + '\\":\\"';
-    const start = source.indexOf(marker);
-    if (start < 0) return null;
-    const valueStart = start + marker.length;
-    const end = source.indexOf('\\"', valueStart);
-    return end < 0 ? null : source.slice(valueStart, end);
+  const extractProperty = (source, name) => {
+    const input = String(source || '')
+      .replace(/&quot;|&#34;|&#x22;/gi, '"')
+      .replace(/&#39;|&#x27;|&apos;/gi, "'")
+      .replace(/&amp;/gi, '&');
+    // Accept ordinary JSON, escaped JSON, and multiply-escaped JSON strings.
+    const markers = [
+      '"' + name + '":"',
+      '\\"' + name + '\\":\\"',
+      '\\\\' + '"' + name + '\\\\' + '":' + '\\\\' + '"',
+      "'" + name + "':'",
+      '&quot;' + name + '&quot;:&quot;'
+    ];
+    for (const marker of markers) {
+      const start = input.indexOf(marker);
+      if (start < 0) continue;
+      const valueStart = start + marker.length;
+      const quote = marker.slice(0, marker.indexOf(name));
+      const end = input.indexOf(quote, valueStart);
+      if (end > valueStart) return input.slice(valueStart, end);
+    }
+
+    // Fallback for whitespace around the colon and variable escape depth.
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(
+      String.raw`(?:\\*)["']${escapedName}(?:\\*)["']\s*:\s*(?:\\*)["']([^"'\\]+)`,
+      'i'
+    );
+    const match = input.match(pattern);
+    return match && match[1] ? match[1] : null;
   };
+  const parseDecodedPayload = (value) => {
+    const text = String(value ?? '');
+    const trimmed = text.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+      return { kind: 'text', text };
+    }
+    try {
+      return { kind: 'json', data: JSON.parse(trimmed) };
+    } catch (_) {
+      // A leading bracket is not sufficient evidence that the payload is JSON.
+      return { kind: 'text', text };
+    }
+  };
+  if (window.__ncManatokiTestMode === true) {
+    window.__ncManatokiTestHooks = { extractProperty, parseDecodedPayload };
+  }
+
   const readCookie = (name) => {
     for (const part of document.cookie.split(';')) {
       const item = part.trim();
@@ -45,8 +85,8 @@ window.__ncManatokiPending = true;
     });
     if (!pageResponse.ok) return fail('โหลดข้อมูลหน้าตอนไม่สำเร็จ HTTP ' + pageResponse.status);
     const pageSource = await pageResponse.text();
-    const token = extractEscapedProperty(pageSource, 'token');
-    const cookieName = extractEscapedProperty(pageSource, 'cookieName') || 'nv';
+    const token = extractProperty(pageSource, 'token');
+    const cookieName = extractProperty(pageSource, 'cookieName') || 'nv';
     if (!token) return fail('ไม่พบ Token ของตอนในข้อมูลหน้าเว็บ');
 
     let cookieValue = readCookie(cookieName);
@@ -109,12 +149,11 @@ window.__ncManatokiPending = true;
     }
     const decodedText = new TextDecoder('utf-8', { fatal: true }).decode(decryptedBytes);
 
-    let decodedData = null;
-    if (decodedText.trim().startsWith('{')) {
-      try { decodedData = JSON.parse(decodedText); } catch (_) { decodedData = null; }
-    }
+    const decodedPayload = parseDecodedPayload(decodedText);
+    const decodedData = decodedPayload.kind === 'json' ? decodedPayload.data : null;
 
     let contentHtml = '';
+    let contentText = '';
     if (decodedData && decodedData.kind === 'html' && typeof decodedData.html === 'string') {
       const parsed = new DOMParser().parseFromString(decodedData.html, 'text/html');
       parsed.querySelectorAll('script,style,iframe,ins,object,embed,link,meta').forEach((node) => node.remove());
@@ -128,10 +167,16 @@ window.__ncManatokiPending = true;
         }
       });
       contentHtml = parsed.body.innerHTML.trim();
+      contentText = parsed.body.textContent || '';
     } else {
-      const text = decodedData && decodedData.kind === 'text' && typeof decodedData.text === 'string'
-        ? decodedData.text
-        : decodedText;
+      if (decodedPayload.kind === 'json') {
+        if (!decodedData || Array.isArray(decodedData) || typeof decodedData !== 'object' ||
+            decodedData.kind !== 'text' || typeof decodedData.text !== 'string') {
+          return fail('รูปแบบ Payload ของ Manatoki ไม่รองรับ');
+        }
+      }
+      const text = decodedPayload.kind === 'json' ? decodedData.text : decodedPayload.text;
+      contentText = text;
       const paragraphs = text.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
       contentHtml = paragraphs.map((paragraph) => {
         const element = document.createElement('p');
@@ -140,7 +185,9 @@ window.__ncManatokiPending = true;
       }).join('');
     }
 
-    if (!contentHtml.trim()) return fail('ถอดรหัสสำเร็จแต่ไม่พบข้อความเนื้อหานิยาย');
+    if (!contentText || !contentText.replace(/\u00a0/g, ' ').trim()) {
+      return fail('ถอดรหัสสำเร็จแต่ไม่พบข้อความเนื้อหานิยาย');
+    }
     return {
       ok: true,
       url: pageUrl.href,

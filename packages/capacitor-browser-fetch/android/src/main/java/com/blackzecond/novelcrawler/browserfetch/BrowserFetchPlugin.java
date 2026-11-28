@@ -291,8 +291,12 @@ public class BrowserFetchPlugin extends Plugin {
             return;
         }
 
-        webView.evaluateJavascript(script, ignored -> {
+        webView.evaluateJavascript(script, startupResult -> {
             if (finished[0]) return;
+            if (!"\"__NC_MANATOKI_STARTED__\"".equals(startupResult)) {
+                callback.onComplete(manatokiFailure("เริ่มตัวดึงเนื้อหา Manatoki ไม่สำเร็จ"));
+                return;
+            }
             final int[] attempts = { 0 };
             final Runnable[] pollTask = { null };
             pollTask[0] = () -> {
