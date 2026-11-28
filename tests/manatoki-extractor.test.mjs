@@ -42,3 +42,22 @@ test('returns null when the requested property is absent', () => {
   assert.equal(extractProperty('{"other":"value"}', 'token'), null);
   assert.equal(extractProperty('', 'token'), null);
 });
+
+test('accepts plain text beginning with a bracketed Korean notice', () => {
+  const payload = extractProperty ? context.window.__ncManatokiTestHooks.parseDecodedPayload('[시스템 알림]\n본문 내용입니다.') : null;
+  assert.deepEqual(JSON.parse(JSON.stringify(payload)), {
+    kind: 'text',
+    text: '[시스템 알림]\n본문 내용입니다.'
+  });
+});
+
+test('recognizes a valid JSON array so unsupported structures can be rejected', () => {
+  const payload = context.window.__ncManatokiTestHooks.parseDecodedPayload('[]');
+  assert.equal(payload.kind, 'json');
+  assert.deepEqual(JSON.parse(JSON.stringify(payload.data)), []);
+});
+
+test('keeps malformed JSON-looking plain text as text', () => {
+  const payload = context.window.__ncManatokiTestHooks.parseDecodedPayload('[시스템 알림] 안내');
+  assert.equal(payload.kind, 'text');
+});
