@@ -6,6 +6,7 @@ import { ArrowLeft, Bug, ExternalLink, Loader2, Network } from 'lucide-react';
 import { debugNativeBrowserNetwork } from '@/lib/nativeBrowserFetch';
 
 const DEFAULT_URL = 'https://manatoki1.org/novel/57318/6963520';
+const BOOKKOR_URL = 'https://012.bookkor.com/전능의-뇌를-얻었다/2743-ep-6963520';
 
 export default function NetworkDebugPage() {
   const [url, setUrl] = useState(DEFAULT_URL);
@@ -83,7 +84,7 @@ export default function NetworkDebugPage() {
         </section>
 
         <section className="rounded-2xl border border-amber-300/60 bg-amber-50 p-4 text-sm leading-relaxed text-amber-950">
-          <strong>หมายเหตุด้านความเป็นส่วนตัว:</strong> ตัวตรวจจับบันทึก URL, HTTP status, Content-Type และตัวอย่าง Response text สูงสุด 12,000 ตัวอักษรต่อรายการ เฉพาะ Fetch/XHR ที่เป็น origin เดียวกับหน้าเว็บเท่านั้น ไม่บันทึก Cookie หรือ Request headers และ Log อยู่ในหน่วยความจำชั่วคราวจนปิดหน้าต่าง
+          <strong>หมายเหตุด้านความเป็นส่วนตัว:</strong> ตัวตรวจจับบันทึก URL, HTTP status, Content-Type และตัวอย่าง Response text สูงสุด 12,000 ตัวอักษรต่อรายการ เฉพาะ Fetch/XHR ที่เป็น origin เดียวกับหน้าเว็บเท่านั้น ส่วน DOM Snapshot จะเก็บข้อความหน้าเว็บ ตัวอย่าง HTML รายชื่อ CSS/JS และข้อมูลฟอนต์เมื่อผู้ใช้กดตรวจ DOM ไม่บันทึก Cookie หรือ Request headers และ Log อยู่ในหน่วยความจำชั่วคราวจนปิดหน้าต่าง
         </section>
       </div>
     </main>
