@@ -51,7 +51,11 @@ export default function NetworkDebugPage() {
       <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
         <section className="rounded-2xl border border-line bg-card p-4 sm:p-5">
           <div className="mb-3 flex items-center gap-2 font-semibold">
-            <Network className="h-5 w-5" /> ทดสอบ Manatoki ตอน 255
+            <Network className="h-5 w-5" /> ตรวจเว็บต้นทาง
+          </div>
+          <div className="mb-3 grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setUrl(DEFAULT_URL)} className="rounded-lg border border-line px-3 py-2 text-xs font-medium">Manatoki · ตอน 255</button>
+            <button type="button" onClick={() => setUrl(BOOKKOR_URL)} className="rounded-lg border border-line px-3 py-2 text-xs font-medium">Bookkor · ตอน 255</button>
           </div>
           <label htmlFor="debug-url" className="mb-2 block text-sm text-muted">URL ของหน้าที่ต้องการตรวจ</label>
           <input
@@ -76,9 +80,10 @@ export default function NetworkDebugPage() {
         <section className="rounded-2xl border border-line bg-card p-4 sm:p-5">
           <h2 className="mb-2 font-semibold">วิธีทดสอบ</h2>
           <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-muted">
-            <li>กดเปิดหน้าเว็บ ระบบจะแสดง Manatoki ในหน้าต่าง WebView พร้อมเริ่มจับ Fetch/XHR ตั้งแต่ก่อนสคริปต์ของเว็บทำงาน</li>
-            <li>รอจนหน้าเว็บแสดงเนื้อหาตอน 255 หากยังไม่โหลด ลองกดโหลดใหม่</li>
-            <li>ดู Log ด้านล่างของ WebView ว่ามี Response ที่มีข้อความเกาหลีหรือ JSON หรือไม่</li>
+            <li>เลือก Manatoki หรือ Bookkor แล้วเปิดหน้าเว็บพร้อมจับ Fetch/XHR ตั้งแต่ก่อนสคริปต์ของเว็บทำงาน</li>
+            <li>รอจนเนื้อหาตอน 255 ปรากฏ หากยังไม่โหลดให้กดโหลดใหม่</li>
+            <li>ดู Response ใน Log ว่ามีข้อความเกาหลีหรือ JSON หรือไม่</li>
+            <li>สำหรับ Bookkor กด “ตรวจ DOM” หลังเนื้อหาปรากฏ เพื่อเก็บ innerText, textContent, HTML, ฟอนต์ และแหล่ง CSS/JS มาเทียบกัน</li>
             <li>กดคัดลอก Log แล้วนำมาส่งในแชตนี้ จากนั้นกดปิด</li>
           </ol>
         </section>
