@@ -1,3 +1,5 @@
+window.__ncManatokiResult = null;
+window.__ncManatokiPending = true;
 (async () => {
   const fail = (error) => ({ ok: false, error });
   const toBase64Url = (bytes) => {
@@ -158,6 +160,4 @@
   });
   window.__ncManatokiPending = false;
 });
-window.__ncManatokiResult = null;
-window.__ncManatokiPending = true;
 '__NC_MANATOKI_STARTED__';
